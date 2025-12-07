@@ -108,7 +108,7 @@ git clone https://github.com/gorunjinian/MetroVault.git
 
 # Open in Android Studio
 # Sync Gradle project
-# Build → Generate Signed APK (release)
+# Build
 # Install on your air-gapped device
 ```
 
@@ -123,12 +123,12 @@ Check the [Releases](https://github.com/gorunjinian/MetroVault/releases) page fo
 For maximum security, use a dedicated device:
 
 ```
-✓ Factory reset before installation
-✓ Skip Google account setup (offline only)
-✓ Enable Airplane mode permanently  
-✓ Disable WiFi, Bluetooth, NFC, Mobile data
-✓ Remove SIM card
-✓ Disable USB debugging
+1. Factory reset before installation
+2. Skip Google account setup (offline only)
+3. Enable Airplane mode permanently  
+4. Disable WiFi, Bluetooth, NFC, Mobile data
+5. Remove SIM card
+6. Disable USB debugging
 ```
 
 ## 📖 Documentation
@@ -149,10 +149,6 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 - 🐛 **Bugs**: Open a GitHub issue with reproduction steps
 - 💡 **Features**: Open a discussion or issue with your proposal
 - 🔒 **Security**: See [SECURITY.md](./SECURITY.md) for responsible disclosure
-
-## 📜 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](./LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
