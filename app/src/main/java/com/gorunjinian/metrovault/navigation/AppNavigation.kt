@@ -78,10 +78,7 @@ fun AppNavigation(
             else -> Screen.Unlock.route
         }
     }
-    
-    // Track wallets for other purposes (not for startDestination)
-    val walletsList by wallet.wallets.collectAsState()
-    
+
     // Handle wallet loading and navigation when auto-open is triggered
     // This LaunchedEffect is at the AppNavigation level, so it won't be cancelled
     // when the Unlock screen is disposed due to walletsList state changes

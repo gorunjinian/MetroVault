@@ -27,7 +27,7 @@ open class ByteVector(internal val bytes: ByteArray, internal val offset: Int, p
 
     fun takeRight(n: Int): ByteVector = drop(size - n)
 
-    public fun dropRight(n: Int): ByteVector = take(size - n)
+    fun dropRight(n: Int): ByteVector = take(size - n)
 
     fun slice(from: Int, to: Int): ByteVector = drop(from).take(to - from)
 
@@ -56,7 +56,7 @@ open class ByteVector(internal val bytes: ByteArray, internal val offset: Int, p
         return ByteVector(ByteArray(length - size) + toByteArray())
     }
 
-    public fun padRight(length: Int): ByteVector {
+    fun padRight(length: Int): ByteVector {
         require(size <= length) { "byte vector larger than padding target" }
         if (length == size) return this
         return ByteVector(toByteArray() + ByteArray(length - size))
@@ -88,9 +88,9 @@ open class ByteVector(internal val bytes: ByteArray, internal val offset: Int, p
 
     fun ripemd160(): ByteVector = map { bytes, offset, size -> ByteVector(Crypto.ripemd160(bytes, offset, size)) }
 
-    public fun toByteArray(): ByteArray = bytes.copyOfRange(offset, offset + size)
+    fun toByteArray(): ByteArray = bytes.copyOfRange(offset, offset + size)
 
-    public fun toHex(): String = Hex.encode(bytes, offset, size)
+    fun toHex(): String = Hex.encode(bytes, offset, size)
 
     override fun toString(): String = toHex()
 
@@ -108,51 +108,51 @@ open class ByteVector(internal val bytes: ByteArray, internal val offset: Int, p
         return result
     }
 
-    public companion object {
+    companion object {
         @JvmField
-        public val empty: ByteVector = ByteVector(ByteArray(0))
+        val empty: ByteVector = ByteVector(ByteArray(0))
 
         @JvmStatic
-        public fun fromHex(hex: String): ByteVector = ByteVector(Hex.decode(hex))
+        fun fromHex(hex: String): ByteVector = ByteVector(Hex.decode(hex))
     }
 }
 
-public class ByteVector32(bytes: ByteArray, offset: Int) : ByteVector(bytes, offset, 32) {
-    public constructor(bytes: ByteArray) : this(bytes, 0)
-    public constructor(input: String) : this(Hex.decode(input), 0)
-    public constructor(input: ByteVector) : this(input.bytes, input.offset)
+class ByteVector32(bytes: ByteArray, offset: Int) : ByteVector(bytes, offset, 32) {
+    constructor(bytes: ByteArray) : this(bytes, 0)
+    constructor(input: String) : this(Hex.decode(input), 0)
+    constructor(input: ByteVector) : this(input.bytes, input.offset)
 
     override fun update(i: Int, b: Byte): ByteVector32 = ByteVector32(super.update(i, b))
 
     override fun reversed(): ByteVector32 = ByteVector32(super.toByteArray().reversedArray())
 
-    public companion object {
+    companion object {
         @JvmField
-        public val Zeroes: ByteVector32 = ByteVector32("0000000000000000000000000000000000000000000000000000000000000000")
+        val Zeroes: ByteVector32 = ByteVector32("0000000000000000000000000000000000000000000000000000000000000000")
 
         @JvmField
-        public val One: ByteVector32 = ByteVector32("0100000000000000000000000000000000000000000000000000000000000000")
+        val One: ByteVector32 = ByteVector32("0100000000000000000000000000000000000000000000000000000000000000")
 
         @JvmStatic
-        public fun fromValidHex(input: String): ByteVector32 = ByteVector32(input)
+        fun fromValidHex(input: String): ByteVector32 = ByteVector32(input)
     }
 }
 
-public class ByteVector64(bytes: ByteArray, offset: Int) : ByteVector(bytes, offset, 64) {
-    public constructor(bytes: ByteArray) : this(bytes, 0)
-    public constructor(input: String) : this(Hex.decode(input), 0)
-    public constructor(input: ByteVector) : this(input.bytes, input.offset)
+class ByteVector64(bytes: ByteArray, offset: Int) : ByteVector(bytes, offset, 64) {
+    constructor(bytes: ByteArray) : this(bytes, 0)
+    constructor(input: String) : this(Hex.decode(input), 0)
+    constructor(input: ByteVector) : this(input.bytes, input.offset)
 
     override fun update(i: Int, b: Byte): ByteVector64 = ByteVector64(super.update(i, b))
 
     override fun reversed(): ByteVector64 = ByteVector64(super.toByteArray().reversedArray())
 
-    public companion object {
+    companion object {
         @JvmField
-        public val Zeroes: ByteVector64 = ByteVector64("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
+        val Zeroes: ByteVector64 = ByteVector64("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
 
         @JvmStatic
-        public fun fromValidHex(input: String): ByteVector64 = ByteVector64(input)
+        fun fromValidHex(input: String): ByteVector64 = ByteVector64(input)
     }
 }
 
