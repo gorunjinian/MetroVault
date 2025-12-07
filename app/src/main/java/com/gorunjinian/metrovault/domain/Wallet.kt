@@ -415,6 +415,7 @@ class Wallet(context: Context) {
         return bitcoinService.getAccountXpub(accountPublicKey, scriptType)
     }
 
+    @Suppress("unused")
     fun getActiveDescriptor(): Pair<String, String>? {
         val state = getActiveWalletState() ?: return null
         val masterPrivateKey = state.getMasterPrivateKey() ?: return null
