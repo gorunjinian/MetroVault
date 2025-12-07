@@ -60,6 +60,17 @@ fun AboutScreen(
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // App Logo
+                    Image(
+                        painter = painterResource(R.drawable.app_logo),
+                        contentDescription = "MetroVault Logo",
+                        modifier = Modifier
+                            .size(80.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // App Name
                     Text(

@@ -1,7 +1,7 @@
 # MetroVault
 
 <p align="center">
-  <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp" alt="MetroVault Logo" width="120">
+  <img src="app/src/main/res/drawable/app_logo.png" alt="MetroVault Logo" width="120">
 </p>
 
 <p align="center">
