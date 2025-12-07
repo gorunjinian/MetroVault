@@ -16,6 +16,9 @@ keystore.properties
 *.keystore
 *.jks
 
+#Local builds
+/app/release
+
 # OS files
 .DS_Store
 Thumbs.db
