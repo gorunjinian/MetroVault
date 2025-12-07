@@ -59,6 +59,17 @@ android {
         }
     }
 
+    applicationVariants.all {
+        val variant = this
+        variant.outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val appName = "MetroVault"
+            val versionName = variant.versionName
+            val buildType = variant.buildType.name
+            output.outputFileName = "$appName-v$versionName-$buildType.apk"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
