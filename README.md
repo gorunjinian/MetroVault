@@ -152,6 +152,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 ## 🙏 Acknowledgments
 
 - [Bitcoin](https://bitcoin.org) - The protocol that makes this all possible
+- [ACINQ](https://github.com/ACINQ/bitcoin-kmp) - Custom Bitcoin library from ACINQ's implementation
 - [Jetpack Compose](https://developer.android.com/jetpack/compose) - Modern Android UI toolkit
 - [ZXing](https://github.com/zxing/zxing) - QR code generation and scanning
 - The open-source Bitcoin community for BIP standards
@@ -162,7 +163,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 **MetroVault is currently in active development.**
 
-While every effort is made to ensure security and correctness, using beta software for managing real funds carries risks:
+While every effort is made to ensure security and correctness, using early-development software for managing real funds carries risks:
 
 - ⚡ Always verify addresses on the device screen
 - 🧪 Test with small amounts first (or on Testnet)
