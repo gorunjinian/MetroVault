@@ -9,6 +9,13 @@
 </p>
 
 <p align="center">
+  <img src="Screenshot_1.png" alt="Screenshot 1" width="200">
+  <img src="Screenshot_2.png" alt="Screenshot 2" width="200">
+  <img src="Screenshot_3.png" alt="Screenshot 3" width="200">
+  <img src="Screenshot_4.png" alt="Screenshot 4" width="200">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-green.svg" alt="Platform">
   <img src="https://img.shields.io/badge/API-26%2B-brightgreen.svg" alt="API">
   <img src="https://img.shields.io/badge/Language-Kotlin-purple.svg" alt="Kotlin">
