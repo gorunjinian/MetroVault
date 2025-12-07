@@ -9,14 +9,6 @@
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
-  <a href="#how-it-works">How It Works</a> •
-  <a href="#installation">Installation</a> •
-  <a href="#documentation">Documentation</a> •
-  <a href="#contributing">Contributing</a>
-</p>
-
-<p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-green.svg" alt="Platform">
   <img src="https://img.shields.io/badge/API-26%2B-brightgreen.svg" alt="API">
   <img src="https://img.shields.io/badge/Language-Kotlin-purple.svg" alt="Kotlin">
@@ -25,14 +17,14 @@
 
 ---
 
-**MetroVault** is a secure, offline Android signing device application designed to turn your spare Android phone into a cold storage hardware wallet. Built with modern Android technologies and a custom Kotlin Bitcoin library, it prioritizes security, simplicity, and user experience.
+**MetroVault** is a secure, offline Android signing device application designed to turn your Android phone into a cold storage hardware wallet. Built with modern Android technologies and a custom Kotlin Bitcoin library, it prioritizes security, simplicity, and user experience.
 
 ## 🎯 Why MetroVault?
 
 The primary goal of MetroVault is to provide a completely **offline** environment for managing Bitcoin private keys. It acts as a signer for your watch-only wallets (like BlueWallet, Sparrow, or Electrum) running on online devices. By keeping your keys on a device that never connects to the internet (air-gapped), you significantly reduce the attack surface for theft and malware.
 
 **Key Benefits:**
-- 💰 **Free** - Use any spare Android phone as a hardware wallet
+- 💰 **Free** - Use any Android phone as a hardware wallet
 - 🔒 **Secure** - Air-gapped operation with military-grade encryption
 - 🔨 **Open Source** - Fully auditable code, no hidden backdoors
 - 🎨 **Modern** - Beautiful Material 3 design with Jetpack Compose
