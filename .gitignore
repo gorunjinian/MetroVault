@@ -1,7 +1,24 @@
 # Project exclude paths
 /.gradle/
-/app/build/
-/app/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/
 /build/
-/.idea
-/.vscode
+/app/build/
+
+# IDE configs
+/.idea/
+/.vscode/
+*.iml
+
+# Local configuration (contains SDK paths)
+local.properties
+
+# Signing configs (NEVER commit these!)
+keystore.properties
+*.keystore
+*.jks
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Kotlin
+/.kotlin/
