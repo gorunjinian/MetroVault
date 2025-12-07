@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Exclude all SharedPreferences from cloud backup -->
+        <exclude domain="sharedpref" path="." />
+        <!-- Exclude all databases from cloud backup -->
+        <exclude domain="database" path="." />
+        <!-- Exclude all files from cloud backup -->
+        <exclude domain="file" path="." />
+    </cloud-backup>
+    
+    <device-transfer>
+        <!-- Also exclude from device-to-device transfer -->
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="." />
+    </device-transfer>
+</data-extraction-rules>

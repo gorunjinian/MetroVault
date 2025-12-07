@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Bitcoin Orange -->
+    <color name="bitcoin_orange">#F7931A</color>
+    <color name="bitcoin_orange_light">#FF9E2C</color>
+    <color name="bitcoin_orange_dark">#E67E00</color>
+    <color name="splashscreen_color">#ffa808</color>
+
+    <!-- Dark Theme Colors -->
+    <color name="dark_background">#121212</color>
+    <color name="dark_surface">#1E1E1E</color>
+    <color name="dark_surface_variant">#2C2C2C</color>
+
+    <!-- Material 3 Baseline -->
+    <color name="md_theme_dark_primary">#F7931A</color>
+    <color name="md_theme_dark_onPrimary">#000000</color>
+    <color name="md_theme_dark_primaryContainer">#E67E00</color>
+    <color name="md_theme_dark_onPrimaryContainer">#FFFFFF</color>
+
+    <color name="md_theme_dark_secondary">#FFB74D</color>
+    <color name="md_theme_dark_onSecondary">#000000</color>
+        <color name="md_theme_dark_secondaryContainer">#F57C00</color>
+    <color name="md_theme_dark_onSecondaryContainer">#FFFFFF</color>
+
+    <color name="md_theme_dark_tertiary">#81C784</color>
+    <color name="md_theme_dark_onTertiary">#003A00</color>
+    <color name="md_theme_dark_tertiaryContainer">#00530A</color>
+    <color name="md_theme_dark_onTertiaryContainer">#9DDB9D</color>
+
+    <color name="md_theme_dark_error">#FFB4AB</color>
+    <color name="md_theme_dark_errorContainer">#93000A</color>
+    <color name="md_theme_dark_onError">#690005</color>
+    <color name="md_theme_dark_onErrorContainer">#FFDAD6</color>
+
+    <color name="md_theme_dark_background">#121212</color>
+    <color name="md_theme_dark_onBackground">#E6E1E5</color>
+
+    <color name="md_theme_dark_surface">#1E1E1E</color>
+    <color name="md_theme_dark_onSurface">#E6E1E5</color>
+    <color name="md_theme_dark_surfaceVariant">#2C2C2C</color>
+    <color name="md_theme_dark_onSurfaceVariant">#CAC4D0</color>
+
+    <color name="md_theme_dark_outline">#938F99</color>
+    <color name="md_theme_dark_inverseOnSurface">#121212</color>
+    <color name="md_theme_dark_inverseSurface">#E6E1E5</color>
+    <color name="md_theme_dark_inversePrimary">#6750A4</color>
+    <color name="md_theme_dark_shadow">#000000</color>
+    <color name="md_theme_dark_surfaceTint">#F7931A</color>
+    <color name="md_theme_dark_outlineVariant">#49454F</color>
+    <color name="md_theme_dark_scrim">#000000</color>
+</resources>

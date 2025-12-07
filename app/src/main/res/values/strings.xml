@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Metro Vault</string>
+
+    <!-- General -->
+    <string name="cancel">Cancel</string>
+    <string name="confirm">Confirm</string>
+    <string name="continue_text">Continue</string>
+    <string name="back">Back</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="export">Export</string>
+    <string name="import_text">Import</string>
+
+    <!-- Wallet -->
+    <string name="create_wallet">Create Wallet</string>
+    <string name="import_wallet">Import Wallet</string>
+    <string name="wallet_name">Wallet Name</string>
+    <string name="wallet_created">Wallet Created Successfully</string>
+
+    <!-- Seed Phrase -->
+    <string name="seed_phrase">Seed Phrase</string>
+    <string name="twelve_words">12 Words</string>
+    <string name="twentyfour_words">24 Words</string>
+    <string name="select_seed_length">Select Seed Length</string>
+    <string name="backup_seed">Backup Your Seed Phrase</string>
+    <string name="seed_warning">Write down your seed phrase and keep it safe. Never share it with anyone.</string>
+
+    <!-- BIP39 Passphrase -->
+    <string name="bip39_passphrase">BIP39 Passphrase</string>
+    <string name="bip39_passphrase_optional">BIP39 Passphrase (Optional)</string>
+    <string name="use_bip39_passphrase">Use BIP39 passphrase (25th word)</string>
+    <string name="bip39_passphrase_visible">BIP39 Passphrase (visible)</string>
+    <string name="confirm_bip39_passphrase">Confirm BIP39 Passphrase</string>
+    <string name="bip39_passphrase_warning">⚠️ WARNING: A single typo creates a completely different wallet. The passphrase is shown in plain text so you can verify it carefully.</string>
+    <string name="bip39_passphrase_mismatch">BIP39 passphrases do not match</string>
+    <string name="bip39_not_encryption_password">This is NOT your encryption password. This is the BIP39 passphrase.</string>
+
+    <!-- Entropy -->
+    <string name="custom_entropy">Add Custom Entropy</string>
+    <string name="dice_rolls">Dice Rolls</string>
+    <string name="coin_flips">Coin Flips</string>
+    <string name="enter_dice_rolls">Enter dice rolls (1-6)</string>
+    <string name="enter_coin_flips">Enter coin flips (H/T)</string>
+    <string name="use_custom_entropy">Use Custom Entropy</string>
+    <string name="skip_custom_entropy">Skip (Use System Entropy)</string>
+
+    <!-- Security -->
+    <string name="enter_password">Enter Password</string>
+    <string name="confirm_password">Confirm Password</string>
+    <string name="enable_biometric">Enable Biometric Authentication</string>
+    <string name="biometric_prompt_title">Authenticate</string>
+    <string name="biometric_prompt_subtitle">Use biometric to access your wallet</string>
+    <string name="password_mismatch">Passwords do not match</string>
+    <string name="weak_password">Password is too weak</string>
+    <string name="plausible_deniability">Plausible Deniability Wallet</string>
+    <string name="decoy_password">Decoy Password</string>
+    <string name="decoy_password_desc">This password will open a different wallet</string>
+
+    <!-- Addresses -->
+    <string name="receive">Receive</string>
+    <string name="addresses">Addresses</string>
+    <string name="generate_address">Generate Address</string>
+    <string name="address_copied">Address Copied</string>
+    <string name="check_address">Check Address</string>
+    <string name="address_belongs_to_wallet">This address belongs to your wallet</string>
+    <string name="address_not_found">This address does not belong to your wallet</string>
+
+    <!-- PSBT -->
+    <string name="sign_transaction">Sign Transaction</string>
+    <string name="scan_psbt">Scan PSBT QR Code</string>
+    <string name="transaction_signed">Transaction Signed</string>
+    <string name="invalid_psbt">Invalid PSBT</string>
+
+    <!-- Export -->
+    <string name="export_xpub">Export xPub</string>
+    <string name="export_seed">Export Seed Phrase</string>
+    <string name="xpub_exported">xPub Exported</string>
+
+    <!-- BIP-85 -->
+    <string name="bip85_derive">Derive Child Seed (BIP-85)</string>
+    <string name="bip85_index">Index Number</string>
+    <string name="bip85_word_count">Word Count</string>
+    <string name="derive">Derive</string>
+
+    <!-- Mnemonic -->
+    <string name="complete_mnemonic">Complete Mnemonic</string>
+    <string name="enter_incomplete_seed">Enter incomplete seed phrase</string>
+    <string name="calculate_last_word">Calculate Last Word</string>
+    <string name="last_word_is">Last word is: %s</string>
+
+    <!-- Errors -->
+    <string name="error_occurred">An error occurred</string>
+    <string name="invalid_seed">Invalid seed phrase</string>
+    <string name="camera_permission_required">Camera permission is required</string>
+    <string name="biometric_not_available">Biometric authentication is not available</string>
+</resources>

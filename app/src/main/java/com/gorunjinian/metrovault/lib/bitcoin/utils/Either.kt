@@ -1,0 +1,60 @@
+package com.gorunjinian.metrovault.lib.bitcoin.utils
+
+public sealed class Either<out L, out R> {
+    abstract val isLeft: Boolean
+    public abstract val isRight: Boolean
+    abstract val left: L?
+    abstract val right: R?
+
+    public inline fun <X> fold(fl: (L) -> X, fr: (R) -> X): X = when (this) {
+        is Left -> fl(this.value)
+        is Right -> fr(this.value)
+    }
+
+    public inline fun <X, Y> transform(fl: (L) -> X, fr: (R) -> Y): Either<X, Y> = when (this) {
+        is Left -> Left(fl(this.value))
+        is Right -> Right(fr(this.value))
+    }
+
+    public inline fun <X> map(f: (R) -> X): Either<L, X> = transform({ it }, f)
+
+    public data class Left<out L>(val value: L) : Either<L, Nothing>() {
+        override val isLeft: Boolean = true
+        override val isRight: Boolean = false
+        override val left: L = value
+        override val right: Nothing? = null
+    }
+
+    public data class Right<out R>(val value: R) : Either<Nothing, R>() {
+        override val isLeft: Boolean = false
+        override val isRight: Boolean = true
+        override val left: Nothing? = null
+        override val right: R = value
+    }
+}
+
+public inline fun <L, R, X> Either<L, R>.flatMap(f: (R) -> Either<L, X>): Either<L, X> = when (this) {
+    is Either.Left -> this
+    is Either.Right -> f(this.value)
+}
+
+public inline fun <L, R> Either<L, R>.getOrElse(onLeft: (L) -> R): R = when (this) {
+    is Either.Left -> onLeft(this.value)
+    is Either.Right -> this.value
+}
+
+public fun <L, R> Either<L, R>.getOrDefault(defaultValue: R): R = when (this) {
+    is Either.Left -> defaultValue
+    is Either.Right -> this.value
+}
+
+public fun <R> Result<R>.toEither(): Either<Throwable, R> = try {
+    Either.Right(getOrThrow())
+} catch (t: Throwable) {
+    Either.Left(t)
+}
+
+public fun <L : Throwable, R> Either<L, R>.toResult(): Result<R> = when (this) {
+    is Either.Left -> Result.failure(this.value)
+    is Either.Right -> Result.success(this.value)
+}

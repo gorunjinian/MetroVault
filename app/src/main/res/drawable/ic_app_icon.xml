@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Global Scale Group -->
+    <group
+        android:scaleX="0.07739"
+        android:scaleY="0.07739"
+        android:translateX="16.7"
+        android:translateY="15.47">
+
+        <!-- The Lever 'V' Base -->
+        <group
+            android:pivotX="480"
+            android:pivotY="550"
+            android:scaleX="0.75"
+            android:scaleY="0.75">
+            <path
+                android:fillColor="#1E88E5"
+                android:pathData="M80,160 L480,940 L880,160 L800,160 L480,840 L160,160 Z" />
+        </group>
+
+        <!-- The Bitcoin 'B' -->
+        <group
+            android:pivotX="480"
+            android:pivotY="480"
+            android:scaleX="0.5"
+            android:scaleY="0.5"
+            android:translateY="-130">
+            <path
+                android:fillColor="#1E88E5"
+                android:pathData="M360,840v-80L240,760v-80h80v-400h-80v-80h120v-80h80v80h80v-80h80v85q52,14 86,56.5t34,98.5q0,29 -10,55.5T682,463q35,21 56.5,57t21.5,80q0,66 -47,113t-113,47v80h-80v-80h-80v80h-80ZM400,440h160q33,0 56.5,-23.5T640,360q0,-33 -23.5,-56.5T560,280L400,280v160ZM400,680h200q33,0 56.5,-23.5T680,600q0,-33 -23.5,-56.5T600,520L400,520v160Z" />
+        </group>
+
+    </group>
+</vector>
