@@ -3,3 +3,5 @@
 /app/build/
 /app/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/
 /build/
+/.idea
+/.vscode

@@ -21,7 +21,6 @@
   <img src="https://img.shields.io/badge/API-26%2B-brightgreen.svg" alt="API">
   <img src="https://img.shields.io/badge/Language-Kotlin-purple.svg" alt="Kotlin">
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-blue.svg" alt="Compose">
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
 </p>
 
 ---
@@ -85,7 +84,6 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 
 | Category | Technology |
 |----------|------------|
-| **Language** | Kotlin |
 | **UI Framework** | Jetpack Compose (Material 3) |
 | **Architecture** | MVVM with Clean Architecture |
 | **Cryptography** | Custom Kotlin Bitcoin Library (Secp256k1, BIP-32, BIP-39, BIP-174) |
@@ -141,21 +139,10 @@ Detailed documentation is available in the repository:
 |----------|-------------|
 | [SECURITY.md](./SECURITY.md) | Complete security architecture and encryption model |
 | [SEED_GENERATION.md](./SEED_GENERATION.md) | How wallets are generated, stored, and used |
-| [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) | Codebase organization and architecture |
-| [BITCOIN_LIBRARY_DOCUMENTATION.md](./BITCOIN_LIBRARY_DOCUMENTATION.md) | Custom Bitcoin library reference |
-| [URTOOLS_DOCUMENTATION.md](./URTOOLS_DOCUMENTATION.md) | QR code encoding (URKit) documentation |
 
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
-
-### How to Contribute
-
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
 
 ### Reporting Issues
 
@@ -190,5 +177,5 @@ While every effort is made to ensure security and correctness, using beta softwa
 ---
 
 <p align="center">
-  Made with ❤️ for Bitcoin
+  Made with ❤️ for Bitcoin by Gorun Jinian
 </p>
