@@ -55,9 +55,9 @@ class SecureMemoryManager private constructor(application: Application) : Compon
 
             ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> {
                 // UI is hidden (user pressed home or switched apps)
-                // Keep session alive for better UX
-                Log.d(TAG, "UI hidden - session remains active")
-                // Do NOT wipe - we want seamless return when user comes back
+                // Wipe sensitive data for security - user must re-authenticate when returning
+                Log.d(TAG, "UI hidden - performing security wipe")
+                performEmergencyWipe()
             }
         }
     }

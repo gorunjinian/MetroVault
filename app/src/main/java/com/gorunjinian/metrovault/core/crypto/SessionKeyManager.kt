@@ -1,6 +1,9 @@
 package com.gorunjinian.metrovault.core.crypto
 
 import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.Mac
@@ -49,10 +52,9 @@ class SessionKeyManager private constructor() {
     // Cached derived keys for different purposes
     private var walletEncryptionKey: ByteArray? = null
 
-    // Session state
-    @Volatile
-    var isSessionActive: Boolean = false
-        private set
+    // Session state - observable for UI to react to session changes
+    private val _isSessionActive = MutableStateFlow(false)
+    val isSessionActive: StateFlow<Boolean> = _isSessionActive.asStateFlow()
 
     /**
      * Initializes the session by deriving master key from password.
@@ -77,7 +79,7 @@ class SessionKeyManager private constructor() {
         // Pre-derive the wallet encryption key using HKDF
         walletEncryptionKey = hkdfDerive(derivedKey, "wallet-encryption".toByteArray())
 
-        isSessionActive = true
+        _isSessionActive.value = true
 
         val duration = System.currentTimeMillis() - startTime
         Log.d(TAG, "Session initialized in ${duration}ms")
@@ -92,7 +94,7 @@ class SessionKeyManager private constructor() {
      * @throws IllegalStateException if session is not active
      */
     fun getWalletEncryptionKey(): ByteArray {
-        check(isSessionActive && walletEncryptionKey != null) {
+        check(_isSessionActive.value && walletEncryptionKey != null) {
             "Session not active. Call initializeSession() first."
         }
         return walletEncryptionKey!!.copyOf()
@@ -157,7 +159,7 @@ class SessionKeyManager private constructor() {
         walletEncryptionKey?.fill(0)
         walletEncryptionKey = null
 
-        isSessionActive = false
+        _isSessionActive.value = false
     }
 
     /**

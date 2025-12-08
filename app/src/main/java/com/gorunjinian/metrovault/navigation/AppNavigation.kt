@@ -12,6 +12,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
@@ -145,6 +146,24 @@ fun AppNavigation(
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     LaunchedEffect(currentBackStackEntry) {
         android.util.Log.d("AppNavigation", "DESTINATION CHANGED: ${currentBackStackEntry?.destination?.route}")
+    }
+
+    // Observe session state - navigate to unlock screen when session expires
+    val sessionKeyManager = remember { SessionKeyManager.getInstance() }
+    val isSessionActive by sessionKeyManager.isSessionActive.collectAsState()
+
+    LaunchedEffect(isSessionActive) {
+        val currentRoute = currentBackStackEntry?.destination?.route
+        // If session becomes inactive and we're not already on auth screens, navigate to unlock
+        if (!isSessionActive &&
+            currentRoute != null &&
+            currentRoute != Screen.Unlock.route &&
+            currentRoute != Screen.SetupPassword.route) {
+            android.util.Log.d("AppNavigation", "Session expired - navigating to unlock screen")
+            navController.navigate(Screen.Unlock.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
     }
 
     NavHost(

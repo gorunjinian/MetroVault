@@ -93,8 +93,9 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         // Clear clipboard when app goes to background for security
         SecurityUtils.clearClipboard(this)
-        // Note: We do NOT wipe memory here - data stays in RAM as long as process is alive
-        // This allows users to switch apps and come back without re-authentication
+        // Lock the app and wipe all sensitive keys from memory when backgrounded
+        // User will need to re-authenticate when returning to the app
+        Wallet.getInstance(applicationContext).emergencyWipe()
     }
 
     override fun onDestroy() {

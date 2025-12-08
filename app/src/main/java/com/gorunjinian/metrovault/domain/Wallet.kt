@@ -162,7 +162,7 @@ class Wallet(context: Context) {
         passphrase: String = ""
     ): WalletCreationResult = withContext(Dispatchers.IO) {
         try {
-            if (!sessionKeyManager.isSessionActive) {
+            if (!sessionKeyManager.isSessionActive.value) {
                 return@withContext WalletCreationResult.Error(WalletCreationError.NOT_AUTHENTICATED)
             }
 

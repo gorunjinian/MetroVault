@@ -443,7 +443,7 @@ class SecureStorage(private val context: Context) {
      * Saves wallet secrets encrypted with the session key.
      */
     fun saveWalletSecrets(walletId: String, secrets: WalletSecrets, isDecoy: Boolean): Boolean {
-        check(sessionKeyManager.isSessionActive) { "Session not active" }
+        check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
         return try {
             val prefs = if (isDecoy) decoyPrefs else mainPrefs
@@ -463,7 +463,7 @@ class SecureStorage(private val context: Context) {
      * Loads wallet secrets, decrypting with the session key.
      */
     fun loadWalletSecrets(walletId: String, isDecoy: Boolean): WalletSecrets? {
-        check(sessionKeyManager.isSessionActive) { "Session not active" }
+        check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
         return try {
             val prefs = if (isDecoy) decoyPrefs else mainPrefs
