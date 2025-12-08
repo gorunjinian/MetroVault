@@ -166,7 +166,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 While every effort is made to ensure security and correctness, using early-development software for managing real funds carries risks:
 
 - ⚡ Always verify addresses on the device screen
-- 🧪 Test with small amounts first (or on Testnet)
+- 🧪 Test with small amounts first
 - 📝 **You are responsible for your own keys** - ensure proper mnemonic backups
 - 🔍 Review the code yourself or have it audited before trusting with significant funds
 
