@@ -377,9 +377,10 @@ class Wallet(context: Context) {
 
     fun signPsbt(psbtString: String): String? {
         val state = getActiveWalletState() ?: return null
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return null
         val accountPrivateKey = state.getAccountPrivateKey() ?: return null
         val scriptType = getScriptType(state.derivationPath)
-        return bitcoinService.signPsbt(psbtString, accountPrivateKey, scriptType)
+        return bitcoinService.signPsbt(psbtString, masterPrivateKey, accountPrivateKey, scriptType)
     }
 
     fun getPsbtDetails(psbtString: String): PsbtDetails? {

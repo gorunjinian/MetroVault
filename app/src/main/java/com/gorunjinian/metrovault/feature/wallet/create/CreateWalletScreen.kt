@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
@@ -135,7 +136,14 @@ fun CreateWalletScreen(
             onDismissRequest = { viewModel.dismissSecurityWarning() },
             title = { Text("Security Warning") },
             text = {
-                Text("Your seed phrase is the master key to your funds. Never share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.")
+                Text(
+                    text = androidx.compose.ui.text.buildAnnotatedString {
+                        append("Your seed phrase is the master key to your funds. Never share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.\n\n")
+                        withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append("Write it down and keep it somewhere secure and private")
+                        }
+                    }
+                )
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.generateMnemonic() }) {

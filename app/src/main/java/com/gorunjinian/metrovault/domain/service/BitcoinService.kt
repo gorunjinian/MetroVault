@@ -18,7 +18,8 @@ class BitcoinService {
     companion object {
         private const val TAG = "BitcoinService"
         private val CHAIN_HASH = Block.LivenetGenesisBlock.hash // Mainnet
-        private const val ADDRESS_SCAN_GAP = 100
+        // Increased from 100 to 500 per chain (1000 total) for better coverage
+        private const val ADDRESS_SCAN_GAP = 500
     }
 
     data class WalletCreationResult(
@@ -176,14 +177,24 @@ class BitcoinService {
         }
     }
 
+    /**
+     * Signs a PSBT using BIP-174 compliant approach:
+     * 1. First tries to use derivation path metadata from the PSBT (fast, reliable)
+     * 2. Falls back to address scanning if no metadata available
+     *
+     * @param psbtBase64 Base64 encoded PSBT
+     * @param masterPrivateKey Master private key for full path derivation (BIP-174)
+     * @param accountPrivateKey Account-level private key for fallback address scanning
+     * @param scriptType Script type for address generation in fallback
+     */
     fun signPsbt(
         psbtBase64: String,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         scriptType: ScriptType
     ): String? {
         return try {
             Log.d(TAG, "signPsbt called with scriptType: $scriptType")
-            Log.d(TAG, "PSBT Base64 length: ${psbtBase64.length}, starts with: ${psbtBase64.take(20)}...")
             
             val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
             Log.d(TAG, "PSBT bytes decoded: ${psbtBytes.size} bytes")
@@ -198,27 +209,46 @@ class BitcoinService {
             
             Log.d(TAG, "PSBT parsed successfully. Inputs: ${psbt.inputs.size}, Outputs: ${psbt.global.tx.txOut.size}")
 
-            val addressToKeyInfo = buildAddressLookup(accountPrivateKey, scriptType)
-            Log.d(TAG, "Address lookup built with ${addressToKeyInfo.size} entries for scriptType: $scriptType")
+            // Compute wallet fingerprint for BIP-174 matching
+            val walletFingerprint = computeWalletFingerprint(masterPrivateKey)
+            Log.d(TAG, "Wallet fingerprint: ${walletFingerprint.toString(16).padStart(8, '0')}")
+
+            // Build address lookup for fallback (lazy - only used if BIP-174 fails)
+            val addressToKeyInfo by lazy {
+                Log.d(TAG, "Building address lookup for fallback (scanning $ADDRESS_SCAN_GAP addresses per chain)")
+                buildAddressLookup(accountPrivateKey, scriptType)
+            }
 
             var signedPsbt = psbt
             var signedCount = 0
+            var bip174Count = 0
+            var fallbackCount = 0
 
             psbt.inputs.forEachIndexed { index, input ->
-                val result = signInputIfOurs(signedPsbt, index, input, accountPrivateKey, scriptType, addressToKeyInfo)
+                // Try BIP-174 derivation path first
+                var result = trySignWithDerivationPath(signedPsbt, index, input, masterPrivateKey, walletFingerprint)
                 if (result != null) {
                     signedPsbt = result
                     signedCount++
+                    bip174Count++
+                } else {
+                    // Fallback to address scanning
+                    result = signInputWithAddressLookup(signedPsbt, index, input, accountPrivateKey, addressToKeyInfo)
+                    if (result != null) {
+                        signedPsbt = result
+                        signedCount++
+                        fallbackCount++
+                    }
                 }
             }
 
             if (signedCount == 0) {
-                Log.w(TAG, "No inputs were signed - none matched wallet addresses")
-                Log.w(TAG, "Check if PSBT scriptPubKeys match wallet's address derivation path and script type")
+                Log.w(TAG, "No inputs were signed - none matched wallet")
+                Log.w(TAG, "Checked: BIP-174 derivation paths and ${ADDRESS_SCAN_GAP * 2} addresses")
                 return null
             }
 
-            Log.d(TAG, "Signed $signedCount inputs successfully")
+            Log.d(TAG, "Signed $signedCount inputs: $bip174Count via BIP-174, $fallbackCount via address lookup")
 
             val signedBytes = Psbt.write(signedPsbt).toByteArray()
             android.util.Base64.encodeToString(signedBytes, android.util.Base64.NO_WRAP)
@@ -380,6 +410,161 @@ class BitcoinService {
         }
     }
 
+    /**
+     * Computes the wallet's master key fingerprint as used in BIP-174 PSBTs.
+     * This is the first 4 bytes of hash160(master public key) as an unsigned Long.
+     */
+    private fun computeWalletFingerprint(masterPrivateKey: DeterministicWallet.ExtendedPrivateKey): Long {
+        val masterPubKey = masterPrivateKey.publicKey
+        val hash160 = Crypto.hash160(masterPubKey.value.toByteArray())
+        // Convert first 4 bytes to unsigned Long (big-endian as per BIP-174)
+        return ((hash160[0].toLong() and 0xFF) shl 24) or
+               ((hash160[1].toLong() and 0xFF) shl 16) or
+               ((hash160[2].toLong() and 0xFF) shl 8) or
+               (hash160[3].toLong() and 0xFF)
+    }
+
+    /**
+     * Attempts to sign an input using BIP-174 derivation path metadata.
+     * This is the preferred method as it's fast and reliable.
+     *
+     * @return signed PSBT if derivation path matched our wallet, null otherwise
+     */
+    private fun trySignWithDerivationPath(
+        psbt: Psbt,
+        inputIndex: Int,
+        input: Input,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        walletFingerprint: Long
+    ): Psbt? {
+        return try {
+            // Check regular derivation paths (for non-taproot)
+            for ((publicKey, keyPathWithMaster) in input.derivationPaths) {
+                if (keyPathWithMaster.masterKeyFingerprint == walletFingerprint) {
+                    Log.d(TAG, "Input $inputIndex: Found matching BIP-174 derivation path: ${keyPathWithMaster.keyPath}")
+                    
+                    // Derive key using the full path from master
+                    val signingPrivateKey = masterPrivateKey
+                        .derivePrivateKey(keyPathWithMaster.keyPath)
+                        .privateKey
+                    
+                    // Verify derived public key matches
+                    if (signingPrivateKey.publicKey() != publicKey) {
+                        Log.w(TAG, "Input $inputIndex: Derived public key doesn't match PSBT public key")
+                        continue
+                    }
+                    
+                    return signInput(psbt, inputIndex, input, signingPrivateKey, publicKey)
+                }
+            }
+
+            // Check taproot derivation paths
+            for ((xOnlyPublicKey, taprootPath) in input.taprootDerivationPaths) {
+                if (taprootPath.masterKeyFingerprint == walletFingerprint) {
+                    Log.d(TAG, "Input $inputIndex: Found matching Taproot BIP-174 derivation path: ${taprootPath.keyPath}")
+                    
+                    // Derive key using the full path from master
+                    val signingPrivateKey = masterPrivateKey
+                        .derivePrivateKey(taprootPath.keyPath)
+                        .privateKey
+                    
+                    // Verify derived x-only public key matches
+                    val derivedXOnly = XonlyPublicKey(signingPrivateKey.publicKey())
+                    if (derivedXOnly != xOnlyPublicKey) {
+                        Log.w(TAG, "Input $inputIndex: Derived x-only public key doesn't match PSBT")
+                        continue
+                    }
+                    
+                    return signInput(psbt, inputIndex, input, signingPrivateKey, signingPrivateKey.publicKey())
+                }
+            }
+
+            // No matching derivation path found
+            if (input.derivationPaths.isEmpty() && input.taprootDerivationPaths.isEmpty()) {
+                Log.d(TAG, "Input $inputIndex: No BIP-174 derivation paths in PSBT")
+            } else {
+                Log.d(TAG, "Input $inputIndex: BIP-174 paths present but fingerprint doesn't match wallet")
+            }
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "Input $inputIndex: BIP-174 signing failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Signs an input using address lookup fallback.
+     * Used when PSBT doesn't contain BIP-174 derivation metadata.
+     */
+    private fun signInputWithAddressLookup(
+        psbt: Psbt,
+        inputIndex: Int,
+        input: Input,
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        addressLookup: Map<ByteVector, AddressKeyInfo>
+    ): Psbt? {
+        return try {
+            val scriptPubKey = getInputScriptPubKey(input)
+            if (scriptPubKey == null) {
+                Log.d(TAG, "Input $inputIndex: No scriptPubKey available for fallback")
+                return null
+            }
+
+            val keyInfo = addressLookup[scriptPubKey]
+            if (keyInfo == null) {
+                Log.d(TAG, "Input $inputIndex: Address not found in wallet (scanned ${addressLookup.size} addresses)")
+                return null
+            }
+
+            Log.d(TAG, "Input $inputIndex: Found via address lookup at change=${keyInfo.changeIndex}, index=${keyInfo.addressIndex}")
+
+            val signingPrivateKey = accountPrivateKey
+                .derivePrivateKey(keyInfo.changeIndex)
+                .derivePrivateKey(keyInfo.addressIndex)
+                .privateKey
+
+            signInput(psbt, inputIndex, input, signingPrivateKey, keyInfo.publicKey)
+        } catch (e: Exception) {
+            Log.e(TAG, "Input $inputIndex: Address lookup signing failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Core signing logic shared between BIP-174 and address lookup methods.
+     */
+    private fun signInput(
+        psbt: Psbt,
+        inputIndex: Int,
+        input: Input,
+        signingPrivateKey: PrivateKey,
+        signingPublicKey: PublicKey
+    ): Psbt? {
+        // For segwit inputs, we need to add the witnessScript if not present
+        var psbtToSign = psbt
+        if (input is Input.WitnessInput.PartiallySignedWitnessInput && input.witnessScript == null) {
+            val witnessScript = Script.pay2pkh(signingPublicKey)
+            Log.d(TAG, "Input $inputIndex: Adding witnessScript for P2WPKH")
+            
+            val updatedInput = input.copy(witnessScript = witnessScript)
+            val updatedInputs = psbt.inputs.toMutableList()
+            updatedInputs[inputIndex] = updatedInput
+            psbtToSign = psbt.copy(inputs = updatedInputs)
+        }
+
+        return when (val signResult = psbtToSign.sign(signingPrivateKey, inputIndex)) {
+            is Either.Right -> {
+                Log.d(TAG, "Input $inputIndex: Signed successfully")
+                signResult.value.psbt
+            }
+            is Either.Left -> {
+                Log.w(TAG, "Input $inputIndex: Sign failed: ${signResult.value}")
+                null
+            }
+        }
+    }
+
+
     private fun buildAddressLookup(
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         scriptType: ScriptType
@@ -432,82 +617,6 @@ class BitcoinService {
         }
     }
 
-    private fun signInputIfOurs(
-        psbt: Psbt,
-        inputIndex: Int,
-        input: Input,
-        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
-        @Suppress("UNUSED_PARAMETER") scriptType: ScriptType, // Kept for API consistency
-        addressLookup: Map<ByteVector, AddressKeyInfo>
-    ): Psbt? {
-        return try {
-            // Debug: Log input type
-            val inputType = when (input) {
-                is Input.WitnessInput.PartiallySignedWitnessInput -> "PartiallySignedWitnessInput"
-                is Input.WitnessInput.FinalizedWitnessInput -> "FinalizedWitnessInput"
-                is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> "PartiallySignedNonWitnessInput"
-                is Input.NonWitnessInput.FinalizedNonWitnessInput -> "FinalizedNonWitnessInput"
-                is Input.PartiallySignedInputWithoutUtxo -> "PartiallySignedInputWithoutUtxo"
-                is Input.FinalizedInputWithoutUtxo -> "FinalizedInputWithoutUtxo"
-            }
-            Log.d(TAG, "Input $inputIndex type: $inputType")
-            
-            val scriptPubKey = getInputScriptPubKey(input)
-            if (scriptPubKey == null) {
-                Log.d(TAG, "Input $inputIndex has no scriptPubKey available (input type: $inputType)")
-                return null
-            }
-            
-            // Debug: Log the scriptPubKey we're looking for
-            Log.d(TAG, "Input $inputIndex scriptPubKey: ${scriptPubKey.toHex()}")
-            
-            val keyInfo = addressLookup[scriptPubKey]
-            if (keyInfo == null) {
-                Log.d(TAG, "Input $inputIndex scriptPubKey not found in wallet (${addressLookup.size} addresses checked)")
-                // Debug: Log first few wallet scriptPubKeys for comparison
-                addressLookup.entries.take(3).forEachIndexed { idx, entry ->
-                    Log.d(TAG, "  Wallet scriptPubKey $idx: ${entry.key.toHex()}")
-                }
-                return null
-            }
-
-            val signingPrivateKey = accountPrivateKey
-                .derivePrivateKey(keyInfo.changeIndex)
-                .derivePrivateKey(keyInfo.addressIndex)
-                .privateKey
-            
-            val signingPublicKey = keyInfo.publicKey
-
-            // For segwit inputs, we need to add the witnessScript if not present
-            // The library requires this even for P2WPKH (it uses pay2pkh as the "witness script")
-            var psbtToSign = psbt
-            if (input is Input.WitnessInput.PartiallySignedWitnessInput && input.witnessScript == null) {
-                // For P2WPKH, the witness script is the pay2pkh script using the public key
-                val witnessScript = Script.pay2pkh(signingPublicKey)
-                Log.d(TAG, "Adding witnessScript for P2WPKH input $inputIndex")
-                
-                // Update the input with the witness script
-                val updatedInput = input.copy(witnessScript = witnessScript)
-                val updatedInputs = psbt.inputs.toMutableList()
-                updatedInputs[inputIndex] = updatedInput
-                psbtToSign = psbt.copy(inputs = updatedInputs)
-            }
-
-            when (val signResult = psbtToSign.sign(signingPrivateKey, inputIndex)) {
-                is Either.Right -> {
-                    Log.d(TAG, "Successfully signed input $inputIndex")
-                    signResult.value.psbt
-                }
-                is Either.Left -> {
-                    Log.w(TAG, "Failed to sign input $inputIndex: ${signResult.value}")
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error signing input $inputIndex: ${e.message}", e)
-            null
-        }
-    }
 
     private fun getInputScriptPubKey(input: Input): ByteVector? {
         return when (input) {

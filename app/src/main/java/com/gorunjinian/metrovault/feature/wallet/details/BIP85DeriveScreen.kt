@@ -8,9 +8,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
@@ -18,12 +21,10 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * FIX: Critical Bug #2 - Duplicate word index bug (same as ExportOptionsScreen)
- *
- * Problem: Used derivedSeed!!.indexOf(word) which returns the FIRST occurrence.
- * If a mnemonic has duplicate words (valid in BIP39), both would show the same index.
- *
- * Solution: Track the actual index using withIndex(), not indexOf().
+ * BIP-85 Derivation Screen
+ * 
+ * Allows deriving child seed phrases from the master seed.
+ * Uses column-based layout for seed display (matching ExportOptionsScreen).
  */
 
 private fun hmacSha512(key: ByteArray, data: ByteArray): ByteArray {
@@ -43,6 +44,8 @@ fun BIP85DeriveScreen(
     var wordCount by remember { mutableIntStateOf(12) }
     var derivedSeed by remember { mutableStateOf<List<String>?>(null) }
     var errorMessage by remember { mutableStateOf("") }
+    // Track the current index for quick navigation
+    var currentIndex by remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -84,7 +87,11 @@ fun BIP85DeriveScreen(
 
                 SecureOutlinedTextField(
                     value = indexInput,
-                    onValueChange = { indexInput = it.filter { char -> char.isDigit() } },
+                    onValueChange = { 
+                        indexInput = it.filter { char -> char.isDigit() }
+                        // Update currentIndex when user types
+                        indexInput.toIntOrNull()?.let { idx -> currentIndex = idx }
+                    },
                     label = { Text("Index Number") },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -137,6 +144,7 @@ fun BIP85DeriveScreen(
                             errorMessage = "Please enter a valid index"
                             return@Button
                         }
+                        currentIndex = index
 
                         val walletState = wallet.getActiveWalletState()
                         if (walletState == null) {
@@ -192,50 +200,128 @@ fun BIP85DeriveScreen(
                     style = MaterialTheme.typography.headlineSmall
                 )
 
+                // Card with index info and quick navigation arrows
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
                 ) {
-                    Text(
-                        text = "Index: $indexInput | $wordCount words",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Index: $currentIndex | $wordCount words",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        
+                        // Quick navigation arrows
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Decrement button
+                            IconButton(
+                                onClick = {
+                                    if (currentIndex > 0) {
+                                        currentIndex--
+                                        indexInput = currentIndex.toString()
+                                        // Re-derive with new index
+                                        deriveSeed(wallet, currentIndex, wordCount)?.let { 
+                                            derivedSeed = it 
+                                        }
+                                    }
+                                },
+                                enabled = currentIndex > 0
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_arrow_circle_left),
+                                    contentDescription = "Previous index",
+                                    tint = if (currentIndex > 0) 
+                                        MaterialTheme.colorScheme.onPrimaryContainer 
+                                    else 
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.38f)
+                                )
+                            }
+                            
+                            // Increment button
+                            IconButton(
+                                onClick = {
+                                    currentIndex++
+                                    indexInput = currentIndex.toString()
+                                    // Re-derive with new index
+                                    deriveSeed(wallet, currentIndex, wordCount)?.let { 
+                                        derivedSeed = it 
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_arrow_circle_right),
+                                    contentDescription = "Next index",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
                 }
+
+                // Column-based seed display
+                // For 12 words: Column 1 = 1-6, Column 2 = 7-12
+                // For 24 words: Column 1 = 1-12, Column 2 = 13-24
+                val is24Words = derivedSeed!!.size == 24
+                val wordsPerColumn = derivedSeed!!.size / 2
+                val column1 = derivedSeed!!.take(wordsPerColumn)
+                val column2 = derivedSeed!!.drop(wordsPerColumn)
 
                 Card(
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(if (is24Words) 8.dp else 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(if (is24Words) 4.dp else 8.dp)
                     ) {
-                        // FIX: Use withIndex() to get proper indices for each word
-                        // This handles duplicate words correctly
-                        derivedSeed!!.withIndex().chunked(2).forEach { chunk ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                chunk.forEach { (index, word) ->
-                                    // FIX: Use the actual index from the list, not indexOf()
-                                    val wordNumber = index + 1  // 1-based numbering
-                                    Card(
-                                        modifier = Modifier.weight(1f),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                        )
-                                    ) {
-                                        Text(
-                                            text = "$wordNumber. $word",
-                                            modifier = Modifier.padding(12.dp)
-                                        )
-                                    }
+                        // First column
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(if (is24Words) 4.dp else 8.dp)
+                        ) {
+                            column1.forEachIndexed { index, word ->
+                                val wordNumber = index + 1
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                ) {
+                                    Text(
+                                        text = "$wordNumber. $word",
+                                        modifier = Modifier.padding(if (is24Words) 8.dp else 12.dp),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
                                 }
-                                // Handle odd number of words in last row
-                                if (chunk.size == 1) {
-                                    Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                        // Second column
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(if (is24Words) 4.dp else 8.dp)
+                        ) {
+                            column2.forEachIndexed { index, word ->
+                                val wordNumber = wordsPerColumn + index + 1
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                ) {
+                                    Text(
+                                        text = "$wordNumber. $word",
+                                        modifier = Modifier.padding(if (is24Words) 8.dp else 12.dp),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
                                 }
                             }
                         }
@@ -252,5 +338,40 @@ fun BIP85DeriveScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Helper function to derive a seed at a specific index.
+ * Returns null if derivation fails.
+ */
+private fun deriveSeed(wallet: Wallet, index: Int, wordCount: Int): List<String>? {
+    return try {
+        val walletState = wallet.getActiveWalletState() ?: return null
+        val masterPrivateKey = walletState.getMasterPrivateKey() ?: return null
+
+        val path = listOf(
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968),
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(39),
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(0),
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(wordCount.toLong()),
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
+        )
+
+        val derivedKey = masterPrivateKey.derivePrivateKey(path)
+        val entropy = derivedKey.secretkeybytes.toByteArray()
+
+        val hmacKey = "bip-entropy-from-k".toByteArray()
+        val hmac = hmacSha512(hmacKey, entropy)
+
+        val finalEntropy = if (wordCount == 12) {
+            hmac.sliceArray(0..15)
+        } else {
+            hmac.sliceArray(0..31)
+        }
+
+        MnemonicCode.toMnemonics(finalEntropy)
+    } catch (e: Exception) {
+        null
     }
 }

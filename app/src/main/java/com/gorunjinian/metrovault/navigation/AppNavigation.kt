@@ -6,6 +6,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.navigation.compose.NavHost
@@ -148,18 +151,34 @@ fun AppNavigation(
         android.util.Log.d("AppNavigation", "DESTINATION CHANGED: ${currentBackStackEntry?.destination?.route}")
     }
 
+    // Track lifecycle state to avoid navigating when app is backgrounded
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isAppResumed by remember { mutableStateOf(true) }
+    
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            isAppResumed = event == Lifecycle.Event.ON_RESUME
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     // Observe session state - navigate to unlock screen when session expires
+    // Only navigate if app is in foreground to avoid flashing unlock screen when backgrounding
     val sessionKeyManager = remember { SessionKeyManager.getInstance() }
     val isSessionActive by sessionKeyManager.isSessionActive.collectAsState()
 
-    LaunchedEffect(isSessionActive) {
+    LaunchedEffect(isSessionActive, isAppResumed) {
         val currentRoute = currentBackStackEntry?.destination?.route
-        // If session becomes inactive and we're not already on auth screens, navigate to unlock
+        // If session becomes inactive, app is resumed, and we're not already on auth screens, navigate to unlock
         if (!isSessionActive &&
+            isAppResumed &&
             currentRoute != null &&
             currentRoute != Screen.Unlock.route &&
             currentRoute != Screen.SetupPassword.route) {
-            android.util.Log.d("AppNavigation", "Session expired - navigating to unlock screen")
+            android.util.Log.d("AppNavigation", "Session expired while app resumed - navigating to unlock screen")
             navController.navigate(Screen.Unlock.route) {
                 popUpTo(0) { inclusive = true }
             }

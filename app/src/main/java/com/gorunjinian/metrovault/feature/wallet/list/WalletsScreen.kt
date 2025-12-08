@@ -47,6 +47,13 @@ fun WalletsListContent(
     var expandedWalletId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Auto-expand the wallet card when there's only one wallet
+    LaunchedEffect(wallets) {
+        if (wallets.size == 1) {
+            expandedWalletId = wallets.first().id
+        }
+    }
+
     // Drag and Drop State
     var draggingItemIndex by remember { mutableStateOf<Int?>(null) }
     var draggingItemOffset by remember { mutableFloatStateOf(0f) }
@@ -389,8 +396,8 @@ fun QuickActionButton(
 ) {
     FilledTonalButton(
         onClick = onClick,
-        modifier = Modifier.height(56.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        modifier = Modifier.height(60.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
