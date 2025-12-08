@@ -30,6 +30,7 @@ fun WalletDetailsScreen(
     onScanPSBT: () -> Unit,
     onExport: () -> Unit,
     onBIP85: () -> Unit,
+    onSignMessage: () -> Unit,
     onCheckAddress: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -96,6 +97,23 @@ fun WalletDetailsScreen(
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Derivation Path",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = derivationPath,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
                     if (fingerprint != null) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -114,23 +132,6 @@ fun WalletDetailsScreen(
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Derivation Path",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            text = derivationPath,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
                     }
                 }
             }
@@ -162,7 +163,7 @@ fun WalletDetailsScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Generate and view receiving addresses",
+                            text = "Generate and view public addresses",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -290,6 +291,36 @@ fun WalletDetailsScreen(
                         )
                         Text(
                             text = "Derive child seed phrases",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Sign/Verify Message
+            ElevatedCard(
+                onClick = onSignMessage,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_edit),
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column {
+                        Text(
+                            text = "Sign/Verify Message",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Sign messages or verify signatures",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

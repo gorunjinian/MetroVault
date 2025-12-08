@@ -9,12 +9,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.navigation.NavType
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.domain.Wallet
@@ -31,6 +33,7 @@ import com.gorunjinian.metrovault.feature.wallet.create.ImportWalletScreen
 import com.gorunjinian.metrovault.feature.wallet.details.AddressesScreen
 import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
+import com.gorunjinian.metrovault.feature.wallet.details.SignMessageScreen
 import com.gorunjinian.metrovault.feature.wallet.details.WalletDetailsScreen
 
 // Optimized animation parameters for smoother performance
@@ -49,11 +52,21 @@ sealed class Screen(val route: String) {
     object ScanPSBT : Screen("scan_psbt")
     object ExportOptions : Screen("export_options")
     object BIP85Derive : Screen("bip85_derive")
+    object SignMessage : Screen("sign_message?address={address}") {
+        fun createRoute(address: String? = null): String {
+            return if (address != null) {
+                "sign_message?address=${java.net.URLEncoder.encode(address, "UTF-8")}"
+            } else {
+                "sign_message"
+            }
+        }
+    }
     object CheckAddress : Screen("check_address")
     object CompleteMnemonic : Screen("complete_mnemonic")
     object About : Screen("about")
 }
 
+@Suppress("AssignedValueIsNeverRead")
 @Composable
 fun AppNavigation(
     userPreferencesRepository: UserPreferencesRepository = UserPreferencesRepository(LocalContext.current)
@@ -289,6 +302,7 @@ fun AppNavigation(
                 onScanPSBT = { navController.navigate(Screen.ScanPSBT.route) },
                 onExport = { navController.navigate(Screen.ExportOptions.route) },
                 onBIP85 = { navController.navigate(Screen.BIP85Derive.route) },
+                onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
                 onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },
                 onBack = {
                     if (navController.previousBackStackEntry != null) {
@@ -309,6 +323,9 @@ fun AppNavigation(
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)
                     }
+                },
+                onSignMessage = { address ->
+                    navController.navigate(Screen.SignMessage.createRoute(address))
                 }
             )
         }
@@ -344,6 +361,30 @@ fun AppNavigation(
                         navController.navigate(Screen.Home.route)
                     }
                 }
+            )
+        }
+
+        composable(
+            route = Screen.SignMessage.route,
+            arguments = listOf(
+                navArgument("address") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val address = backStackEntry.arguments?.getString("address")?.let {
+                java.net.URLDecoder.decode(it, "UTF-8")
+            }
+            SignMessageScreen(
+                wallet = wallet,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route)
+                    }
+                },
+                prefilledAddress = address
             )
         }
 

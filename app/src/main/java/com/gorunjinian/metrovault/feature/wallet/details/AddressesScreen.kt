@@ -32,7 +32,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddressesScreen(
     wallet: Wallet,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSignMessage: (String) -> Unit = {}
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var selectedAddress by remember { mutableStateOf<String?>(null) }
@@ -183,8 +184,18 @@ fun AddressesScreen(
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
-
+                
+                // Sign Message button
                 Button(
+                    onClick = { onSignMessage(selectedAddress!!) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Sign Message")
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
                     onClick = { selectedAddress = null },
                     modifier = Modifier.fillMaxWidth()
                 ) {
