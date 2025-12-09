@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.Manifest
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -87,6 +88,11 @@ fun SignMessageScreen(
     // Determine button state: Sign if address+message only, Verify if all three
     val canSign = addressInput.isNotBlank() && messageInput.isNotBlank() && signatureInput.isBlank()
     val canVerify = addressInput.isNotBlank() && messageInput.isNotBlank() && signatureInput.isNotBlank()
+    
+    // Handle back gesture when scanning - close scanner instead of navigating back
+    BackHandler(enabled = isScanning) {
+        isScanning = false
+    }
     
     Scaffold(
         topBar = {

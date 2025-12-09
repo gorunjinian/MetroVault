@@ -684,7 +684,7 @@ private fun TransactionConfirmation(
                                 else Color.Transparent
                             )
                             .clickable { showInSats = true }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
                             text = "sats",
@@ -703,7 +703,7 @@ private fun TransactionConfirmation(
                                 else Color.Transparent
                             )
                             .clickable { showInSats = false }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
                             text = "BTC",
