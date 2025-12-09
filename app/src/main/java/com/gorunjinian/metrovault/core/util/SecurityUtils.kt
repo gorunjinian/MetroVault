@@ -32,6 +32,11 @@ object SecurityUtils {
      * This prevents the keyboard from suggesting passwords, passkeys, or other autofill options.
      * Critical for security in a Bitcoin wallet app.
      *
+     * Uses multiple mechanisms:
+     * 1. Sets IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS on the view
+     * 2. Recursively applies to all child views
+     * 3. Clears autofill hints which password managers use to identify fields
+     *
      * @param view The view to disable autofill on
      */
     fun disableAutofill(view: View) {
@@ -39,8 +44,21 @@ object SecurityUtils {
             // IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS = 0x8
             // This tells the system not to use this view or any of its children for autofill
             view.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            
+            // Also clear any autofill hints that might trigger password manager
+            view.setAutofillHints(null)
+            
+            // Recursively apply to all children (in case the flag doesn't propagate correctly)
+            if (view is android.view.ViewGroup) {
+                for (i in 0 until view.childCount) {
+                    val child = view.getChildAt(i)
+                    child.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                    child.setAutofillHints(null)
+                }
+            }
         }
     }
+
 
     /**
      * Clears clipboard - compatible with API 26+

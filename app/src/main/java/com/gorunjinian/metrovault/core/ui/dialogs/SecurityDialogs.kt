@@ -67,6 +67,7 @@ fun ChangePasswordDialog(
                         label = { Text("Current Password") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
+                        isPasswordField = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
                             onNext = { newPasswordFocusRequester.requestFocus() }
@@ -78,6 +79,7 @@ fun ChangePasswordDialog(
                         label = { Text("New Password") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
+                        isPasswordField = true,
                         modifier = Modifier.focusRequester(newPasswordFocusRequester),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
@@ -90,6 +92,7 @@ fun ChangePasswordDialog(
                         label = { Text("Confirm New Password") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
+                        isPasswordField = true,
                         modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(
@@ -159,6 +162,7 @@ fun AddDecoyPasswordDialog(
                     label = { Text("Decoy Password") },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
+                    isPasswordField = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(
                         onNext = { confirmPasswordFocusRequester.requestFocus() }
@@ -171,6 +175,7 @@ fun AddDecoyPasswordDialog(
                     label = { Text("Confirm Password") },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
+                    isPasswordField = true,
                     modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(

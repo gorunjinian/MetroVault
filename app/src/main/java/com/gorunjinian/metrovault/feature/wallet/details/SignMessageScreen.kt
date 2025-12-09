@@ -31,6 +31,7 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.lib.bitcoin.Block
 import com.gorunjinian.metrovault.lib.bitcoin.MessageSigning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
+import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -244,7 +245,7 @@ fun SignMessageScreen(
                 }
                 
                 // Address Input with QR Scanner
-                OutlinedTextField(
+                SecureOutlinedTextField(
                     value = addressInput,
                     onValueChange = { 
                         addressInput = it
@@ -272,7 +273,7 @@ fun SignMessageScreen(
                 )
                 
                 // Message Input (larger)
-                OutlinedTextField(
+                SecureOutlinedTextField(
                     value = messageInput,
                     onValueChange = { 
                         messageInput = it
@@ -289,7 +290,7 @@ fun SignMessageScreen(
                 )
                 
                 // Signature Input
-                OutlinedTextField(
+                SecureOutlinedTextField(
                     value = signatureInput,
                     onValueChange = { 
                         signatureInput = it

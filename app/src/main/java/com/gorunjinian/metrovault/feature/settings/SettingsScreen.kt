@@ -524,6 +524,7 @@ fun SettingsContent(
                         },
                         label = { Text("Password") },
                         singleLine = true,
+                        isPasswordField = true,
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         isError = passwordError.isNotEmpty(),
                         enabled = !isDeleting,
@@ -762,6 +763,7 @@ fun BiometricPasswordDialog(
                     label = { Text("Password") },
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     singleLine = true,
+                    isPasswordField = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

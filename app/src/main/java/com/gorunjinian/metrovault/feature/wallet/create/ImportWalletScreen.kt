@@ -238,6 +238,7 @@ fun ImportWalletScreen(
                         label = { Text("BIP39 Passphrase (visible)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        isPasswordField = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
                             onNext = { confirmPassphraseFocusRequester.requestFocus() }
@@ -255,6 +256,7 @@ fun ImportWalletScreen(
                             .fillMaxWidth()
                             .focusRequester(confirmPassphraseFocusRequester),
                         singleLine = true,
+                        isPasswordField = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(
                             onDone = { keyboardController?.hide() }

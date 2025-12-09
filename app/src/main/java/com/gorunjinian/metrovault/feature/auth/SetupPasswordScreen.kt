@@ -86,6 +86,7 @@ fun SetupPasswordScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                isPasswordField = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(
                     onNext = { confirmPasswordFocusRequester.requestFocus() }
@@ -103,6 +104,7 @@ fun SetupPasswordScreen(
                     .fillMaxWidth()
                     .focusRequester(confirmPasswordFocusRequester),
                 singleLine = true,
+                isPasswordField = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(
                     onDone = { keyboardController?.hide() }

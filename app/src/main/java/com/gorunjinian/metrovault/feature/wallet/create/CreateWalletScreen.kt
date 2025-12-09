@@ -561,6 +561,7 @@ private fun ColumnScope.Step4Passphrase(
             label = { Text("BIP39 Passphrase (visible)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            isPasswordField = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(
                 onNext = { confirmPassphraseFocusRequester.requestFocus() }
@@ -578,6 +579,7 @@ private fun ColumnScope.Step4Passphrase(
                 .fillMaxWidth()
                 .focusRequester(confirmPassphraseFocusRequester),
             singleLine = true,
+            isPasswordField = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(
                 onDone = { keyboardController?.hide() }
