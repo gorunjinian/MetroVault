@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>Turn your Android phone into a secure Bitcoin hardware wallet</strong>
+  <strong>Turn your Android phone into a secure Bitcoin hardware wallet and signing device</strong>
 </p>
 
 <p align="center">
