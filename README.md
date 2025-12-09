@@ -60,6 +60,11 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 - **Address Verification**: Confirm receive/change addresses on trusted screen
 - **XPUB Export**: Generate watch-only wallets on your online device
 
+### 📖 Signing / Verifying Messages
+- **Sign Messages**: Sign messages to prove ownership
+- **Verify Signatures**: Verify signatures and messages
+- **Qr Code Support**: Sign messages using QR codes, and display signature via QR codes.
+
 ## 🔄 How It Works
 
 ```
