@@ -540,28 +540,63 @@ class BitcoinService {
         signingPrivateKey: PrivateKey,
         signingPublicKey: PublicKey
     ): Psbt? {
-        // For segwit inputs, we need to add the witnessScript if not present
+        // For P2WPKH inputs, we need to temporarily add the witnessScript for signing
+        // but must remove it afterwards per BIP-174 (P2WPKH doesn't use witnessScript field)
         var psbtToSign = psbt
+        var addedWitnessScriptForP2wpkh = false
+        
         if (input is Input.WitnessInput.PartiallySignedWitnessInput && input.witnessScript == null) {
-            val witnessScript = Script.pay2pkh(signingPublicKey)
-            Log.d(TAG, "Input $inputIndex: Adding witnessScript for P2WPKH")
+            // Check if this is actually P2WPKH
+            val pubkeyScript = runCatching { 
+                Script.parse(input.txOut.publicKeyScript) 
+            }.getOrNull()
             
-            val updatedInput = input.copy(witnessScript = witnessScript)
-            val updatedInputs = psbt.inputs.toMutableList()
-            updatedInputs[inputIndex] = updatedInput
-            psbtToSign = psbt.copy(inputs = updatedInputs)
+            if (pubkeyScript != null && Script.isPay2wpkh(pubkeyScript)) {
+                val witnessScript = Script.pay2pkh(signingPublicKey)
+                Log.d(TAG, "Input $inputIndex: Adding temporary witnessScript for P2WPKH signing")
+                
+                val updatedInput = input.copy(witnessScript = witnessScript)
+                val updatedInputs = psbt.inputs.toMutableList()
+                updatedInputs[inputIndex] = updatedInput
+                psbtToSign = psbt.copy(inputs = updatedInputs)
+                addedWitnessScriptForP2wpkh = true
+            }
         }
 
         return when (val signResult = psbtToSign.sign(signingPrivateKey, inputIndex)) {
             is Either.Right -> {
                 Log.d(TAG, "Input $inputIndex: Signed successfully")
-                signResult.value.psbt
+                var signedPsbt = signResult.value.psbt
+                
+                // Remove the temporary witnessScript for P2WPKH - it should NOT be in the final PSBT
+                // as it causes some finalizers (like BlueWallet) to incorrectly add it to the witness
+                if (addedWitnessScriptForP2wpkh) {
+                    signedPsbt = removeWitnessScriptFromInput(signedPsbt, inputIndex)
+                    Log.d(TAG, "Input $inputIndex: Removed temporary witnessScript from P2WPKH input")
+                }
+                
+                signedPsbt
             }
             is Either.Left -> {
                 Log.w(TAG, "Input $inputIndex: Sign failed: ${signResult.value}")
                 null
             }
         }
+    }
+
+    /**
+     * Removes the witnessScript field from a P2WPKH input after signing.
+     * Per BIP-174, P2WPKH inputs should NOT have the witnessScript field set.
+     */
+    private fun removeWitnessScriptFromInput(psbt: Psbt, inputIndex: Int): Psbt {
+        val input = psbt.inputs[inputIndex]
+        if (input is Input.WitnessInput.PartiallySignedWitnessInput && input.witnessScript != null) {
+            val cleanedInput = input.copy(witnessScript = null)
+            val updatedInputs = psbt.inputs.toMutableList()
+            updatedInputs[inputIndex] = cleanedInput
+            return psbt.copy(inputs = updatedInputs)
+        }
+        return psbt
     }
 
 
