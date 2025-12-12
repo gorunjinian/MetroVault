@@ -264,6 +264,7 @@ fun HomeScreen(
                     0 -> WalletsListContent(
                         wallet = wallet,
                         secureStorage = secureStorage,
+                        autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
                         onWalletClick = onWalletClickCallback,
                         onViewAddresses = onViewAddressesCallback,
                         onScanPSBT = onScanPSBTCallback,

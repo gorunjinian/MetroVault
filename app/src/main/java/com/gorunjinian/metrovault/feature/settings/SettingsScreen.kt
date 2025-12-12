@@ -267,6 +267,98 @@ fun SettingsContent(
                             )
                         }
                     }
+
+                    // Wipe on Failed Attempts Toggle
+                    val wipeOnFailedAttempts by userPreferencesRepository.wipeOnFailedAttempts.collectAsState()
+                    var showWipeConfirmDialog by remember { mutableStateOf(false) }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_delete_forever),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Wipe Data on Failed Login",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "Delete all data after 3 wrong passwords",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = wipeOnFailedAttempts,
+                            onCheckedChange = { enabled ->
+                                if (enabled) {
+                                    showWipeConfirmDialog = true
+                                } else {
+                                    userPreferencesRepository.setWipeOnFailedAttempts(false)
+                                }
+                            }
+                        )
+                    }
+
+                    // Wipe confirmation dialog
+                    if (showWipeConfirmDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showWipeConfirmDialog = false },
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_delete),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            title = { Text("Enable Data Wipe?") },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        "This is a destructive security feature.",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    Text("If someone enters the wrong password 3 times in a row, ALL app data will be permanently deleted:")
+                                    Text("• All wallets")
+                                    Text("• All passwords")
+                                    Text("• All settings")
+                                    Text(
+                                        "This cannot be undone. Make sure you have backups of your seed phrases!",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        userPreferencesRepository.setWipeOnFailedAttempts(true)
+                                        showWipeConfirmDialog = false
+                                    }
+                                ) {
+                                    Text("Enable", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showWipeConfirmDialog = false }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -320,6 +412,47 @@ fun SettingsContent(
                         )
                     }
 
+                    // Auto-expand single wallet card
+                    val autoExpandEnabled by userPreferencesRepository.autoExpandSingleWallet.collectAsState()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_expand),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Auto-expand Single Wallet",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "Expand wallet card if only 1 exists",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = autoExpandEnabled,
+                            onCheckedChange = { enabled ->
+                                userPreferencesRepository.setAutoExpandSingleWallet(enabled)
+                            }
+                        )
+                    }
+
                     // Complete Mnemonic
                     SettingsItem(
                         icon = R.drawable.ic_format_list_numbered,
@@ -332,7 +465,7 @@ fun SettingsContent(
                     SettingsItem(
                         icon = R.drawable.ic_delete,
                         title = "Delete All Wallets",
-                        description = "Remove all wallets from this vault",
+                        description = "Remove all wallets from the vault",
                         onClick = { showDeleteAllWalletsDialog = true },
                         iconTint = MaterialTheme.colorScheme.error
                     )

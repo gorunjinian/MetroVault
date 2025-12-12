@@ -564,4 +564,86 @@ class SecureStorage(private val context: Context) {
     fun clearSession() {
         sessionKeyManager.clearSession()
     }
+
+    // ============================================================================
+    // DATA WIPE (Security Feature)
+    // ============================================================================
+
+    /**
+     * Gets the current number of failed login attempts.
+     */
+    fun getFailedAttemptCount(): Int {
+        return loginAttemptManager.getFailedAttemptCount()
+    }
+
+    /**
+     * Completely wipes all app data - both main and decoy wallets, passwords, and preferences.
+     * Called when the "wipe on failed login" security feature is triggered.
+     *
+     * WARNING: This is irreversible! All wallet data will be permanently deleted.
+     * 
+     * Clears:
+     * - Main vault data (wallets, password hash)
+     * - Decoy vault data (wallets, password hash)
+     * - Biometric password storage
+     * - User preferences (including biometric settings)
+     * - Login attempts
+     * - Session keys
+     */
+    fun wipeAllData() {
+        Log.w(TAG, "SECURITY WIPE: Wiping all application data due to failed login attempts")
+        
+        try {
+            // Clear all main vault data
+            mainPrefs.edit { clear() }
+            Log.d(TAG, "Main vault data wiped")
+            
+            // Clear all decoy vault data
+            decoyPrefs.edit { clear() }
+            Log.d(TAG, "Decoy vault data wiped")
+            
+            // Clear biometric password storage
+            try {
+                val biometricPrefs = context.getSharedPreferences("biometric_prefs", android.content.Context.MODE_PRIVATE)
+                biometricPrefs.edit { clear() }
+                Log.d(TAG, "Biometric passwords wiped")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error clearing biometric prefs: ${e.message}")
+            }
+            
+            // Clear user preferences (biometric enabled state, etc.)
+            try {
+                // UserPreferencesRepository uses EncryptedSharedPreferences with "metrovault_settings"
+                val userPrefs = androidx.security.crypto.EncryptedSharedPreferences.create(
+                    context,
+                    "metrovault_settings",
+                    masterKey,
+                    androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                userPrefs.edit { clear() }
+                Log.d(TAG, "User preferences wiped")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error clearing user prefs: ${e.message}")
+            }
+            
+            // Reset login attempts
+            loginAttemptManager.resetAttempts()
+            Log.d(TAG, "Login attempts reset")
+            
+            // Clear session
+            sessionKeyManager.clearSession()
+            Log.d(TAG, "Session cleared")
+            
+            Log.w(TAG, "SECURITY WIPE: Complete - all data has been permanently deleted")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during security wipe: ${e.message}", e)
+            // Even if there's an error, try to clear as much as possible
+            try {
+                mainPrefs.edit { clear() }
+                decoyPrefs.edit { clear() }
+                context.getSharedPreferences("biometric_prefs", android.content.Context.MODE_PRIVATE).edit { clear() }
+            } catch (_: Exception) { }
+        }
+    }
 }

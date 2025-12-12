@@ -41,6 +41,9 @@ fun SetupPasswordScreen(
                 is AuthViewModel.AuthEvent.UnlockSuccess -> {
                     // Not relevant for SetupPasswordScreen
                 }
+                is AuthViewModel.AuthEvent.DataWiped -> {
+                    // Not relevant for SetupPasswordScreen
+                }
             }
         }
     }

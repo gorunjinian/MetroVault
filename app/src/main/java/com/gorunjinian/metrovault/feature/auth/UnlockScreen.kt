@@ -26,7 +26,8 @@ import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 @Composable
 fun UnlockScreen(
     viewModel: AuthViewModel = viewModel(),
-    onUnlockSuccess: (autoOpenRequested: Boolean) -> Unit
+    onUnlockSuccess: (autoOpenRequested: Boolean) -> Unit,
+    onDataWiped: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -46,6 +47,9 @@ fun UnlockScreen(
                 }
                 is AuthViewModel.AuthEvent.SetupComplete -> {
                     // Not relevant for UnlockScreen
+                }
+                is AuthViewModel.AuthEvent.DataWiped -> {
+                    onDataWiped()
                 }
             }
         }

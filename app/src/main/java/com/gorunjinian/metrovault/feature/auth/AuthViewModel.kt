@@ -62,6 +62,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     sealed class AuthEvent {
         data class UnlockSuccess(val autoOpenRequested: Boolean) : AuthEvent()
         object SetupComplete : AuthEvent()
+        object DataWiped : AuthEvent()
     }
 
     private val _events = MutableSharedFlow<AuthEvent>()
@@ -148,12 +149,25 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } else {
-                _unlockState.update { 
-                    it.copy(
-                        isAuthenticating = false, 
-                        password = "",
-                        errorMessage = error ?: "Incorrect password"
-                    ) 
+                // Check if wipe on failed attempts is enabled
+                val wipeEnabled = userPreferencesRepository.wipeOnFailedAttempts.value
+                val failedAttempts = secureStorage.getFailedAttemptCount()
+                
+                if (wipeEnabled && failedAttempts >= 3) {
+                    // Wipe all data and navigate to setup
+                    withContext(Dispatchers.IO) {
+                        secureStorage.wipeAllData()
+                    }
+                    _unlockState.update { it.copy(isAuthenticating = false, password = "", errorMessage = "") }
+                    _events.emit(AuthEvent.DataWiped)
+                } else {
+                    _unlockState.update { 
+                        it.copy(
+                            isAuthenticating = false, 
+                            password = "",
+                            errorMessage = error ?: "Incorrect password"
+                        ) 
+                    }
                 }
             }
         }

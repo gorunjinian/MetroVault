@@ -6,18 +6,18 @@ import kotlin.jvm.JvmField
 import kotlin.jvm.JvmStatic
 
 @OptIn(ExperimentalUnsignedTypes::class)
-public class UInt256() : Comparable<UInt256> {
+class UInt256() : Comparable<UInt256> {
     private val pn = UIntArray(WIDTH)
 
-    public constructor(rhs: UInt256) : this() {
+    constructor(rhs: UInt256) : this() {
         rhs.pn.copyInto(pn, 0)
     }
 
-    public constructor(value: Long) : this() {
+    constructor(value: Long) : this() {
         setUInt64(value)
     }
 
-    public constructor(value: ByteArray) : this() {
+    constructor(value: ByteArray) : this() {
         require(value.size <= 32)
         val reversed = value.reversedArray() + ByteArray(32 - value.size)
         for (i in 0 until WIDTH) {
@@ -25,7 +25,7 @@ public class UInt256() : Comparable<UInt256> {
         }
     }
 
-    public fun setUInt64(value: Long) {
+    fun setUInt64(value: Long) {
         pn[0] = (value and 0xffffffff).toUInt()
         pn[1] = (value.ushr(32) and 0xffffffff).toUInt()
         for (i in 2 until WIDTH) {
@@ -41,13 +41,13 @@ public class UInt256() : Comparable<UInt256> {
         return 0
     }
 
-    public operator fun inc(): UInt256 {
+    operator fun inc(): UInt256 {
         var i = 0
         while (i < WIDTH && ++pn[i] == 0U) i++
         return this
     }
 
-    public operator fun unaryMinus(): UInt256 {
+    operator fun unaryMinus(): UInt256 {
         val a = UInt256(this)
         for (i in a.pn.indices) {
             a.pn[i] = a.pn[i].inv()
@@ -55,7 +55,7 @@ public class UInt256() : Comparable<UInt256> {
         return a.inc()
     }
 
-    public operator fun plusAssign(other: UInt256) {
+    operator fun plusAssign(other: UInt256) {
         var carry = 0L
         for (i in 0 until WIDTH) {
             val n = carry + pn[i].toLong() + other.pn[i].toLong()
@@ -64,11 +64,11 @@ public class UInt256() : Comparable<UInt256> {
         }
     }
 
-    public operator fun minusAssign(other: UInt256) {
+    operator fun minusAssign(other: UInt256) {
         plusAssign(-other)
     }
 
-    public operator fun divAssign(other: UInt256) {
+    operator fun divAssign(other: UInt256) {
         var div = other
         val num = UInt256(this)
         for (i in pn.indices) pn[i] = 0U
@@ -88,7 +88,7 @@ public class UInt256() : Comparable<UInt256> {
         }
     }
 
-    public operator fun timesAssign(other: UInt256) {
+    operator fun timesAssign(other: UInt256) {
         val a = UInt256()
         for (j in 0 until WIDTH) {
             var carry = 0UL
@@ -103,7 +103,7 @@ public class UInt256() : Comparable<UInt256> {
         a.pn.copyInto(pn, 0)
     }
 
-    public infix fun shl(bitCount: Int): UInt256 {
+    infix fun shl(bitCount: Int): UInt256 {
         val a = UInt256()
         val k = bitCount / 32
         val shift = bitCount % 32
@@ -116,7 +116,7 @@ public class UInt256() : Comparable<UInt256> {
         return a
     }
 
-    public infix fun shr(bitCount: Int): UInt256 {
+    infix fun shr(bitCount: Int): UInt256 {
         val a = UInt256()
         val k = bitCount / 32
         val shift = bitCount % 32
@@ -129,7 +129,7 @@ public class UInt256() : Comparable<UInt256> {
         return a
     }
 
-    public fun inv(): UInt256 {
+    fun inv(): UInt256 {
         val a = UInt256(this)
         for (i in a.pn.indices) {
             a.pn[i] = a.pn[i].inv()
@@ -137,7 +137,7 @@ public class UInt256() : Comparable<UInt256> {
         return a
     }
 
-    public fun bits(): Int {
+    fun bits(): Int {
         for (pos in WIDTH - 1 downTo 0) {
             if (pn[pos] != 0U) {
                 for (nbits in 31 downTo 0) {
@@ -150,9 +150,9 @@ public class UInt256() : Comparable<UInt256> {
         return 0
     }
 
-    public fun getLow64(): Long = pn[0].toLong() or (pn[1].toLong().shl(32))
+    fun getLow64(): Long = pn[0].toLong() or (pn[1].toLong().shl(32))
 
-    public fun encodeCompact(fNegative: Boolean): Long {
+    fun encodeCompact(fNegative: Boolean): Long {
         var nSize = (bits() + 7) / 8
         var nCompact: Long = if (nSize <= 3) {
             getLow64() shl 8 * (3 - nSize)
@@ -176,7 +176,7 @@ public class UInt256() : Comparable<UInt256> {
 
     }
 
-    public fun toDouble(): Double {
+    fun toDouble(): Double {
         var ret = 0.0
         var fact = 1.0
         for (i in 0 until WIDTH) {
@@ -200,23 +200,21 @@ public class UInt256() : Comparable<UInt256> {
 
         other as UInt256
 
-        if (!pn.contentEquals(other.pn)) return false
-
-        return true
+        return pn.contentEquals(other.pn)
     }
 
     override fun hashCode(): Int {
         return pn.contentHashCode()
     }
 
-    public companion object {
+    companion object {
         private const val WIDTH = 8
 
         @JvmField
-        public val Zero: UInt256 = UInt256()
+        val Zero: UInt256 = UInt256()
 
         @JvmStatic
-        public fun decodeCompact(nCompact: Long): Triple<UInt256, Boolean, Boolean> {
+        fun decodeCompact(nCompact: Long): Triple<UInt256, Boolean, Boolean> {
             val nSize = (nCompact ushr 24).toInt()
             var nWord = nCompact and 0x007fffff
             var result = UInt256()

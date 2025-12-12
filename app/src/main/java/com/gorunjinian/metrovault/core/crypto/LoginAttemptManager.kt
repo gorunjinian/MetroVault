@@ -10,7 +10,7 @@ import androidx.core.content.edit
  * Security strategy:
  * - Exponential backoff: delays increase with each failed attempt
  * - Persistent storage: survives app restart
- * - Progressive delays: 0s → 30s → 1m → 5m → 15m → 1h
+ * - Progressive delays: 0s → 0s → 30s → 1m → 5m → 15m → 1h
  * - Permanent lockout after 20 attempts (24 hour cooldown)
  *
  * Attack mitigation:
@@ -31,13 +31,15 @@ class LoginAttemptManager(context: Context) {
         private const val KEY_LAST_ATTEMPT = "last_attempt"
 
         // Progressive delay strategy (OWASP recommended)
+        // Delays start at 3rd attempt to allow 2 free retries
         private val LOCKOUT_DELAYS = listOf(
             0L,           // 1st attempt: no delay
-            30_000L,      // 2nd attempt: 30 seconds
-            60_000L,      // 3rd attempt: 1 minute
-            300_000L,     // 4th attempt: 5 minutes
-            900_000L,     // 5th attempt: 15 minutes
-            3600_000L     // 6+ attempts: 1 hour
+            0L,           // 2nd attempt: no delay
+            30_000L,      // 3rd attempt: 30 seconds
+            60_000L,      // 4th attempt: 1 minute
+            300_000L,     // 5th attempt: 5 minutes
+            900_000L,     // 6th attempt: 15 minutes
+            3600_000L     // 7+ attempts: 1 hour
         )
 
         private const val MAX_ATTEMPTS_BEFORE_PERMANENT_LOCK = 20
@@ -108,6 +110,13 @@ class LoginAttemptManager(context: Context) {
     fun resetAttempts() {
         prefs.edit { clear() }
         android.util.Log.d(TAG, "Login attempts reset after successful authentication")
+    }
+
+    /**
+     * Gets the current failed attempt count
+     */
+    fun getFailedAttemptCount(): Int {
+        return prefs.getInt(KEY_FAILED_ATTEMPTS, 0)
     }
 
     /**

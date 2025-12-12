@@ -249,6 +249,12 @@ fun AppNavigation(
                 onUnlockSuccess = { autoOpenRequested ->
                     // Set state at AppNavigation level to trigger the LaunchedEffect
                     pendingAutoOpen = autoOpenRequested
+                },
+                onDataWiped = {
+                    // Data was wiped due to failed login attempts - navigate to setup
+                    navController.navigate(Screen.SetupPassword.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }

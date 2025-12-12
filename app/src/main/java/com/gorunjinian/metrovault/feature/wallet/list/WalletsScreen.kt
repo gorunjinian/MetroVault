@@ -36,6 +36,7 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 fun WalletsListContent(
     wallet: Wallet, // Renamed from Wallet to wallet
     secureStorage: SecureStorage,
+    autoExpandSingleWallet: Boolean = false,
     onWalletClick: (String) -> Unit,
     onViewAddresses: (String) -> Unit,
     onScanPSBT: (String) -> Unit,
@@ -47,9 +48,9 @@ fun WalletsListContent(
     var expandedWalletId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    // Auto-expand the wallet card when there's only one wallet
-    LaunchedEffect(wallets) {
-        if (wallets.size == 1) {
+    // Auto-expand the wallet card when there's only one wallet (if preference is enabled)
+    LaunchedEffect(wallets, autoExpandSingleWallet) {
+        if (autoExpandSingleWallet && wallets.size == 1) {
             expandedWalletId = wallets.first().id
         }
     }

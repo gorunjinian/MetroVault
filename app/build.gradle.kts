@@ -16,8 +16,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 2
-        versionName = "2.0.0"
-
+        versionName = "2.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -66,7 +65,7 @@ android {
             val appName = "MetroVault"
             val versionName = variant.versionName
             val buildType = variant.buildType.name
-            output.outputFileName = "$appName-v$versionName-$buildType.apk"
+            output.outputFileName = "$appName-$versionName-$buildType.apk"
         }
     }
 
@@ -75,8 +74,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     buildFeatures {

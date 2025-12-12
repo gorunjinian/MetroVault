@@ -48,6 +48,12 @@ class UserPreferencesRepository(context: Context) {
     private val _biometricTarget = MutableStateFlow(prefs.getString(KEY_BIOMETRIC_TARGET, BIOMETRIC_TARGET_NONE) ?: BIOMETRIC_TARGET_NONE)
     val biometricTarget: StateFlow<String> = _biometricTarget.asStateFlow()
 
+    private val _wipeOnFailedAttempts = MutableStateFlow(prefs.getBoolean(KEY_WIPE_ON_FAILED_ATTEMPTS, false))
+    val wipeOnFailedAttempts: StateFlow<Boolean> = _wipeOnFailedAttempts.asStateFlow()
+
+    private val _autoExpandSingleWallet = MutableStateFlow(prefs.getBoolean(KEY_AUTO_EXPAND_SINGLE_WALLET, false))
+    val autoExpandSingleWallet: StateFlow<Boolean> = _autoExpandSingleWallet.asStateFlow()
+
     fun setThemeMode(mode: String) {
         if (mode in listOf(THEME_LIGHT, THEME_DARK, THEME_SYSTEM)) {
             prefs.edit { putString(KEY_THEME_MODE, mode) }
@@ -77,6 +83,16 @@ class UserPreferencesRepository(context: Context) {
         _autoOpenSingleWalletDecoy.value = enabled
     }
 
+    fun setWipeOnFailedAttempts(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_WIPE_ON_FAILED_ATTEMPTS, enabled) }
+        _wipeOnFailedAttempts.value = enabled
+    }
+
+    fun setAutoExpandSingleWallet(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_AUTO_EXPAND_SINGLE_WALLET, enabled) }
+        _autoExpandSingleWallet.value = enabled
+    }
+
     companion object {
         private const val PREFS_NAME = "metrovault_settings"
         private const val KEY_THEME_MODE = "theme_mode"
@@ -84,6 +100,8 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_BIOMETRIC_TARGET = "biometric_target"
         private const val KEY_AUTO_OPEN_SINGLE_WALLET_MAIN = "auto_open_single_wallet_main"
         private const val KEY_AUTO_OPEN_SINGLE_WALLET_DECOY = "auto_open_single_wallet_decoy"
+        private const val KEY_WIPE_ON_FAILED_ATTEMPTS = "wipe_on_failed_attempts"
+        private const val KEY_AUTO_EXPAND_SINGLE_WALLET = "auto_expand_single_wallet"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
         const val THEME_SYSTEM = "system"

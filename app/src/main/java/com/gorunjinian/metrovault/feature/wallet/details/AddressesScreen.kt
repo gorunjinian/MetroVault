@@ -1,8 +1,6 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
-import com.gorunjinian.metrovault.data.model.ScriptType
-
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -18,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -144,14 +143,15 @@ fun AddressesScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(24.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Top
             ) {
                 qrBitmap?.let { bitmap ->
                     Card(
                         modifier = Modifier
-                            .size(300.dp)
+                            .size(320.dp)
                             .clickable {
                                 // Copy address to clipboard
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -209,7 +209,7 @@ fun AddressesScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                TabRow(
+                SecondaryTabRow(
                     selectedTabIndex = selectedTabIndex
                 ) {
                     Tab(
@@ -230,7 +230,7 @@ fun AddressesScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(currentAddresses) { addressInfo ->

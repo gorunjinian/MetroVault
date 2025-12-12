@@ -29,6 +29,7 @@ class SecureMemoryManager private constructor(application: Application) : Compon
         System.gc()
     }
 
+    @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {
         when (level) {
             ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> {

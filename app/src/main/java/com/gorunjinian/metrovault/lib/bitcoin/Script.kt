@@ -1,5 +1,7 @@
 package com.gorunjinian.metrovault.lib.bitcoin
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayInput
 import com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayOutput
 import com.gorunjinian.metrovault.lib.bitcoin.io.Input
@@ -799,6 +801,7 @@ object Script {
         public fun decodeNumber(input: ByteArray, maximumSize: Int = 4): Long =
             decodeNumber(input, checkMinimalEncoding(), maximumSize)
 
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
         public fun run(script: ByteArray, signatureVersion: Int): List<ByteVector> {
             return run(script, listOf(), signatureVersion)
         }
@@ -806,6 +809,7 @@ object Script {
         public fun run(script: List<ScriptElt>, signatureVersion: Int): List<ByteVector> =
             run(script, listOf(), signatureVersion)
 
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
         public fun run(script: ByteArray, stack: List<ByteVector>, signatureVersion: Int): List<ByteVector> {
             if (signatureVersion == SigVersion.SIGVERSION_BASE || signatureVersion == SigVersion.SIGVERSION_WITNESS_V0) {
                 require(script.size <= MAX_SCRIPT_SIZE) { "Script is too large" }
@@ -816,6 +820,7 @@ object Script {
         public fun run(script: ByteVector, stack: List<ByteVector>, signatureVersion: Int): List<ByteVector> =
             run(script.toByteArray(), stack, signatureVersion)
 
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
         public fun run(
             script: List<ScriptElt>,
             stack: List<ByteVector>,
@@ -828,6 +833,7 @@ object Script {
         /**
          * internal script execution loop.
          */
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
         private fun runInternal(
             script: List<ScriptElt>,
             inputStack: List<ByteVector>,

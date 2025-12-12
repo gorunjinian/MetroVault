@@ -5,7 +5,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -365,7 +364,7 @@ fun WalletDetailsScreen(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete Wallet") },
             text = { 
-                Text("Are you sure you want to delete this wallet? This action cannot be undone unless you have your seed phrase backed up.") 
+                Text("Are you sure you want to delete this wallet?\nThis action cannot be undone unless you have your seed phrase backed up.")
             },
             confirmButton = {
                 TextButton(
@@ -383,7 +382,13 @@ fun WalletDetailsScreen(
                     Text("Cancel")
                 }
             },
-            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+            icon = { 
+                Icon(
+                    painter = painterResource(R.drawable.ic_delete), 
+                    contentDescription = null, 
+                    tint = MaterialTheme.colorScheme.error
+                ) 
+            }
         )
     }
 
