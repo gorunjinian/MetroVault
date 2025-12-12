@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -793,15 +794,23 @@ private fun TransactionConfirmation(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = outputWithType.output.address,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (outputWithType.isChangeAddress == true) 
-                                        MaterialTheme.colorScheme.onSurfaceVariant 
-                                        else MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
+                                // Horizontally scrollable address container
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .horizontalScroll(rememberScrollState()),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = outputWithType.output.address,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (outputWithType.isChangeAddress == true) 
+                                            MaterialTheme.colorScheme.onSurfaceVariant 
+                                            else MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
                                 // Change badge
                                 if (outputWithType.isChangeAddress == true) {
                                     Spacer(modifier = Modifier.width(8.dp))

@@ -46,6 +46,7 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 | **Biometric Authentication** | Hardware-backed fingerprint/face unlock with crypto binding |
 | **Plausible Deniability** | Separate "Main" and "Decoy" wallets with different passwords |
 | **Brute-Force Protection** | Exponential backoff rate limiting with 24-hour lockout |
+| **Automatic Wipe** | Optional feature to completely wipe sensitive data after 3 unsuccessful login attempts |
 
 ### 💼 Wallet Management
 - **Multi-Type Support**: Native SegWit (`bc1q...`), Taproot (`bc1p...`), Nested SegWit (`3...`), Legacy (`1...`)
