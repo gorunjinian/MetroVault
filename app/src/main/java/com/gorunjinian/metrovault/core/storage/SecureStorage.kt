@@ -79,8 +79,15 @@ data class PasswordHash(
  * - All other operations: <5ms (just AES-GCM)
  * 
  * Marked as @Stable for Compose: identity doesn't change, prevents unnecessary recomposition.
+ * 
+ * Note: EncryptedSharedPreferences is deprecated but still functional and secure.
+ * The recommended migration path is DataStore + Tink, but there's no urgent security risk
+ * as the seed data is additionally encrypted with PBKDF2-derived session keys.
+ * 
+ * TODO: Migrate to DataStore + Tink when Google provides clearer guidance.
  */
 @Stable
+@Suppress("DEPRECATION")
 class SecureStorage(private val context: Context) {
 
     private val sessionKeyManager = SessionKeyManager.getInstance()
