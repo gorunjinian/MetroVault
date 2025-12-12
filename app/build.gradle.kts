@@ -154,10 +154,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
 
-    // Room Database (for secure storage)
-    implementation("androidx.room:room-runtime:2.8.4")
-    implementation("androidx.room:room-ktx:2.8.4")
-
     //bitcoin libraries
     implementation(kotlin("stdlib"))
     implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.21.0")
