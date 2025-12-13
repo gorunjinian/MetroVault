@@ -94,6 +94,25 @@ class BitcoinService {
         }
     }
 
+    /**
+     * Calculates the master fingerprint from mnemonic and passphrase.
+     * Used for real-time fingerprint preview in passphrase dialogs.
+     * 
+     * @return 8-character hex fingerprint or null on error
+     */
+    fun calculateFingerprint(mnemonicWords: List<String>, passphrase: String): String? {
+        return try {
+            val seed = MnemonicCode.toSeed(mnemonicWords, passphrase)
+            val masterPrivateKey = DeterministicWallet.generate(seed.byteVector())
+            val masterPubKey = masterPrivateKey.publicKey
+            val hash160 = Crypto.hash160(masterPubKey.value.toByteArray())
+            hash160.take(4).joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            Log.w(TAG, "Failed to calculate fingerprint")
+            null
+        }
+    }
+
     fun createWalletFromMnemonic(
         mnemonicWords: List<String>,
         passphrase: String = "",
@@ -158,6 +177,45 @@ class BitcoinService {
             )
         } catch (_: Exception) {
             Log.e(TAG, "Failed to generate address at index $index")
+            null
+        }
+    }
+
+    /**
+     * Data class for address key pair.
+     */
+    data class AddressKeyPair(
+        val publicKey: String,      // Compressed public key (33 bytes hex, starts with 02 or 03)
+        val privateKeyWIF: String   // Private key in WIF format (starts with K or L for mainnet compressed)
+    )
+
+    /**
+     * Gets the public and private key for a specific address.
+     * @param accountPrivateKey The wallet's account private key
+     * @param index Address index
+     * @param isChange Whether this is a change address
+     * @return AddressKeyPair with public key (hex) and private key (WIF), or null on error
+     */
+    fun getAddressKeys(
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        index: Int,
+        isChange: Boolean
+    ): AddressKeyPair? {
+        return try {
+            val changeIndex = if (isChange) 1L else 0L
+            val addressPrivateKey = accountPrivateKey
+                .derivePrivateKey(changeIndex)
+                .derivePrivateKey(index.toLong())
+
+            val privateKey = addressPrivateKey.privateKey
+            val publicKey = privateKey.publicKey()
+
+            AddressKeyPair(
+                publicKey = publicKey.toHex(),
+                privateKeyWIF = privateKey.toBase58(Base58.Prefix.SecretKey)
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get address keys at index $index: ${e.message}")
             null
         }
     }

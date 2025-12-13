@@ -26,6 +26,7 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.feature.settings.SettingsContent
 import com.gorunjinian.metrovault.feature.wallet.list.WalletsListContent
 
+
 enum class BottomNavTab {
     WALLETS, SETTINGS
 }
@@ -104,6 +105,40 @@ fun HomeScreen(
             }
         }
     }
+
+    val onExportCallback = remember<(String) -> Unit>(wallet, navController, scope) {
+        { walletId ->
+            scope.launch {
+                val loaded = wallet.openWallet(walletId)
+                if (loaded) {
+                    navController.navigate(Screen.ExportOptions.route)
+                }
+            }
+        }
+    }
+
+    val onBIP85Callback = remember<(String) -> Unit>(wallet, navController, scope) {
+        { walletId ->
+            scope.launch {
+                val loaded = wallet.openWallet(walletId)
+                if (loaded) {
+                    navController.navigate(Screen.BIP85Derive.route)
+                }
+            }
+        }
+    }
+
+    val onSignMessageCallback = remember<(String) -> Unit>(wallet, navController, scope) {
+        { walletId ->
+            scope.launch {
+                val loaded = wallet.openWallet(walletId)
+                if (loaded) {
+                    navController.navigate(Screen.SignMessage.route)
+                }
+            }
+        }
+    }
+
 
     // Sync pager to selectedTab on configuration change/rotation
     // This ensures the pager shows the correct page even if rememberPagerState
@@ -265,10 +300,14 @@ fun HomeScreen(
                         wallet = wallet,
                         secureStorage = secureStorage,
                         autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
+                        quickShortcuts = userPreferencesRepository.quickShortcuts.collectAsState().value,
                         onWalletClick = onWalletClickCallback,
                         onViewAddresses = onViewAddressesCallback,
                         onScanPSBT = onScanPSBTCallback,
-                        onCheckAddress = onCheckAddressCallback
+                        onCheckAddress = onCheckAddressCallback,
+                        onExport = onExportCallback,
+                        onBIP85 = onBIP85Callback,
+                        onSignMessage = onSignMessageCallback
                     )
                     1 -> SettingsContent(
                         wallet = wallet,

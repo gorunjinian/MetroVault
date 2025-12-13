@@ -243,10 +243,40 @@ Wallet data is split into two categories with different security levels:
 ├─────────────────────────────────────────────────────────────────┤
 │  Contents:                                                      │
 │  • Mnemonic Phrase (12 or 24 words)                             │
-│  • Optional Passphrase                                          │
+│  • Optional Passphrase (if savePassphraseLocally = true)        │
 │                                                                 │
 │  Storage: Session-key encrypted within EncryptedSharedPreferences│
 │  Encryption: Dual layer (session key + platform)                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Session-Only Passphrase Storage
+
+Users can optionally choose to **not save their BIP-39 passphrase** to device storage:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               Session-Only Passphrase Mode                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  When enabled:                                                  │
+│  • Passphrase stored only in RAM (never written to disk)        │
+│  • User must re-enter passphrase each time app opens            │
+│  • Passphrase wiped on: logout, app background, force close     │
+│                                                                 │
+│  Security Benefits:                                             │
+│  • Even if device is seized, passphrase cannot be extracted     │
+│  • Protects against malware extracting encrypted storage        │
+│  • Higher security for high-value wallets                       │
+│                                                                 │
+│  Trade-offs:                                                    │
+│  • Less convenient (re-entry required each session)             │
+│  • User MUST remember passphrase (no recovery possible)         │
+│                                                                 │
+│  Fingerprint Mismatch Detection:                                │
+│  • Master fingerprint displayed in RED if wrong passphrase      │
+│  • Allows user to verify correct passphrase was entered         │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

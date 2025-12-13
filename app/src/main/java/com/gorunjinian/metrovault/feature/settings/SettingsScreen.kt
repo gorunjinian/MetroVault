@@ -1,6 +1,11 @@
 package com.gorunjinian.metrovault.feature.settings
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
@@ -9,6 +14,8 @@ import androidx.compose.ui.Alignment
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -16,6 +23,7 @@ import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.crypto.BiometricAuthManager
 import com.gorunjinian.metrovault.core.crypto.BiometricPasswordManager
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.ui.components.*
@@ -23,6 +31,9 @@ import com.gorunjinian.metrovault.core.ui.dialogs.*
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.zIndex
+
 
 private fun Context.findActivity(): FragmentActivity? {
     var context = this
@@ -74,6 +85,10 @@ fun SettingsContent(
     // (hasDecoyPassword triggers lazy init of EncryptedSharedPreferences which is expensive)
     var hasDecoyPassword by remember { mutableStateOf(false) }
     
+    // Quick Shortcuts drag state - lifted here to control LazyColumn scroll
+    var draggingShortcutIndex by remember { mutableStateOf<Int?>(null) }
+    var dragShortcutOffset by remember { mutableFloatStateOf(0f) }
+    
     LaunchedEffect(Unit) {
         hasDecoyPassword = withContext(kotlinx.coroutines.Dispatchers.IO) {
             secureStorage.hasDecoyPassword()
@@ -86,7 +101,9 @@ fun SettingsContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+            // Disable scroll during shortcut drag for smoother experience
+            userScrollEnabled = draggingShortcutIndex == null
         ) {
         // Appearance Section
         item {
@@ -120,9 +137,221 @@ fun SettingsContent(
                             modifier = Modifier.weight(1f)
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Quick Shortcuts Customization
+                    Text(
+                        "Quick Shortcuts",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Text(
+                        "Drag to reorder. Tap available to swap with last used.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    val quickShortcuts by userPreferencesRepository.quickShortcuts.collectAsState()
+                    val availableShortcuts = QuickShortcut.entries.filter { it !in quickShortcuts }
+                    
+                    // Card height for swap calculations (48dp content + 24dp padding + 8dp spacing)
+                    val cardHeightPx = with(LocalDensity.current) { 80.dp.toPx() }
+
+                    // Used Shortcuts Section
+                    Text(
+                        "Selected",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        quickShortcuts.forEachIndexed { index, shortcut ->
+                            val isDragging = draggingShortcutIndex == index
+
+                            // Animate the offset for smooth return-to-position
+                            val animatedOffset by animateFloatAsState(
+                                targetValue = if (isDragging) dragShortcutOffset else 0f,
+                                animationSpec = if (isDragging) {
+                                    snap()
+                                } else {
+                                    spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    )
+                                },
+                                label = "cardOffset"
+                            )
+
+                            OutlinedCard(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .graphicsLayer {
+                                        translationY = animatedOffset
+                                        if (isDragging) {
+                                            scaleX = 1.02f
+                                            scaleY = 1.02f
+                                            shadowElevation = 8f
+                                        }
+                                    }
+                                    .zIndex(if (isDragging) 1f else 0f)
+                                    .pointerInput(shortcut, quickShortcuts) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                draggingShortcutIndex = index
+                                                dragShortcutOffset = 0f
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                // Just track the offset, don't swap during drag
+                                                dragShortcutOffset += dragAmount.y
+                                            },
+                                            onDragEnd = {
+                                                // Calculate target position based on offset
+                                                val currentIdx = draggingShortcutIndex ?: return@detectDragGesturesAfterLongPress
+                                                val positionsToMove = (dragShortcutOffset / cardHeightPx).toInt()
+                                                val targetIdx = (currentIdx + positionsToMove).coerceIn(0, 2)
+                                                
+                                                if (targetIdx != currentIdx) {
+                                                    // Create new ordered list
+                                                    val newList = quickShortcuts.toMutableList()
+                                                    val item = newList.removeAt(currentIdx)
+                                                    newList.add(targetIdx, item)
+                                                    userPreferencesRepository.setQuickShortcuts(newList)
+                                                }
+                                                
+                                                draggingShortcutIndex = null
+                                                dragShortcutOffset = 0f
+                                            },
+                                            onDragCancel = {
+                                                draggingShortcutIndex = null
+                                                dragShortcutOffset = 0f
+                                            }
+                                        )
+                                    },
+                                colors = CardDefaults.outlinedCardColors(
+                                    containerColor = if (isDragging)
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                    else
+                                        MaterialTheme.colorScheme.surface
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    // Drag handle
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_drag_handle),
+                                        contentDescription = "Drag to reorder",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+
+                                    // Shortcut icon
+                                    Icon(
+                                        painter = painterResource(shortcut.iconRes),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+
+                                    // Shortcut label
+                                    Text(
+                                        text = shortcut.label,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    // Position number
+                                    Text(
+                                        text = "${index + 1}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Available Shortcuts Section
+                    if (availableShortcuts.isNotEmpty()) {
+                        Text(
+                            "Available",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            availableShortcuts.forEach { shortcut ->
+                                OutlinedCard(
+                                    onClick = {
+                                        // Replace the last used shortcut with this one
+                                        val newList = quickShortcuts.toMutableList()
+                                        newList[2] = shortcut
+                                        userPreferencesRepository.setQuickShortcuts(newList)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.outlinedCardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        // Placeholder for drag handle (just for alignment)
+                                        Spacer(modifier = Modifier.size(24.dp))
+
+                                        // Shortcut icon
+                                        Icon(
+                                            painter = painterResource(shortcut.iconRes),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+
+                                        // Shortcut label
+                                        Text(
+                                            text = shortcut.label,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        // Tap hint icon
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_add),
+                                            contentDescription = "Add to shortcuts",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+
 
         // Security Section
         item {

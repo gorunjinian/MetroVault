@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -117,13 +118,19 @@ fun CreateWalletScreen(
                     useBip39Passphrase = uiState.useBip39Passphrase,
                     bip39Passphrase = uiState.bip39Passphrase,
                     confirmBip39Passphrase = uiState.confirmBip39Passphrase,
+                    savePassphraseLocally = uiState.savePassphraseLocally,
+                    realtimeFingerprint = uiState.realtimeFingerprint,
                     errorMessage = uiState.errorMessage,
                     isCreatingWallet = uiState.isCreatingWallet,
                     confirmPassphraseFocusRequester = confirmPassphraseFocusRequester,
                     keyboardController = keyboardController,
                     onUsePassphraseChange = { viewModel.setUseBip39Passphrase(it) },
-                    onPassphraseChange = { viewModel.setBip39Passphrase(it) },
+                    onPassphraseChange = { 
+                        viewModel.setBip39Passphrase(it)
+                        viewModel.updateRealtimeFingerprint()
+                    },
                     onConfirmPassphraseChange = { viewModel.setConfirmBip39Passphrase(it) },
+                    onSavePassphraseLocallyChange = { viewModel.setSavePassphraseLocally(it) },
                     onCreateWallet = { viewModel.createWallet() }
                 )
             }
@@ -506,6 +513,8 @@ private fun ColumnScope.Step4Passphrase(
     useBip39Passphrase: Boolean,
     bip39Passphrase: String,
     confirmBip39Passphrase: String,
+    savePassphraseLocally: Boolean,
+    realtimeFingerprint: String,
     errorMessage: String,
     isCreatingWallet: Boolean,
     confirmPassphraseFocusRequester: FocusRequester,
@@ -513,6 +522,7 @@ private fun ColumnScope.Step4Passphrase(
     onUsePassphraseChange: (Boolean) -> Unit,
     onPassphraseChange: (String) -> Unit,
     onConfirmPassphraseChange: (String) -> Unit,
+    onSavePassphraseLocallyChange: (Boolean) -> Unit,
     onCreateWallet: () -> Unit
 ) {
     Text(
@@ -565,10 +575,7 @@ private fun ColumnScope.Step4Passphrase(
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(
                 onNext = { confirmPassphraseFocusRequester.requestFocus() }
-            ),
-            supportingText = {
-                Text("This is NOT your encryption password. This is the BIP39 passphrase.")
-            }
+            )
         )
 
         SecureOutlinedTextField(
@@ -586,6 +593,7 @@ private fun ColumnScope.Step4Passphrase(
             )
         )
 
+        // Write down passphrase reminder (moved before fingerprint)
         if (bip39Passphrase.isNotEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -598,6 +606,75 @@ private fun ColumnScope.Step4Passphrase(
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodyMedium
                 )
+            }
+        }
+
+        // Real-time fingerprint preview
+        if (realtimeFingerprint.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Master Fingerprint: ",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = realtimeFingerprint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+        }
+
+        // "Don't save passphrase" toggle
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Switch(
+                checked = !savePassphraseLocally,
+                onCheckedChange = { onSavePassphraseLocallyChange(!it) }
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Don't save passphrase on device",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        // Warning when "don't save" is enabled
+        if (!savePassphraseLocally) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "⚠️ You will need to re-enter this passphrase every time you open the app.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "If you enter a different passphrase later, the Master Fingerprint will be displayed in red to indicate it does not match the original.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                    )
+                }
             }
         }
     }

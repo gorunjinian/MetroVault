@@ -28,22 +28,30 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.rememberUpdatedState
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.core.ui.dialogs.PassphraseEntryDialog
 import com.gorunjinian.metrovault.core.ui.dialogs.RenameWalletDialog
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.data.model.DerivationPaths
+import com.gorunjinian.metrovault.data.model.QuickShortcut
+import com.gorunjinian.metrovault.data.model.WalletMetadata
 
 @Composable
 fun WalletsListContent(
-    wallet: Wallet, // Renamed from Wallet to wallet
+    wallet: Wallet,
     secureStorage: SecureStorage,
     autoExpandSingleWallet: Boolean = false,
+    quickShortcuts: List<QuickShortcut> = QuickShortcut.DEFAULT,
     onWalletClick: (String) -> Unit,
     onViewAddresses: (String) -> Unit,
     onScanPSBT: (String) -> Unit,
-    onCheckAddress: (String) -> Unit
+    onCheckAddress: (String) -> Unit,
+    onExport: (String) -> Unit,
+    onBIP85: (String) -> Unit,
+    onSignMessage: (String) -> Unit
 ) {
     val wallets by wallet.wallets.collectAsState()
     var showRenameDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showPassphraseDialog by remember { mutableStateOf<WalletMetadata?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     var expandedWalletId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -155,14 +163,31 @@ fun WalletsListContent(
                         masterFingerprint = walletItem.masterFingerprint,
                         elevation = shadow,
                         isExpanded = expandedWalletId == walletItem.id,
-                        onClick = { if (draggingItemIndex == null) onWalletClick(walletItem.id) },
+                        quickShortcuts = quickShortcuts,
+                        onClick = { 
+                            if (draggingItemIndex == null) {
+                                // Check if wallet needs passphrase re-entry
+                                if (wallet.needsPassphraseInput(walletItem.id)) {
+                                    showPassphraseDialog = walletItem
+                                } else {
+                                    onWalletClick(walletItem.id)
+                                }
+                            }
+                        },
                         onEditClick = { showRenameDialog = walletItem.id to walletItem.name },
                         onExpandClick = {
                             expandedWalletId = if (expandedWalletId == walletItem.id) null else walletItem.id
                         },
-                        onViewAddresses = { onViewAddresses(walletItem.id) },
-                        onScanPSBT = { onScanPSBT(walletItem.id) },
-                        onCheckAddress = { onCheckAddress(walletItem.id) },
+                        onShortcutClick = { shortcut ->
+                            when (shortcut) {
+                                QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
+                                QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
+                                QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
+                                QuickShortcut.EXPORT -> onExport(walletItem.id)
+                                QuickShortcut.BIP85 -> onBIP85(walletItem.id)
+                                QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
+                            }
+                        },
                         dragHandleModifier = Modifier.pointerInput(walletItem.id) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = {
@@ -237,6 +262,35 @@ fun WalletsListContent(
             }
         )
     }
+
+    // Passphrase re-entry dialog for wallets with unsaved passphrase
+    if (showPassphraseDialog != null) {
+        val walletMeta = showPassphraseDialog!!
+        var mnemonic by remember { mutableStateOf<List<String>?>(null) }
+        
+        // Load mnemonic when dialog opens
+        LaunchedEffect(walletMeta.id) {
+            mnemonic = wallet.getMnemonicForWallet(walletMeta.id)
+        }
+        
+        if (mnemonic != null) {
+            PassphraseEntryDialog(
+                walletName = walletMeta.name,
+                originalFingerprint = walletMeta.masterFingerprint,
+                onDismiss = { showPassphraseDialog = null },
+                onConfirm = { passphrase, calculatedFingerprint ->
+                    // Store passphrase in session memory
+                    wallet.setSessionPassphrase(walletMeta.id, passphrase)
+                    showPassphraseDialog = null
+                    // Now open the wallet
+                    onWalletClick(walletMeta.id)
+                },
+                calculateFingerprint = { passphrase ->
+                    wallet.calculateFingerprint(mnemonic!!, passphrase)
+                }
+            )
+        }
+    }
     
     if (errorMessage.isNotEmpty()) {
         AlertDialog(
@@ -261,12 +315,11 @@ fun WalletCard(
     masterFingerprint: String = "",
     elevation: androidx.compose.ui.unit.Dp = 2.dp,
     isExpanded: Boolean = false,
+    quickShortcuts: List<QuickShortcut> = QuickShortcut.DEFAULT,
     onClick: () -> Unit,
     onEditClick: () -> Unit,
     onExpandClick: () -> Unit,
-    onViewAddresses: () -> Unit,
-    onScanPSBT: () -> Unit,
-    onCheckAddress: () -> Unit,
+    onShortcutClick: (QuickShortcut) -> Unit,
     dragHandleModifier: Modifier = Modifier
 ) {
     val chevronRotation by animateFloatAsState(
@@ -344,7 +397,7 @@ fun WalletCard(
                 }
             }
 
-            // Expandable quick actions
+            // Expandable quick actions - dynamic based on user preferences
             AnimatedVisibility(
                 visible = isExpanded,
                 enter = expandVertically(),
@@ -362,26 +415,14 @@ fun WalletCard(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        // View Addresses Button
-                        QuickActionButton(
-                            icon = R.drawable.ic_qr_code_2,
-                            label = "Addresses",
-                            onClick = onViewAddresses
-                        )
-
-                        // Sign PSBT Button
-                        QuickActionButton(
-                            icon = R.drawable.ic_qr_code_scanner,
-                            label = "Sign PSBT",
-                            onClick = onScanPSBT
-                        )
-
-                        // Check Address Button
-                        QuickActionButton(
-                            icon = R.drawable.ic_search,
-                            label = "Check",
-                            onClick = onCheckAddress
-                        )
+                        // Render shortcuts dynamically from preferences
+                        quickShortcuts.forEach { shortcut ->
+                            QuickActionButton(
+                                icon = shortcut.iconRes,
+                                label = shortcut.label,
+                                onClick = { onShortcutClick(shortcut) }
+                            )
+                        }
                     }
                 }
             }

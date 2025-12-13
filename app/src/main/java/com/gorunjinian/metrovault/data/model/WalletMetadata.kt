@@ -10,6 +10,7 @@ data class WalletMetadata(
     val derivationPath: String,
     val masterFingerprint: String,
     val hasPassphrase: Boolean,
+    val savePassphraseLocally: Boolean = true,  // true = save passphrase to disk (default), false = session-only
     val createdAt: Long
 ) {
     fun toJson(): String {
@@ -19,6 +20,7 @@ data class WalletMetadata(
             put("derivationPath", derivationPath)
             put("masterFingerprint", masterFingerprint)
             put("hasPassphrase", hasPassphrase)
+            put("savePassphraseLocally", savePassphraseLocally)
             put("createdAt", createdAt)
         }.toString()
     }
@@ -32,6 +34,7 @@ data class WalletMetadata(
                 derivationPath = obj.getString("derivationPath"),
                 masterFingerprint = obj.optString("masterFingerprint", ""),
                 hasPassphrase = obj.optBoolean("hasPassphrase", false),
+                savePassphraseLocally = obj.optBoolean("savePassphraseLocally", true),
                 createdAt = obj.optLong("createdAt", System.currentTimeMillis())
             )
         }

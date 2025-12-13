@@ -20,18 +20,19 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
-import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
 import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import com.gorunjinian.metrovault.data.model.DerivationPaths
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportWalletScreen(
     wallet: Wallet,
-    secureStorage: SecureStorage,
     onBack: () -> Unit,
     onWalletImported: () -> Unit
 ) {
@@ -39,17 +40,29 @@ fun ImportWalletScreen(
     var mnemonicWords by remember { mutableStateOf<List<String>>(emptyList()) }
     var currentWord by remember { mutableStateOf("") }
     
+    // Word count selection (12 or 24) - must be before LaunchedEffect that uses it
+    var expectedWordCount by remember { mutableIntStateOf(12) }
     var bip39Passphrase by remember { mutableStateOf("") }
     var confirmBip39Passphrase by remember { mutableStateOf("") }
     var useBip39Passphrase by remember { mutableStateOf(false) }
+    var savePassphraseLocally by remember { mutableStateOf(true) }  // toggle for saving passphrase
+    var realtimeFingerprint by remember { mutableStateOf("") }     // live fingerprint preview
     var errorMessage by remember { mutableStateOf("") }
     var isImportingWallet by remember { mutableStateOf(false) }
+    
+    // Calculate fingerprint in real-time when passphrase or mnemonic changes
+    LaunchedEffect(mnemonicWords, bip39Passphrase, useBip39Passphrase) {
+        if (mnemonicWords.size == expectedWordCount && validateMnemonic(mnemonicWords)) {
+            delay(150)  // Debounce
+            val passphrase = if (useBip39Passphrase) bip39Passphrase else ""
+            realtimeFingerprint = wallet.calculateFingerprint(mnemonicWords, passphrase) ?: ""
+        } else {
+            realtimeFingerprint = ""
+        }
+    }
 
     // Derivation Path Selection
     var selectedDerivationPath by remember { mutableStateOf(DerivationPaths.NATIVE_SEGWIT) }
-    
-    // Word count selection (12 or 24)
-    var expectedWordCount by remember { mutableIntStateOf(12) }
     
     // Keyboard visibility toggle
     var isKeyboardVisible by remember { mutableStateOf(true) }
@@ -242,10 +255,7 @@ fun ImportWalletScreen(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
                             onNext = { confirmPassphraseFocusRequester.requestFocus() }
-                        ),
-                        supportingText = {
-                            Text("This is NOT your encryption password")
-                        }
+                        )
                     )
 
                     SecureOutlinedTextField(
@@ -262,6 +272,75 @@ fun ImportWalletScreen(
                             onDone = { keyboardController?.hide() }
                         )
                     )
+
+                    // Real-time fingerprint preview
+                    if (realtimeFingerprint.isNotEmpty()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Master Fingerprint: ",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = realtimeFingerprint,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+
+                    // "Don't save passphrase" toggle
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Switch(
+                            checked = !savePassphraseLocally,
+                            onCheckedChange = { savePassphraseLocally = !it }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Don't save passphrase on device",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+
+                    // Warning when "don't save" is enabled
+                    if (!savePassphraseLocally) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "⚠️ You will need to re-enter this passphrase every time you open the app.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "If you enter a different passphrase later, the Master Fingerprint will be displayed in red to indicate it does not match the original.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if (errorMessage.isNotEmpty()) {
@@ -301,7 +380,8 @@ fun ImportWalletScreen(
                                         name = "Imported Wallet",
                                         mnemonic = mnemonicWords,
                                         derivationPath = selectedDerivationPath,
-                                        passphrase = finalPassphrase
+                                        passphrase = finalPassphrase,
+                                        savePassphraseLocally = savePassphraseLocally
                                     )
 
                                     isImportingWallet = false

@@ -46,6 +46,8 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         val useBip39Passphrase: Boolean = false,
         val bip39Passphrase: String = "",
         val confirmBip39Passphrase: String = "",
+        val savePassphraseLocally: Boolean = true,  // true = save to disk (default), false = session only
+        val realtimeFingerprint: String = "",       // Calculated in real-time as passphrase is typed
 
         // Common
         val errorMessage: String = "",
@@ -178,6 +180,27 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         _uiState.update { it.copy(confirmBip39Passphrase = passphrase) }
     }
 
+    fun setSavePassphraseLocally(save: Boolean) {
+        _uiState.update { it.copy(savePassphraseLocally = save) }
+    }
+
+    /**
+     * Updates the real-time fingerprint preview based on current mnemonic and passphrase.
+     * Should be called when passphrase changes.
+     */
+    fun updateRealtimeFingerprint() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            if (state.generatedMnemonic.isEmpty()) return@launch
+            
+            val passphrase = if (state.useBip39Passphrase) state.bip39Passphrase else ""
+            val fingerprint = withContext(Dispatchers.IO) {
+                wallet.calculateFingerprint(state.generatedMnemonic, passphrase)
+            }
+            _uiState.update { it.copy(realtimeFingerprint = fingerprint ?: "") }
+        }
+    }
+
     fun createWallet() {
         val state = _uiState.value
 
@@ -204,7 +227,8 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
                 name = "New Wallet",
                 mnemonic = state.generatedMnemonic,
                 derivationPath = state.selectedDerivationPath,
-                passphrase = finalPassphrase
+                passphrase = finalPassphrase,
+                savePassphraseLocally = state.savePassphraseLocally
             )
 
             _uiState.update { it.copy(isCreatingWallet = false) }

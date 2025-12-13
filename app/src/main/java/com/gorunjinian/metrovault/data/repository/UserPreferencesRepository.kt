@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import androidx.core.content.edit
+import com.gorunjinian.metrovault.data.model.QuickShortcut
 
 /**
  * Repository for user preferences.
@@ -54,6 +55,11 @@ class UserPreferencesRepository(context: Context) {
     private val _autoExpandSingleWallet = MutableStateFlow(prefs.getBoolean(KEY_AUTO_EXPAND_SINGLE_WALLET, false))
     val autoExpandSingleWallet: StateFlow<Boolean> = _autoExpandSingleWallet.asStateFlow()
 
+    private val _quickShortcuts = MutableStateFlow(
+        QuickShortcut.fromStorageString(prefs.getString(KEY_QUICK_SHORTCUTS, null))
+    )
+    val quickShortcuts: StateFlow<List<QuickShortcut>> = _quickShortcuts.asStateFlow()
+
     fun setThemeMode(mode: String) {
         if (mode in listOf(THEME_LIGHT, THEME_DARK, THEME_SYSTEM)) {
             prefs.edit { putString(KEY_THEME_MODE, mode) }
@@ -93,6 +99,16 @@ class UserPreferencesRepository(context: Context) {
         _autoExpandSingleWallet.value = enabled
     }
 
+    /**
+     * Sets the quick shortcuts for the expanded wallet card.
+     * Must be exactly 3 shortcuts.
+     */
+    fun setQuickShortcuts(shortcuts: List<QuickShortcut>) {
+        if (shortcuts.size != 3) return
+        prefs.edit { putString(KEY_QUICK_SHORTCUTS, QuickShortcut.toStorageString(shortcuts)) }
+        _quickShortcuts.value = shortcuts
+    }
+
     companion object {
         private const val PREFS_NAME = "metrovault_settings"
         private const val KEY_THEME_MODE = "theme_mode"
@@ -102,6 +118,7 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_AUTO_OPEN_SINGLE_WALLET_DECOY = "auto_open_single_wallet_decoy"
         private const val KEY_WIPE_ON_FAILED_ATTEMPTS = "wipe_on_failed_attempts"
         private const val KEY_AUTO_EXPAND_SINGLE_WALLET = "auto_expand_single_wallet"
+        private const val KEY_QUICK_SHORTCUTS = "quick_shortcuts"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
         const val THEME_SYSTEM = "system"

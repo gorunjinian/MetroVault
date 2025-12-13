@@ -51,7 +51,7 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 ### 💼 Wallet Management
 - **Multi-Type Support**: Native SegWit (`bc1q...`), Taproot (`bc1p...`), Nested SegWit (`3...`), Legacy (`1...`)
 - **BIP-39 Mnemonics**: Standard 12 or 24-word seed phrases
-- **Passphrase Support**: Optional BIP-39 passphrase for hidden wallets
+- **Passphrase Support**: Optional BIP-39 passphrase with choice to save locally or keep in session memory only
 - **Custom Entropy**: Add your own randomness via dice rolls or coin flips
 - **Mnemonic Tools**: Built-in checksum calculator and validator
 

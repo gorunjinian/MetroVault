@@ -48,6 +48,10 @@ class Wallet(context: Context) {
     private val _walletMetadataList = mutableListOf<WalletMetadata>()
     private val walletListLock = Any()
 
+    // Session-only passphrases for wallets where savePassphraseLocally = false
+    // These are wiped when app goes to background (emergencyWipe)
+    private val sessionPassphrases = ConcurrentHashMap<String, String>()
+
     private val _wallets = MutableStateFlow<List<WalletMetadata>>(emptyList())
     val wallets: StateFlow<List<WalletMetadata>> = _wallets.asStateFlow()
 
@@ -92,6 +96,7 @@ class Wallet(context: Context) {
      */
     fun clearSession() {
         isDecoyMode = false
+        sessionPassphrases.clear()  // Clear session-only passphrases
         secureStorage.clearSession()
         unloadAllWallets()
         Log.d(TAG, "Session cleared")
@@ -102,6 +107,7 @@ class Wallet(context: Context) {
      */
     fun emergencyWipe() {
         Log.w(TAG, "EMERGENCY WIPE - Clearing all wallet data from memory")
+        sessionPassphrases.clear()  // Clear session-only passphrases
         clearSession()
         System.gc()
     }
@@ -154,12 +160,15 @@ class Wallet(context: Context) {
     /**
      * Creates a wallet from mnemonic.
      * Fast operation (<10ms) after login.
+     * 
+     * @param savePassphraseLocally If false, passphrase is only kept in session memory and not saved to disk
      */
     suspend fun createWallet(
         name: String,
         mnemonic: List<String>,
         derivationPath: String,
-        passphrase: String = ""
+        passphrase: String = "",
+        savePassphraseLocally: Boolean = true
     ): WalletCreationResult = withContext(Dispatchers.IO) {
         try {
             if (!sessionKeyManager.isSessionActive.value) {
@@ -190,14 +199,22 @@ class Wallet(context: Context) {
                 derivationPath = derivationPath,
                 masterFingerprint = walletResult.fingerprint,
                 hasPassphrase = passphrase.isNotEmpty(),
+                savePassphraseLocally = savePassphraseLocally,
                 createdAt = System.currentTimeMillis()
             )
 
             // Create secrets (plaintext - encrypted by SecureStorage)
+            // If savePassphraseLocally is false, we save empty passphrase to disk and store in session
+            val secretsPassphrase = if (savePassphraseLocally) passphrase else ""
             val secrets = WalletSecrets(
                 mnemonic = mnemonicString,
-                passphrase = passphrase
+                passphrase = secretsPassphrase
             )
+            
+            // Store passphrase in session memory if not saving to disk
+            if (!savePassphraseLocally && passphrase.isNotEmpty()) {
+                sessionPassphrases[walletId] = passphrase
+            }
 
             // Save to storage
             if (!secureStorage.saveWalletMetadata(metadata, isDecoyMode)) {
@@ -263,7 +280,14 @@ class Wallet(context: Context) {
                 ?: return@withContext false
 
             val mnemonic = secrets.mnemonic.split(" ")
-            val passphrase = secrets.passphrase
+            
+            // Use session passphrase if not saved locally
+            val passphrase = if (!metadata.savePassphraseLocally && metadata.hasPassphrase) {
+                // Get from session memory (user should have entered it via dialog)
+                sessionPassphrases[walletId] ?: secrets.passphrase
+            } else {
+                secrets.passphrase
+            }
 
             val walletResult = bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, metadata.derivationPath)
                 ?: return@withContext false
@@ -425,6 +449,10 @@ class Wallet(context: Context) {
 
     fun getMasterFingerprint() = getActiveWalletState()?.fingerprint
 
+    fun getActiveWalletId(): String? = activeWalletId
+
+    fun getActiveDerivationPath(): String? = getActiveWalletState()?.derivationPath
+
     fun getActiveMnemonic(): List<String>? {
         return try {
             val state = getActiveWalletState() ?: return null
@@ -432,6 +460,77 @@ class Wallet(context: Context) {
             String(mnemonic.get()).split(" ")
         } catch (_: Exception) {
             Log.e(TAG, "Failed to retrieve mnemonic")
+            null
+        }
+    }
+
+    /**
+     * Gets the public and private key for a specific address.
+     * @param index Address index
+     * @param isChange Whether this is a change address
+     * @return AddressKeyPair with public key (hex) and private key (WIF), or null on error
+     */
+    fun getAddressKeys(index: Int, isChange: Boolean): BitcoinService.AddressKeyPair? {
+        val state = getActiveWalletState() ?: return null
+        val accountPrivateKey = state.getAccountPrivateKey() ?: return null
+        return bitcoinService.getAddressKeys(accountPrivateKey, index, isChange)
+    }
+
+    // ==================== Session Passphrase Management ====================
+
+    /**
+     * Checks if a wallet needs passphrase re-entry.
+     * This happens when the wallet has a passphrase but it wasn't saved locally,
+     * and we don't have it in session memory.
+     */
+    fun needsPassphraseInput(walletId: String): Boolean {
+        val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return false
+        return metadata.hasPassphrase && 
+               !metadata.savePassphraseLocally && 
+               !sessionPassphrases.containsKey(walletId)
+    }
+
+    /**
+     * Gets the original master fingerprint stored in metadata for a wallet.
+     * Used to compare against session fingerprint for mismatch detection.
+     */
+    fun getOriginalFingerprint(walletId: String): String? {
+        return _walletMetadataList.find { it.id == walletId }?.masterFingerprint
+    }
+
+    /**
+     * Sets the session passphrase for a wallet.
+     * Used when user re-enters passphrase after app restart.
+     */
+    fun setSessionPassphrase(walletId: String, passphrase: String) {
+        sessionPassphrases[walletId] = passphrase
+    }
+
+    /**
+     * Gets the session passphrase for a wallet if stored.
+     */
+    fun getSessionPassphrase(walletId: String): String? {
+        return sessionPassphrases[walletId]
+    }
+
+    /**
+     * Calculates master fingerprint from mnemonic and passphrase.
+     * Used for real-time fingerprint preview in passphrase dialogs.
+     */
+    fun calculateFingerprint(mnemonic: List<String>, passphrase: String): String? {
+        return bitcoinService.calculateFingerprint(mnemonic, passphrase)
+    }
+
+    /**
+     * Gets the mnemonic for a wallet by ID (for passphrase re-entry dialog).
+     * This requires loading secrets from storage.
+     */
+    suspend fun getMnemonicForWallet(walletId: String): List<String>? = withContext(Dispatchers.IO) {
+        try {
+            val secrets = secureStorage.loadWalletSecrets(walletId, isDecoyMode) ?: return@withContext null
+            secrets.mnemonic.split(" ")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get mnemonic for wallet: ${e.message}")
             null
         }
     }

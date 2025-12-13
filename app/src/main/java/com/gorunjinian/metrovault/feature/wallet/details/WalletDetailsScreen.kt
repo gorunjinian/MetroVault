@@ -66,6 +66,14 @@ fun WalletDetailsScreen(
                 else -> "Unknown"
             }
             val fingerprint = wallet.getMasterFingerprint()
+            
+            // Check for fingerprint mismatch (different passphrase entered)
+            val wallets by wallet.wallets.collectAsState()
+            val activeWalletId = wallet.getActiveWalletId()
+            val originalFingerprint = wallets.find { it.id == activeWalletId }?.masterFingerprint
+            val fingerprintMismatch = fingerprint != null && 
+                                      originalFingerprint != null && 
+                                      fingerprint != originalFingerprint
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -128,7 +136,10 @@ fun WalletDetailsScreen(
                                 text = fingerprint,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = if (fingerprintMismatch) 
+                                    MaterialTheme.colorScheme.error  // RED when mismatch
+                                else 
+                                    MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
                     }

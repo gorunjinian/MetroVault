@@ -6,9 +6,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavType
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,6 +30,7 @@ import com.gorunjinian.metrovault.feature.transaction.ScanPSBTScreen
 import com.gorunjinian.metrovault.feature.wallet.create.CompleteMnemonicScreen
 import com.gorunjinian.metrovault.feature.wallet.create.CreateWalletScreen
 import com.gorunjinian.metrovault.feature.wallet.create.ImportWalletScreen
+import com.gorunjinian.metrovault.feature.wallet.details.AddressDetailScreen
 import com.gorunjinian.metrovault.feature.wallet.details.AddressesScreen
 import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
@@ -49,6 +50,11 @@ sealed class Screen(val route: String) {
     object ImportWallet : Screen("import_wallet")
     object WalletDetails : Screen("wallet_details")
     object Addresses : Screen("addresses")
+    object AddressDetail : Screen("address_detail?address={address}&index={index}&isChange={isChange}") {
+        fun createRoute(address: String, index: Int, isChange: Boolean): String {
+            return "address_detail?address=${java.net.URLEncoder.encode(address, "UTF-8")}&index=$index&isChange=$isChange"
+        }
+    }
     object ScanPSBT : Screen("scan_psbt")
     object ExportOptions : Screen("export_options")
     object BIP85Derive : Screen("bip85_derive")
@@ -287,7 +293,6 @@ fun AppNavigation(
         composable(Screen.ImportWallet.route) {
             ImportWalletScreen(
                 wallet = wallet,
-                secureStorage = secureStorage,
                 onBack = { navController.navigateUp() },
                 onWalletImported = {
                     scope.launch {
@@ -330,8 +335,35 @@ fun AppNavigation(
                         navController.navigate(Screen.Home.route)
                     }
                 },
-                onSignMessage = { address ->
-                    navController.navigate(Screen.SignMessage.createRoute(address))
+                onAddressSelected = { address, index, isChange ->
+                    navController.navigate(Screen.AddressDetail.createRoute(address, index, isChange))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.AddressDetail.route,
+            arguments = listOf(
+                navArgument("address") { type = NavType.StringType },
+                navArgument("index") { type = NavType.IntType },
+                navArgument("isChange") { type = NavType.BoolType }
+            )
+        ) { backStackEntry ->
+            val address = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("address") ?: "",
+                "UTF-8"
+            )
+            val index = backStackEntry.arguments?.getInt("index") ?: 0
+            val isChange = backStackEntry.arguments?.getBoolean("isChange") ?: false
+            
+            AddressDetailScreen(
+                wallet = wallet,
+                address = address,
+                addressIndex = index,
+                isChange = isChange,
+                onBack = { navController.popBackStack() },
+                onSignMessage = { addr ->
+                    navController.navigate(Screen.SignMessage.createRoute(addr))
                 }
             )
         }

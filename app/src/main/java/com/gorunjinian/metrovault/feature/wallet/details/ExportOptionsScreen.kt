@@ -161,8 +161,13 @@ fun ExportOptionsScreen(
                 // Show XPUB
                 val context = LocalContext.current
 
-                if (xpub.isNotEmpty()) {
-                    xpubQR = QRCodeUtils.generateQRCode(xpub)
+                // Generate QR code only once when this view is shown
+                // Using LaunchedEffect to prevent regeneration on every recomposition,
+                // which was causing choppy back navigation animations
+                LaunchedEffect(xpub) {
+                    if (xpub.isNotEmpty()) {
+                        xpubQR = QRCodeUtils.generateQRCode(xpub)
+                    }
                 }
 
                 Text(
