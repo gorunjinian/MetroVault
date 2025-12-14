@@ -17,9 +17,9 @@ import kotlin.math.ceil
  */
 object QRCodeUtils {
 
-    // Maximum bytes that can fit in a single QR code with error correction level M
-    // This is conservative to ensure reliable scanning
-    private const val MAX_QR_BYTES = 1800
+    // Maximum bytes that can fit in a single QR code for easy scanning
+    // Reduced to 500 to ensure consistent, easily scannable QR codes across all frames
+    private const val MAX_QR_BYTES = 500
 
     // Prefix for animated QR code frames
     private const val ANIMATED_PREFIX = "p"  // p[part]/[total] format
@@ -60,8 +60,8 @@ object QRCodeUtils {
     }
     
     /**
-     * Crops white margins from a QR code bitmap to make the QR pattern fill the image.
-     * This ensures consistent visual size across QR codes of different densities.
+     * Crops white margins from a QR code bitmap to make the QR pattern fill the image,
+     * then adds a consistent border for reliable scanning.
      */
     private fun cropQRWhiteMargins(bitmap: Bitmap, backgroundColor: Int): Bitmap {
         val width = bitmap.width
@@ -84,23 +84,35 @@ object QRCodeUtils {
             }
         }
         
-        // If no QR pattern found or margins are tiny, return original
-        if (maxX <= minX || maxY <= minY || (minX < 5 && minY < 5)) {
+        // If no QR pattern found, return original
+        if (maxX <= minX || maxY <= minY) {
             return bitmap
         }
         
-        // Add a small margin (2 pixels) for better scanning
-        val margin = 2
-        minX = (minX - margin).coerceAtLeast(0)
-        minY = (minY - margin).coerceAtLeast(0)
-        maxX = (maxX + margin).coerceAtMost(width - 1)
-        maxY = (maxY + margin).coerceAtMost(height - 1)
+        // First, crop tightly to the QR content
+        val contentWidth = maxX - minX + 1
+        val contentHeight = maxY - minY + 1
+        val croppedBitmap = Bitmap.createBitmap(bitmap, minX, minY, contentWidth, contentHeight)
         
-        // Crop to the QR pattern bounds
-        val croppedWidth = maxX - minX + 1
-        val croppedHeight = maxY - minY + 1
+        // Then add a consistent white border (16 pixels on each side)
+        // This ensures the border is always present regardless of QR density
+        val margin = 16
+        val paddedWidth = contentWidth + (margin * 2)
+        val paddedHeight = contentHeight + (margin * 2)
         
-        return Bitmap.createBitmap(bitmap, minX, minY, croppedWidth, croppedHeight)
+        val paddedBitmap = createBitmap(paddedWidth, paddedHeight, Bitmap.Config.RGB_565)
+        // Fill with background color (white)
+        for (x in 0 until paddedWidth) {
+            for (y in 0 until paddedHeight) {
+                paddedBitmap[x, y] = backgroundColor
+            }
+        }
+        
+        // Draw the cropped QR content centered with margin
+        val canvas = android.graphics.Canvas(paddedBitmap)
+        canvas.drawBitmap(croppedBitmap, margin.toFloat(), margin.toFloat(), null)
+        
+        return paddedBitmap
     }
     
     /**
@@ -363,8 +375,9 @@ object QRCodeUtils {
     ): AnimatedQRResult? {
         return try {
             android.util.Log.d("QRCodeUtils", "BBQr generation starting, PSBT length: ${psbt.length}")
-            // Use optimal QR capacity for easy scanning (more frames but easier to scan)
-            val maxQrChars = 2000
+            // Use lower QR capacity for easy scanning (more frames but each frame is easily scannable)
+            // Reduced to 500 to prevent overly dense QR codes
+            val maxQrChars = 500
             val bbqrFrames = PSBTDecoder.encodeToBBQr(psbt, maxQrChars)
             if (bbqrFrames == null || bbqrFrames.isEmpty()) {
                 android.util.Log.w("QRCodeUtils", "BBQr encoding failed - encodeToBBQr returned null/empty")
