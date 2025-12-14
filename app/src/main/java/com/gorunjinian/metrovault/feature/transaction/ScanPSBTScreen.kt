@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.feature.transaction
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -55,6 +56,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@SuppressLint("DefaultLocale")
 fun ScanPSBTScreen(
     wallet: Wallet,
     onBack: () -> Unit
@@ -78,6 +80,7 @@ fun ScanPSBTScreen(
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
     var selectedOutputFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.UR_PSBT) }
+    var qrDensity by remember { mutableStateOf(QRCodeUtils.QRDensity.NORMAL) }
     var isQRPaused by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
@@ -185,6 +188,7 @@ fun ScanPSBTScreen(
                         signedQRResult = signedQRResult!!,
                         currentFrame = currentDisplayFrame,
                         selectedFormat = selectedOutputFormat,
+                        selectedDensity = qrDensity,
                         isPaused = isQRPaused,
                         onPauseToggle = { isQRPaused = it },
                         onPreviousFrame = {
@@ -198,12 +202,28 @@ fun ScanPSBTScreen(
                         onFormatChange = { newFormat ->
                             selectedOutputFormat = newFormat
                             currentDisplayFrame = 0
-                            // Regenerate QR in new format
+                            // Regenerate QR in new format with current density
                             scope.launch {
                                 val newQR = withContext(Dispatchers.Default) {
                                     QRCodeUtils.generateSmartPSBTQR(
                                         signedPSBT!!,
-                                        format = newFormat
+                                        format = newFormat,
+                                        density = qrDensity
+                                    )
+                                }
+                                signedQRResult = newQR
+                            }
+                        },
+                        onDensityChange = { newDensity ->
+                            qrDensity = newDensity
+                            currentDisplayFrame = 0
+                            // Regenerate QR with new density
+                            scope.launch {
+                                val newQR = withContext(Dispatchers.Default) {
+                                    QRCodeUtils.generateSmartPSBTQR(
+                                        signedPSBT!!,
+                                        format = selectedOutputFormat,
+                                        density = newDensity
                                     )
                                 }
                                 signedQRResult = newQR
@@ -418,11 +438,13 @@ private fun SignedPSBTDisplay(
     signedQRResult: QRCodeUtils.AnimatedQRResult,
     currentFrame: Int,
     selectedFormat: QRCodeUtils.OutputFormat,
+    selectedDensity: QRCodeUtils.QRDensity,
     isPaused: Boolean,
     onPauseToggle: (Boolean) -> Unit,
     onPreviousFrame: () -> Unit,
     onNextFrame: () -> Unit,
     onFormatChange: (QRCodeUtils.OutputFormat) -> Unit,
+    onDensityChange: (QRCodeUtils.QRDensity) -> Unit,
     onScanAnother: () -> Unit,
     onDone: () -> Unit
 ) {
@@ -473,6 +495,51 @@ private fun SignedPSBTDisplay(
                         color = if (selectedFormat == format) MaterialTheme.colorScheme.onPrimary
                                else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+        
+        // Density control row - show for BC-UR and BBQr formats (which support multi-frame)
+        // Always show for these formats so user can adjust even if current density resulted in single frame
+        if (selectedFormat == QRCodeUtils.OutputFormat.UR_PSBT || selectedFormat == QRCodeUtils.OutputFormat.BBQR) {
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                modifier = Modifier
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Density:",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                
+                QRCodeUtils.QRDensity.entries.forEach { density ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (selectedDensity == density) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { onDensityChange(density) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = density.displayName,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (selectedDensity == density) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selectedDensity == density) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -1017,6 +1084,7 @@ private fun formatAmount(satoshis: Long, showInSats: Boolean): String {
 /**
  * Legacy format function for BTC display (used in signed display)
  */
+
 private fun formatSatoshis(satoshis: Long): String {
     val btc = satoshis / 100_000_000.0
     return String.format("%.8f", btc).trimEnd('0').trimEnd('.')
