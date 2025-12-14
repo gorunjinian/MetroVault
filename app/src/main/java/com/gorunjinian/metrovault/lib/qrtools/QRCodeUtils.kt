@@ -231,16 +231,7 @@ object QRCodeUtils {
         BASE64("Base64")       // Raw Base64 - fallback for basic wallets
     }
     
-    /**
-     * QR density options - controls trade-off between frame count and QR complexity
-     * Low = simpler QR codes (easier to scan, more frames)
-     * High = denser QR codes (harder to scan, fewer frames)
-     */
-    enum class QRDensity(val displayName: String, val fragmentBytes: Int) {
-        LOW("Low", 250),       // Simpler QR codes, more frames (easier to scan)
-        NORMAL("Normal", 350), // Balanced (default)
-        HIGH("High", 500)      // Denser QR codes, fewer frames (harder to scan)
-    }
+
     
     /**
      * Data class to hold animated QR code information
@@ -257,27 +248,27 @@ object QRCodeUtils {
      * Smart QR code generation that automatically handles large PSBTs.
      * Returns either a single frame or animated frames as needed.
      * Default output is BC-UR format (ur:psbt/) for best interoperability.
+     * Uses optimal density for easy scanning when multi-frame is needed.
      */
     fun generateSmartPSBTQR(
         psbt: String,
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
         backgroundColor: Int = Color.WHITE,
-        format: OutputFormat = OutputFormat.UR_PSBT,
-        density: QRDensity = QRDensity.NORMAL
+        format: OutputFormat = OutputFormat.UR_PSBT
     ): AnimatedQRResult? {
         return when (format) {
             OutputFormat.UR_PSBT -> {
                 // Try BC-UR first, fall back to BBQr if it fails
-                val result = generateURPsbtQR(psbt, size, foregroundColor, backgroundColor, density)
+                val result = generateURPsbtQR(psbt, size, foregroundColor, backgroundColor)
                 if (result != null) {
                     result
                 } else {
                     android.util.Log.w("QRCodeUtils", "BC-UR returned null, falling back to BBQr")
-                    generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor, density)
+                    generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
                 }
             }
-            OutputFormat.BBQR -> generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor, density)
+            OutputFormat.BBQR -> generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
             OutputFormat.BASE64 -> generateSmartPSBTQRRaw(psbt, size, foregroundColor, backgroundColor)
         }
     }
@@ -290,8 +281,7 @@ object QRCodeUtils {
         psbt: String,
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE,
-        density: QRDensity = QRDensity.NORMAL
+        backgroundColor: Int = Color.WHITE
     ): AnimatedQRResult? {
         return try {
             // Decode Base64 PSBT to bytes
@@ -301,8 +291,8 @@ object QRCodeUtils {
             // (BlueWallet and some wallets prefer legacy type over modern "psbt")
             val ur = UR.fromBytes(RegistryType.CRYPTO_PSBT.toString(), psbtBytes)
             
-            // Fragment length based on density setting
-            val maxFragmentLen = density.fragmentBytes
+            // Use optimal fragment length for easy scanning (smaller = more frames but easier to scan)
+            val maxFragmentLen = 250
             val minFragmentLen = 50
             
             // Create encoder with fountain code support
@@ -311,7 +301,7 @@ object QRCodeUtils {
             if (encoder.isSinglePart) {
                 // Single frame - simple case
                 val urString = encoder.nextPart()
-                android.util.Log.d("QRCodeUtils", "BC-UR single part: ${urString.length} chars, density=${density.displayName}")
+                android.util.Log.d("QRCodeUtils", "BC-UR single part: ${urString.length} chars")
                 val bitmap = generateQRCode(urString.uppercase(), size, foregroundColor, backgroundColor)
                 if (bitmap != null) {
                     android.util.Log.d("QRCodeUtils", "BC-UR single part: bitmap generated successfully")
@@ -328,7 +318,7 @@ object QRCodeUtils {
             } else {
                 // Multi-frame with fountain codes
                 val seqLen = encoder.seqLen
-                android.util.Log.d("QRCodeUtils", "BC-UR multi-part: seqLen=$seqLen, density=${density.displayName}")
+                android.util.Log.d("QRCodeUtils", "BC-UR multi-part: seqLen=$seqLen")
                 // Generate exactly seqLen frames - fountain codes provide redundancy naturally
                 // when looping through the animation
                 val totalFrames = seqLen
@@ -357,8 +347,8 @@ object QRCodeUtils {
         } catch (e: Exception) {
             android.util.Log.e("QRCodeUtils", "BC-UR encoding failed: ${e.message}")
             e.printStackTrace()
-            // Fall back to BBQr on error with same density
-            generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor, density)
+            // Fall back to BBQr on error
+            generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
         }
     }
     
@@ -369,24 +359,21 @@ object QRCodeUtils {
         psbt: String,
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE,
-        density: QRDensity = QRDensity.NORMAL
+        backgroundColor: Int = Color.WHITE
     ): AnimatedQRResult? {
         return try {
-            // Map density to max QR capacity - higher density = smaller chunks = more frames
-            // BBQr uses Base32, so multiply bytes by 1.6 for character count
-            val maxQrChars = when (density) {
-                QRDensity.LOW -> 2000    // Fewer, denser QR codes
-                QRDensity.NORMAL -> 1500 // Balanced
-                QRDensity.HIGH -> 1000   // More, simpler QR codes
-            }
+            android.util.Log.d("QRCodeUtils", "BBQr generation starting, PSBT length: ${psbt.length}")
+            // Use optimal QR capacity for easy scanning (more frames but easier to scan)
+            val maxQrChars = 2000
             val bbqrFrames = PSBTDecoder.encodeToBBQr(psbt, maxQrChars)
             if (bbqrFrames == null || bbqrFrames.isEmpty()) {
-                android.util.Log.w("QRCodeUtils", "BBQr encoding failed")
+                android.util.Log.w("QRCodeUtils", "BBQr encoding failed - encodeToBBQr returned null/empty")
                 return null
             }
             
-            // Use consistent density for all frames
+            android.util.Log.d("QRCodeUtils", "BBQr encoded to ${bbqrFrames.size} frames")
+            
+            // Generate consistent QR codes for all frames
             val bitmaps = if (bbqrFrames.size > 1) {
                 generateConsistentQRCodes(bbqrFrames, size, foregroundColor, backgroundColor)
             } else {
@@ -396,6 +383,7 @@ object QRCodeUtils {
             }
             
             if (bitmaps != null && bitmaps.size == bbqrFrames.size) {
+                android.util.Log.d("QRCodeUtils", "BBQr generation successful: ${bitmaps.size} frames")
                 AnimatedQRResult(
                     frames = bitmaps,
                     totalParts = bitmaps.size,
@@ -403,8 +391,12 @@ object QRCodeUtils {
                     recommendedFrameDelayMs = if (bitmaps.size > 5) 500 else 400,
                     format = OutputFormat.BBQR
                 )
-            } else null
+            } else {
+                android.util.Log.e("QRCodeUtils", "BBQr bitmap generation failed: got ${bitmaps?.size ?: 0} bitmaps for ${bbqrFrames.size} frames")
+                null
+            }
         } catch (e: Exception) {
+            android.util.Log.e("QRCodeUtils", "BBQr generation exception: ${e.message}")
             e.printStackTrace()
             null
         }

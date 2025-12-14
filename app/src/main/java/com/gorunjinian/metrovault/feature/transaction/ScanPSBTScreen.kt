@@ -57,7 +57,6 @@ fun ScanPSBTScreen(
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
     var selectedOutputFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.UR_PSBT) }
-    var qrDensity by remember { mutableStateOf(QRCodeUtils.QRDensity.NORMAL) }
     var isQRPaused by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
@@ -147,7 +146,6 @@ fun ScanPSBTScreen(
                         signedQRResult = signedQRResult!!,
                         currentFrame = currentDisplayFrame,
                         selectedFormat = selectedOutputFormat,
-                        selectedDensity = qrDensity,
                         isPaused = isQRPaused,
                         onPauseToggle = { isQRPaused = it },
                         onPreviousFrame = {
@@ -161,31 +159,23 @@ fun ScanPSBTScreen(
                         onFormatChange = { newFormat ->
                             selectedOutputFormat = newFormat
                             currentDisplayFrame = 0
-                            // Regenerate QR in new format with current density
+                            // Regenerate QR in new format - keep previous result if generation fails
+                            val previousResult = signedQRResult
                             scope.launch {
                                 val newQR = withContext(Dispatchers.Default) {
                                     QRCodeUtils.generateSmartPSBTQR(
                                         signedPSBT!!,
-                                        format = newFormat,
-                                        density = qrDensity
+                                        format = newFormat
                                     )
                                 }
-                                signedQRResult = newQR
-                            }
-                        },
-                        onDensityChange = { newDensity ->
-                            qrDensity = newDensity
-                            currentDisplayFrame = 0
-                            // Regenerate QR with new density
-                            scope.launch {
-                                val newQR = withContext(Dispatchers.Default) {
-                                    QRCodeUtils.generateSmartPSBTQR(
-                                        signedPSBT!!,
-                                        format = selectedOutputFormat,
-                                        density = newDensity
-                                    )
+                                // Only update if generation succeeded
+                                if (newQR != null) {
+                                    signedQRResult = newQR
+                                } else {
+                                    // Keep previous result and revert format selection
+                                    signedQRResult = previousResult
+                                    android.util.Log.w("ScanPSBTScreen", "QR generation failed for format $newFormat, keeping previous")
                                 }
-                                signedQRResult = newQR
                             }
                         },
                         onScanAnother = { resetScanner() },

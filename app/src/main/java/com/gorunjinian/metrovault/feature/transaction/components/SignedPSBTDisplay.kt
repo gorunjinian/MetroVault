@@ -33,7 +33,6 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
  * - Single-frame QR codes
  * - Animated multi-frame QR codes with playback controls
  * - Multiple output formats (BC-UR, BBQr, Base64)
- * - Adjustable QR density
  */
 @Composable
 fun SignedPSBTDisplay(
@@ -41,13 +40,11 @@ fun SignedPSBTDisplay(
     signedQRResult: QRCodeUtils.AnimatedQRResult,
     currentFrame: Int,
     selectedFormat: QRCodeUtils.OutputFormat,
-    selectedDensity: QRCodeUtils.QRDensity,
     isPaused: Boolean,
     onPauseToggle: (Boolean) -> Unit,
     onPreviousFrame: () -> Unit,
     onNextFrame: () -> Unit,
     onFormatChange: (QRCodeUtils.OutputFormat) -> Unit,
-    onDensityChange: (QRCodeUtils.QRDensity) -> Unit,
     onScanAnother: () -> Unit,
     onDone: () -> Unit
 ) {
@@ -101,51 +98,6 @@ fun SignedPSBTDisplay(
                 }
             }
         }
-        
-        // Density control row - show for BC-UR and BBQr formats (which support multi-frame)
-        // Always show for these formats so user can adjust even if current density resulted in single frame
-        if (selectedFormat == QRCodeUtils.OutputFormat.UR_PSBT || selectedFormat == QRCodeUtils.OutputFormat.BBQR) {
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Row(
-                modifier = Modifier
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(12.dp)
-                    )
-                    .padding(6.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Density:",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-                
-                QRCodeUtils.QRDensity.entries.forEach { density ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (selectedDensity == density) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { onDensityChange(density) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = density.displayName,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selectedDensity == density) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selectedDensity == density) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -162,7 +114,9 @@ fun SignedPSBTDisplay(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                val displayBitmap = signedQRResult.frames.getOrNull(currentFrame)
+                // Clamp frame index to valid bounds (handles race condition when switching formats)
+                val safeFrameIndex = currentFrame.coerceIn(0, signedQRResult.frames.lastIndex.coerceAtLeast(0))
+                val displayBitmap = signedQRResult.frames.getOrNull(safeFrameIndex)
                 if (displayBitmap != null) {
                     Image(
                         bitmap = displayBitmap.asImageBitmap(),
