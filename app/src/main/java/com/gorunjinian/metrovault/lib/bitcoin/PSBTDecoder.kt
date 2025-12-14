@@ -423,36 +423,50 @@ object PSBTDecoder {
     
     /**
      * Encodes a Base64 PSBT to BBQr format.
-     * Uses Zlib compression for better efficiency.
+     * Uses pure Base32 encoding ('2') for maximum compatibility.
+     * 
+     * Note: Zlib compression ('Z') requires wbits=10 which Java's Deflater 
+     * doesn't support, so we use Base32 only.
+     * 
+     * Per BBQr spec:
+     * - All blocks except last must be same length
+     * - All blocks must decode to integer number of bytes
+     * - For Base32, this means mod8 character length (8 Base32 chars = 5 bytes)
      * 
      * @return List of BBQr frame strings, or null on error
      */
-    fun encodeToBBQr(psbtBase64: String, maxChunkSize: Int = 1800): List<String>? {
+    fun encodeToBBQr(psbtBase64: String, maxQrChars: Int = 1800): List<String>? {
         return try {
             val psbtBytes = Base64.decode(psbtBase64, Base64.NO_WRAP)
             
-            // Try Zlib compression first
-            val compressed = compressZlib(psbtBytes)
-            val useZlib = compressed != null && compressed.size < psbtBytes.size
+            // Use pure Base32 encoding (no Zlib - Java can't do required wbits=10)
+            val encoding = '2'
             
-            val dataBytes = if (useZlib) compressed else psbtBytes
-            val encoding = if (useZlib) 'Z' else '2' // Z=Zlib+Base32, 2=Base32
-            val dataBase32 = encodeBase32(dataBytes)
+            // Header is 8 chars: B$ + encoding + type + 2 chars total + 2 chars part
+            val headerSize = 8
+            val maxDataChars = maxQrChars - headerSize
             
-            // Calculate header overhead (8 chars) and chunk size
-            val chunkSize = maxChunkSize - 8
-            val chunks = dataBase32.chunked(chunkSize)
-            val totalParts = chunks.size
+            // For Base32: 8 chars = 5 bytes, so work in multiples of 5 bytes
+            // to ensure each chunk has mod8 characters
+            val bytesPerChunk = (maxDataChars / 8) * 5  // Each 8 Base32 chars = 5 bytes
+            
+            // Split raw bytes into chunks
+            val byteChunks = psbtBytes.toList().chunked(bytesPerChunk).map { it.toByteArray() }
+            val totalParts = byteChunks.size
             
             if (totalParts > 1295) {
                 Log.e(TAG, "PSBT too large for BBQr: $totalParts parts")
                 return null
             }
             
-            chunks.mapIndexed { index, chunk ->
+            Log.d(TAG, "BBQr encoding: ${psbtBytes.size} bytes in $totalParts parts (${bytesPerChunk} bytes/chunk)")
+            
+            // Encode each byte chunk to Base32 and prepend header
+            byteChunks.mapIndexed { index, chunk ->
+                val chunkBase32 = encodeBase32(chunk)
                 val totalBase36 = totalParts.toString(36).padStart(2, '0').uppercase()
                 val partBase36 = index.toString(36).padStart(2, '0').uppercase()
-                $$"B$$${encoding}P$${totalBase36}$${partBase36}$$chunk"
+                "B\$${encoding}P${totalBase36}${partBase36}${chunkBase32}"
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to encode PSBT to BBQr: ${e.message}")
@@ -461,11 +475,14 @@ object PSBTDecoder {
     }
     
     /**
-     * Compresses data using Zlib (raw deflate, no header).
+     * Compresses data using raw deflate (no zlib header) as specified by BBQr.
+     * Uses window size of 10 bits to match Python's wbits=-10.
      */
     private fun compressZlib(data: ByteArray): ByteArray? {
         return try {
-            val deflater = Deflater(Deflater.DEFAULT_COMPRESSION, true) // true = no zlib header
+            // Use raw deflate (nowrap=true) with best compression
+            // Python BBQr uses wbits=-10, which means window bits of 10
+            val deflater = Deflater(Deflater.BEST_COMPRESSION, true)
             deflater.setInput(data)
             deflater.finish()
             

@@ -36,7 +36,7 @@ object QRCodeUtils {
         return try {
             val hints = hashMapOf<EncodeHintType, Any>().apply {
                 put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M)
-                put(EncodeHintType.MARGIN, 1)
+                put(EncodeHintType.MARGIN, 0)  // Minimal margin for larger QR display
                 put(EncodeHintType.CHARACTER_SET, "UTF-8")
             }
 
@@ -50,7 +50,75 @@ object QRCodeUtils {
                 }
             }
 
-            bitmap
+            // Crop white margins to ensure QR fills the image
+            cropQRWhiteMargins(bitmap, backgroundColor)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+    
+    /**
+     * Crops white margins from a QR code bitmap to make the QR pattern fill the image.
+     * This ensures consistent visual size across QR codes of different densities.
+     */
+    private fun cropQRWhiteMargins(bitmap: Bitmap, backgroundColor: Int): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        
+        // Find the bounding box of the QR pattern (non-background pixels)
+        var minX = width
+        var minY = height
+        var maxX = 0
+        var maxY = 0
+        
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                if (bitmap.getPixel(x, y) != backgroundColor) {
+                    if (x < minX) minX = x
+                    if (y < minY) minY = y
+                    if (x > maxX) maxX = x
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+        
+        // If no QR pattern found or margins are tiny, return original
+        if (maxX <= minX || maxY <= minY || (minX < 5 && minY < 5)) {
+            return bitmap
+        }
+        
+        // Add a small margin (2 pixels) for better scanning
+        val margin = 2
+        minX = (minX - margin).coerceAtLeast(0)
+        minY = (minY - margin).coerceAtLeast(0)
+        maxX = (maxX + margin).coerceAtMost(width - 1)
+        maxY = (maxY + margin).coerceAtMost(height - 1)
+        
+        // Crop to the QR pattern bounds
+        val croppedWidth = maxX - minX + 1
+        val croppedHeight = maxY - minY + 1
+        
+        return Bitmap.createBitmap(bitmap, minX, minY, croppedWidth, croppedHeight)
+    }
+    
+    /**
+     * Generates multiple QR codes for animated sequences.
+     * Uses standard generation for reliability.
+     */
+    fun generateConsistentQRCodes(
+        contents: List<String>,
+        size: Int = 512,
+        foregroundColor: Int = Color.BLACK,
+        backgroundColor: Int = Color.WHITE
+    ): List<Bitmap>? {
+        if (contents.isEmpty()) return null
+        
+        return try {
+            // Generate all QR codes with standard settings
+            contents.mapNotNull { content ->
+                generateQRCode(content, size, foregroundColor, backgroundColor)
+            }.takeIf { it.size == contents.size }
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -106,11 +174,14 @@ object QRCodeUtils {
             val chunks = splitIntoChunks(psbt, chunkSize)
             val totalParts = chunks.size
 
-            chunks.mapIndexedNotNull { index, chunk ->
+            // Build all frame contents first
+            val frameContents = chunks.mapIndexed { index, chunk ->
                 val partNumber = index + 1
-                val frameContent = "$ANIMATED_PREFIX$partNumber/$totalParts $chunk"
-                generateQRCode(frameContent, size, foregroundColor, backgroundColor)
-            }.takeIf { it.size == totalParts }
+                "$ANIMATED_PREFIX$partNumber/$totalParts $chunk"
+            }
+            
+            // Generate with consistent density
+            generateConsistentQRCodes(frameContents, size, foregroundColor, backgroundColor)
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -136,12 +207,14 @@ object QRCodeUtils {
             val chunks = splitIntoChunks(psbt, chunkSize)
             val totalParts = chunks.size
 
-            chunks.mapIndexedNotNull { index, chunk ->
+            // Build all frame contents first
+            val frameContents = chunks.mapIndexed { index, chunk ->
                 val partNumber = index + 1
-                // UR-like format for better compatibility
-                val frameContent = "ur:bytes/$partNumber-$totalParts/$chunk"
-                generateQRCode(frameContent, size, foregroundColor, backgroundColor)
-            }.takeIf { it.size == totalParts }
+                "ur:bytes/$partNumber-$totalParts/$chunk"
+            }
+            
+            // Generate with consistent density
+            generateConsistentQRCodes(frameContents, size, foregroundColor, backgroundColor)
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -178,35 +251,37 @@ object QRCodeUtils {
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
         backgroundColor: Int = Color.WHITE,
-        format: OutputFormat = OutputFormat.UR_PSBT,
-        forceAnimated: Boolean = false
+        format: OutputFormat = OutputFormat.UR_PSBT
     ): AnimatedQRResult? {
         return when (format) {
-            OutputFormat.UR_PSBT -> generateURPsbtQR(psbt, size, foregroundColor, backgroundColor, forceAnimated)
-            OutputFormat.BBQR -> generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor, forceAnimated)
-            OutputFormat.BASE64 -> generateSmartPSBTQRRaw(psbt, size, foregroundColor, backgroundColor, forceAnimated)
+            OutputFormat.UR_PSBT -> generateURPsbtQR(psbt, size, foregroundColor, backgroundColor)
+            OutputFormat.BBQR -> generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
+            OutputFormat.BASE64 -> generateSmartPSBTQRRaw(psbt, size, foregroundColor, backgroundColor)
         }
     }
     
     /**
      * Generate QR code(s) in modern BC-UR format (ur:psbt/).
+     * Note: BC-UR multi-part requires fountain codes which we don't fully implement.
+     * For large PSBTs that need animation, we fall back to BBQr format.
      */
     private fun generateURPsbtQR(
         psbt: String,
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE,
-        forceAnimated: Boolean = false
+        backgroundColor: Int = Color.WHITE
     ): AnimatedQRResult? {
         return try {
             // Encode PSBT to modern BC-UR format
             val urPsbt = PSBTDecoder.encodeToURPsbt(psbt)
             if (urPsbt == null) {
-                android.util.Log.w("QRCodeUtils", "BC-UR encoding failed, falling back to raw")
-                return generateSmartPSBTQRRaw(psbt, size, foregroundColor, backgroundColor, forceAnimated)
+                android.util.Log.w("QRCodeUtils", "BC-UR encoding failed, falling back to BBQr")
+                return generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
             }
             
-            if (!forceAnimated && !needsAnimatedQR(urPsbt)) {
+            // BC-UR format only works reliably as single-frame
+            // For multi-frame, use BBQr which is properly implemented
+            if (!needsAnimatedQR(urPsbt)) {
                 val bitmap = generateQRCode(urPsbt, size, foregroundColor, backgroundColor)
                 if (bitmap != null) {
                     AnimatedQRResult(
@@ -217,16 +292,10 @@ object QRCodeUtils {
                     )
                 } else null
             } else {
-                val frames = generateURPsbtFrames(urPsbt, size, foregroundColor, backgroundColor)
-                if (frames != null && frames.isNotEmpty()) {
-                    AnimatedQRResult(
-                        frames = frames,
-                        totalParts = frames.size,
-                        isAnimated = true,
-                        recommendedFrameDelayMs = if (frames.size > 5) 600 else 500,
-                        format = OutputFormat.UR_PSBT
-                    )
-                } else null
+                // BC-UR multi-part requires proper fountain codes which we don't implement
+                // Fall back to BBQr for animated QR which is widely compatible
+                android.util.Log.d("QRCodeUtils", "BC-UR too large for single QR, using BBQr instead")
+                generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -241,8 +310,7 @@ object QRCodeUtils {
         psbt: String,
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE,
-        forceAnimated: Boolean = false
+        backgroundColor: Int = Color.WHITE
     ): AnimatedQRResult? {
         return try {
             val bbqrFrames = PSBTDecoder.encodeToBBQr(psbt)
@@ -251,11 +319,16 @@ object QRCodeUtils {
                 return null
             }
             
-            val bitmaps = bbqrFrames.mapNotNull { frame ->
-                generateQRCode(frame, size, foregroundColor, backgroundColor)
+            // Use consistent density for all frames
+            val bitmaps = if (bbqrFrames.size > 1) {
+                generateConsistentQRCodes(bbqrFrames, size, foregroundColor, backgroundColor)
+            } else {
+                bbqrFrames.mapNotNull { frame ->
+                    generateQRCode(frame, size, foregroundColor, backgroundColor)
+                }
             }
             
-            if (bitmaps.size == bbqrFrames.size) {
+            if (bitmaps != null && bitmaps.size == bbqrFrames.size) {
                 AnimatedQRResult(
                     frames = bitmaps,
                     totalParts = bitmaps.size,
@@ -277,11 +350,10 @@ object QRCodeUtils {
         psbt: String,
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE,
-        forceAnimated: Boolean = false
+        backgroundColor: Int = Color.WHITE
     ): AnimatedQRResult? {
         return try {
-            if (!forceAnimated && !needsAnimatedQR(psbt)) {
+            if (!needsAnimatedQR(psbt)) {
                 val bitmap = generateQRCode(psbt, size, foregroundColor, backgroundColor)
                 if (bitmap != null) {
                     AnimatedQRResult(
@@ -332,12 +404,14 @@ object QRCodeUtils {
             val chunks = splitIntoChunks(data, chunkSize)
             val totalParts = chunks.size
 
-            chunks.mapIndexedNotNull { index, chunk ->
+            // Build all frame contents first
+            val frameContents = chunks.mapIndexed { index, chunk ->
                 val partNumber = index + 1
-                // BC-UR multi-part format
-                val frameContent = "$prefix$partNumber-$totalParts/$chunk"
-                generateQRCode(frameContent, size, foregroundColor, backgroundColor)
-            }.takeIf { it.size == totalParts }
+                "$prefix$partNumber-$totalParts/$chunk"
+            }
+            
+            // Generate with consistent density
+            generateConsistentQRCodes(frameContents, size, foregroundColor, backgroundColor)
         } catch (e: Exception) {
             e.printStackTrace()
             null

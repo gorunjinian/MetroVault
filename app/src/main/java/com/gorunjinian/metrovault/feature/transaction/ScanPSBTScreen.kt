@@ -13,9 +13,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -72,7 +78,7 @@ fun ScanPSBTScreen(
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
     var selectedOutputFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.UR_PSBT) }
-    var forceAnimatedOutput by remember { mutableStateOf(false) }
+    var isQRPaused by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
 
@@ -106,12 +112,14 @@ fun ScanPSBTScreen(
     }
 
     // ==================== Animated QR Display Timer ====================
-    LaunchedEffect(signedQRResult) {
+    LaunchedEffect(signedQRResult, isQRPaused) {
         signedQRResult?.let { result ->
-            if (result.isAnimated && result.frames.size > 1) {
+            if (result.isAnimated && result.frames.size > 1 && !isQRPaused) {
                 while (true) {
                     delay(result.recommendedFrameDelayMs)
-                    currentDisplayFrame = (currentDisplayFrame + 1) % result.frames.size
+                    if (!isQRPaused) {
+                        currentDisplayFrame = (currentDisplayFrame + 1) % result.frames.size
+                    }
                 }
             }
         }
@@ -177,7 +185,16 @@ fun ScanPSBTScreen(
                         signedQRResult = signedQRResult!!,
                         currentFrame = currentDisplayFrame,
                         selectedFormat = selectedOutputFormat,
-                        forceAnimated = forceAnimatedOutput,
+                        isPaused = isQRPaused,
+                        onPauseToggle = { isQRPaused = it },
+                        onPreviousFrame = {
+                            val totalFrames = signedQRResult!!.frames.size
+                            currentDisplayFrame = (currentDisplayFrame - 1 + totalFrames) % totalFrames
+                        },
+                        onNextFrame = {
+                            val totalFrames = signedQRResult!!.frames.size
+                            currentDisplayFrame = (currentDisplayFrame + 1) % totalFrames
+                        },
                         onFormatChange = { newFormat ->
                             selectedOutputFormat = newFormat
                             currentDisplayFrame = 0
@@ -186,23 +203,7 @@ fun ScanPSBTScreen(
                                 val newQR = withContext(Dispatchers.Default) {
                                     QRCodeUtils.generateSmartPSBTQR(
                                         signedPSBT!!,
-                                        format = newFormat,
-                                        forceAnimated = forceAnimatedOutput
-                                    )
-                                }
-                                signedQRResult = newQR
-                            }
-                        },
-                        onAnimatedToggle = { animated ->
-                            forceAnimatedOutput = animated
-                            currentDisplayFrame = 0
-                            // Regenerate QR with new animated setting
-                            scope.launch {
-                                val newQR = withContext(Dispatchers.Default) {
-                                    QRCodeUtils.generateSmartPSBTQR(
-                                        signedPSBT!!,
-                                        format = selectedOutputFormat,
-                                        forceAnimated = animated
+                                        format = newFormat
                                     )
                                 }
                                 signedQRResult = newQR
@@ -417,15 +418,18 @@ private fun SignedPSBTDisplay(
     signedQRResult: QRCodeUtils.AnimatedQRResult,
     currentFrame: Int,
     selectedFormat: QRCodeUtils.OutputFormat,
-    forceAnimated: Boolean,
+    isPaused: Boolean,
+    onPauseToggle: (Boolean) -> Unit,
+    onPreviousFrame: () -> Unit,
+    onNextFrame: () -> Unit,
     onFormatChange: (QRCodeUtils.OutputFormat) -> Unit,
-    onAnimatedToggle: (Boolean) -> Unit,
     onScanAnother: () -> Unit,
     onDone: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
@@ -473,50 +477,87 @@ private fun SignedPSBTDisplay(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Animated QR toggle
-        Row(
+        // QR Code Container - using square corners to avoid clipping QR edges
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Animated QR",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            androidx.compose.material3.Switch(
-                checked = forceAnimated || signedQRResult.isAnimated,
-                onCheckedChange = { onAnimatedToggle(it) },
-                enabled = !signedQRResult.isAnimated // Disable if already animated due to size
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // QR Code Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
+                .aspectRatio(1f),
+            shape = RectangleShape,
+            color = Color.White
         ) {
             val displayBitmap = signedQRResult.frames.getOrNull(currentFrame)
             if (displayBitmap != null) {
                 Image(
                     bitmap = displayBitmap.asImageBitmap(),
                     contentDescription = "Signed PSBT QR Code",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillBounds
                 )
             }
         }
         
-        // Frame counter for animated QR
+        // Frame counter and playback controls for animated QR
         if (signedQRResult.isAnimated) {
             Spacer(modifier = Modifier.height(8.dp))
+            
+            // Playback controls row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Previous frame button
+                IconButton(
+                    onClick = onPreviousFrame,
+                    enabled = isPaused
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowLeft,
+                        contentDescription = "Previous Frame",
+                        modifier = Modifier.size(32.dp),
+                        tint = if (isPaused) MaterialTheme.colorScheme.primary 
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                }
+                
+                // Pause/Play button
+                FilledIconButton(
+                    onClick = { onPauseToggle(!isPaused) },
+                    modifier = Modifier.size(56.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (isPaused) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                        contentDescription = if (isPaused) "Play" else "Pause",
+                        modifier = Modifier.size(32.dp),
+                        tint = if (isPaused) MaterialTheme.colorScheme.onPrimary
+                               else MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+                
+                // Next frame button
+                IconButton(
+                    onClick = onNextFrame,
+                    enabled = isPaused
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Next Frame",
+                        modifier = Modifier.size(32.dp),
+                        tint = if (isPaused) MaterialTheme.colorScheme.primary 
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            // Frame counter
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer
@@ -534,16 +575,18 @@ private fun SignedPSBTDisplay(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = if (signedQRResult.isAnimated)
-                "Keep the QR code visible until all frames are scanned"
-            else
-                "Scan this QR code with your online wallet to broadcast",
+            text = if (signedQRResult.isAnimated) {
+                if (isPaused) "Paused - use arrows to step through frames"
+                else "Tap pause to step through frames manually"
+            } else {
+                "Scan this QR code with your online wallet to broadcast"
+            },
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = onScanAnother,

@@ -104,6 +104,9 @@ fun SecureMnemonicKeyboard(
             "zxcvbnm"
         )
 
+        // Maximum number of keys in a row (first row has 10 letters)
+        val maxKeysPerRow = 10
+
         keyboardRows.forEachIndexed { rowIndex, row ->
             Row(
                 modifier = Modifier
@@ -111,35 +114,63 @@ fun SecureMnemonicKeyboard(
                     .padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
-                // Add left padding for middle row to offset keys
-                if (rowIndex == 1) {
-                    Spacer(modifier = Modifier.width(16.dp))
-                }
-
-                row.forEach { char ->
-                    KeyButton(
-                        text = char.uppercase(),
-                        onClick = {
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            onKeyPress(char)
+                // Calculate how many "slots" this row should use
+                // Row 0: 10 keys = 10 slots
+                // Row 1: 9 keys + side padding = effectively 10 slots
+                // Row 2: 7 keys + backspace (1.5x width) = effectively 8.5 slots, pad to 10
+                
+                when (rowIndex) {
+                    0 -> {
+                        // First row: all 10 keys, evenly distributed
+                        row.forEach { char ->
+                            KeyButton(
+                                text = char.uppercase(),
+                                onClick = {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    onKeyPress(char)
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
                         }
-                    )
-                }
-
-                // Add backspace on the last row
-                if (rowIndex == 2) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    BackspaceButton(
-                        onClick = {
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            onBackspace()
+                    }
+                    1 -> {
+                        // Middle row: 9 keys with half-key padding on each side
+                        Spacer(modifier = Modifier.weight(0.5f))
+                        row.forEach { char ->
+                            KeyButton(
+                                text = char.uppercase(),
+                                onClick = {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    onKeyPress(char)
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
                         }
-                    )
-                }
-
-                // Add right padding for middle row
-                if (rowIndex == 1) {
-                    Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.weight(0.5f))
+                    }
+                    2 -> {
+                        // Bottom row: 7 keys + backspace (1.5x width)
+                        // Use 1.25 key width padding on left to center
+                        Spacer(modifier = Modifier.weight(1.25f))
+                        row.forEach { char ->
+                            KeyButton(
+                                text = char.uppercase(),
+                                onClick = {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    onKeyPress(char)
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Spacer(modifier = Modifier.weight(0.25f))
+                        BackspaceButton(
+                            onClick = {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                onBackspace()
+                            },
+                            modifier = Modifier.weight(1.5f)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
@@ -219,7 +250,8 @@ private fun SuggestionChip(
 @Composable
 private fun KeyButton(
     text: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -231,9 +263,9 @@ private fun KeyButton(
     }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .padding(2.dp)
-            .size(width = 36.dp, height = 52.dp)
+            .height(52.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(backgroundColor)
             .clickable(
@@ -254,7 +286,8 @@ private fun KeyButton(
 
 @Composable
 private fun BackspaceButton(
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -266,9 +299,9 @@ private fun BackspaceButton(
     }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .padding(2.dp)
-            .size(width = 56.dp, height = 52.dp)
+            .height(52.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(backgroundColor)
             .clickable(
