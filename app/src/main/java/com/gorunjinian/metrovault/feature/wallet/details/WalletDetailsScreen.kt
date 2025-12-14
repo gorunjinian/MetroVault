@@ -1,5 +1,6 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -9,6 +10,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,8 +34,10 @@ fun WalletDetailsScreen(
     onBIP85: () -> Unit,
     onSignMessage: () -> Unit,
     onCheckAddress: () -> Unit,
+    onLock: () -> Unit,
     onBack: () -> Unit
 ) {
+    val view = LocalView.current
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showDeletePasswordDialog by remember { mutableStateOf(false) }
 
@@ -44,7 +49,25 @@ fun WalletDetailsScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            wallet.emergencyWipe()
+                            onLock()
+                        }
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_lock),
+                            contentDescription = "Lock",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent
+                )
             )
         }
     ) { padding ->

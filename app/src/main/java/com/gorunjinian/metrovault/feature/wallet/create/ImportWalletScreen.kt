@@ -302,7 +302,6 @@ fun ImportWalletScreen(
                     }
 
                     // "Don't save passphrase" toggle
-                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically

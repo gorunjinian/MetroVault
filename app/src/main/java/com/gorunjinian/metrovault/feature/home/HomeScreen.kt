@@ -2,19 +2,25 @@ package com.gorunjinian.metrovault.feature.home
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
@@ -31,6 +37,7 @@ enum class BottomNavTab {
     WALLETS, SETTINGS
 }
 
+@Suppress("UNUSED_PARAMETER")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -39,7 +46,11 @@ fun HomeScreen(
     secureStorage: SecureStorage,
     userPreferencesRepository: UserPreferencesRepository,
     activity: androidx.fragment.app.FragmentActivity?,
-    onCompleteMnemonic: () -> Unit
+    onCompleteMnemonic: () -> Unit,
+    onAppearanceSettings: () -> Unit,
+    onSecuritySettings: () -> Unit,
+    onAdvancedSettings: () -> Unit,
+    onAbout: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(BottomNavTab.WALLETS) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -59,6 +70,9 @@ fun HomeScreen(
 
     // Coroutine scope for tab navigation
     val scope = rememberCoroutineScope()
+    
+    // View for haptic feedback
+    val view = LocalView.current
 
     // OPTIMIZATION: Cache lambda callbacks to prevent recreation during swipe
     // These lambdas capture stable references and don't change during normal operation
@@ -174,6 +188,7 @@ fun HomeScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background, // Use normal background
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
@@ -182,111 +197,24 @@ fun HomeScreen(
                         fontWeight = FontWeight.Bold
                     )
                 },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        navController.navigate(Screen.About.route)
-                    }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_info),
-                            contentDescription = "About"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        wallet.emergencyWipe()
-                        navController.navigate(Screen.Unlock.route) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_lock),
-                            contentDescription = "Lock"
-                        )
-                    }
-                }
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent
+                )
             )
-        },
-        bottomBar = {
-            BottomAppBar(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                // Wallets Tab
-                NavigationBarItem(
-                    selected = selectedTab == BottomNavTab.WALLETS,
-                    onClick = {
-                        if (pagerState.currentPage != 0) {
-                            selectedTab = BottomNavTab.WALLETS  // Immediate highlight
-                            scope.launch { pagerState.animateScrollToPage(0) }
-                        }
-                    },
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_wallet),
-                            contentDescription = "Wallets"
-                        )
-                    },
-                    label = { Text("Wallets") }
-                )
-
-                // Center spacer for FAB
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Settings Tab
-                NavigationBarItem(
-                    selected = selectedTab == BottomNavTab.SETTINGS,
-                    onClick = {
-                        if (pagerState.currentPage != 1) {
-                            selectedTab = BottomNavTab.SETTINGS  // Immediate highlight
-                            scope.launch { pagerState.animateScrollToPage(1) }
-                        }
-                    },
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_settings),
-                            contentDescription = "Settings"
-                        )
-                    },
-                    label = { Text("Settings") }
-                )
-            }
-        },
-        floatingActionButton = {
-            val maxWallets = if (wallet.isDecoyMode) Wallet.MAX_DECOY_WALLETS else Wallet.MAX_MAIN_WALLETS
-            val showFab = wallets.size < maxWallets && pagerState.currentPage == 0
-            androidx.compose.animation.AnimatedVisibility(
-                visible = showFab,
-                enter = androidx.compose.animation.scaleIn(),
-                exit = androidx.compose.animation.scaleOut()
-            ) {
-                ExtendedFloatingActionButton(
-                    onClick = { showCreateDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_add),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    },
-                    text = { Text("Add Wallet") }
-                )
-            }
-        },
-        floatingActionButtonPosition = FabPosition.End
+        }
+        // No bottomBar or floatingActionButton - we overlay them together
     ) { padding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+            modifier = Modifier.fillMaxSize()
         ) {
+            // Main content with top padding only, extending to bottom
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = padding.calculateTopPadding()),
                 key = { it },
-                beyondViewportPageCount = 1, // Pre-render adjacent page for smoother swiping
+                beyondViewportPageCount = 1,
                 flingBehavior = PagerDefaults.flingBehavior(
                     state = pagerState,
                     snapAnimationSpec = spring(
@@ -295,26 +223,150 @@ fun HomeScreen(
                     )
                 )
             ) { page ->
-                when (page) {
-                    0 -> WalletsListContent(
-                        wallet = wallet,
-                        secureStorage = secureStorage,
-                        autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
-                        quickShortcuts = userPreferencesRepository.quickShortcuts.collectAsState().value,
-                        onWalletClick = onWalletClickCallback,
-                        onViewAddresses = onViewAddressesCallback,
-                        onScanPSBT = onScanPSBTCallback,
-                        onCheckAddress = onCheckAddressCallback,
-                        onExport = onExportCallback,
-                        onBIP85 = onBIP85Callback,
-                        onSignMessage = onSignMessageCallback
+                // Add bottom padding within each page content for scrollable area clearance
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 100.dp) // Clear space for floating nav
+                ) {
+                    when (page) {
+                        0 -> WalletsListContent(
+                            wallet = wallet,
+                            secureStorage = secureStorage,
+                            autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
+                            quickShortcuts = userPreferencesRepository.quickShortcuts.collectAsState().value,
+                            onWalletClick = onWalletClickCallback,
+                            onViewAddresses = onViewAddressesCallback,
+                            onScanPSBT = onScanPSBTCallback,
+                            onCheckAddress = onCheckAddressCallback,
+                            onExport = onExportCallback,
+                            onBIP85 = onBIP85Callback,
+                            onSignMessage = onSignMessageCallback
+                        )
+                        1 -> SettingsContent(
+                            onAppearanceSettings = onAppearanceSettings,
+                            onSecuritySettings = onSecuritySettings,
+                            onAdvancedSettings = onAdvancedSettings,
+                            onCompleteMnemonic = onCompleteMnemonic,
+                            onAbout = onAbout
+                        )
+                    }
+                }
+            }
+            
+            // Floating bottom area: FAB + Navigation bar stacked vertically
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // FAB above the nav bar - centered over lock button
+                val maxWallets = if (wallet.isDecoyMode) Wallet.MAX_DECOY_WALLETS else Wallet.MAX_MAIN_WALLETS
+                val showFab = wallets.size < maxWallets && pagerState.currentPage == 0
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showFab,
+                    enter = androidx.compose.animation.scaleIn(),
+                    exit = androidx.compose.animation.scaleOut()
+                ) {
+                    FloatingActionButton(
+                        onClick = { showCreateDialog = true },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier
+                            .padding(bottom = 12.dp)
+                            .size(56.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_add),
+                            contentDescription = "Add Wallet",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                
+                // Floating pill-shaped bottom navigation bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Wallets Tab
+                    NavigationBarItem(
+                        selected = selectedTab == BottomNavTab.WALLETS,
+                        onClick = {
+                            if (pagerState.currentPage != 0) {
+                                selectedTab = BottomNavTab.WALLETS
+                                scope.launch { pagerState.animateScrollToPage(0) }
+                            }
+                        },
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_wallet),
+                                contentDescription = "Wallets"
+                            )
+                        },
+                        label = { Text("Wallets") },
+                        modifier = Modifier.weight(1f)
                     )
-                    1 -> SettingsContent(
-                        wallet = wallet,
-                        secureStorage = secureStorage,
-                        userPreferencesRepository = userPreferencesRepository,
-                        activity = activity,
-                        onCompleteMnemonic = onCompleteMnemonic
+                    
+                    // Left divider
+                    VerticalDivider(
+                        modifier = Modifier.height(32.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    
+                    // Lock button in center
+                    FilledTonalIconButton(
+                        onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            wallet.emergencyWipe()
+                            navController.navigate(Screen.Unlock.route) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        },
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .size(56.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_lock),
+                            contentDescription = "Lock",
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    
+                    // Right divider
+                    VerticalDivider(
+                        modifier = Modifier.height(32.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    
+                    // Settings Tab
+                    NavigationBarItem(
+                        selected = selectedTab == BottomNavTab.SETTINGS,
+                        onClick = {
+                            if (pagerState.currentPage != 1) {
+                                selectedTab = BottomNavTab.SETTINGS
+                                scope.launch { pagerState.animateScrollToPage(1) }
+                            }
+                        },
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_settings),
+                                contentDescription = "Settings"
+                            )
+                        },
+                        label = { Text("Settings") },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }

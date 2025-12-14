@@ -638,7 +638,6 @@ private fun ColumnScope.Step4Passphrase(
         }
 
         // "Don't save passphrase" toggle
-        Spacer(modifier = Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically

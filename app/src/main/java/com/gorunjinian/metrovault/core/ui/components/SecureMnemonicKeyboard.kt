@@ -9,8 +9,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -234,7 +233,7 @@ private fun KeyButton(
     Box(
         modifier = Modifier
             .padding(2.dp)
-            .size(width = 32.dp, height = 44.dp)
+            .size(width = 36.dp, height = 52.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(backgroundColor)
             .clickable(
@@ -246,7 +245,7 @@ private fun KeyButton(
     ) {
         Text(
             text = text,
-            fontSize = 18.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface
         )
@@ -269,7 +268,7 @@ private fun BackspaceButton(
     Box(
         modifier = Modifier
             .padding(2.dp)
-            .size(width = 48.dp, height = 44.dp)
+            .size(width = 56.dp, height = 52.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(backgroundColor)
             .clickable(
@@ -280,8 +279,9 @@ private fun BackspaceButton(
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.Backspace,
+            painter = painterResource(com.gorunjinian.metrovault.R.drawable.ic_backspace),
             contentDescription = "Backspace",
+            modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -305,7 +305,7 @@ private fun SpaceBarButton(
         modifier = Modifier
             .padding(2.dp)
             .fillMaxWidth()
-            .height(44.dp)
+            .height(52.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(backgroundColor)
             .clickable(
@@ -318,7 +318,7 @@ private fun SpaceBarButton(
     ) {
         Text(
             text = if (enabled) "space (add word)" else "type a valid word",
-            fontSize = 14.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
             color = if (enabled) {
                 MaterialTheme.colorScheme.onSurface

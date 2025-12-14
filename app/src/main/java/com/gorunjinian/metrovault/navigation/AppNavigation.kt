@@ -36,10 +36,12 @@ import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SignMessageScreen
 import com.gorunjinian.metrovault.feature.wallet.details.WalletDetailsScreen
+import com.gorunjinian.metrovault.feature.settings.AppearanceSettingsScreen
+import com.gorunjinian.metrovault.feature.settings.SecuritySettingsScreen
+import com.gorunjinian.metrovault.feature.settings.AdvancedSettingsScreen
 
 // Optimized animation parameters for smoother performance
 private const val ANIMATION_DURATION = 250
-private const val INITIAL_SCALE = 0.95f
 private const val INITIAL_OFFSET_X = 0.08f // 8% horizontal offset for subtler movement
 
 sealed class Screen(val route: String) {
@@ -70,6 +72,9 @@ sealed class Screen(val route: String) {
     object CheckAddress : Screen("check_address")
     object CompleteMnemonic : Screen("complete_mnemonic")
     object About : Screen("about")
+    object SettingsAppearance : Screen("settings_appearance")
+    object SettingsSecurity : Screen("settings_security")
+    object SettingsAdvanced : Screen("settings_advanced")
 }
 
 @Suppress("AssignedValueIsNeverRead")
@@ -272,7 +277,11 @@ fun AppNavigation(
                 secureStorage = secureStorage,
                 userPreferencesRepository = userPreferencesRepository,
                 activity = activity,
-                onCompleteMnemonic = { navController.navigate(Screen.CompleteMnemonic.route) }
+                onCompleteMnemonic = { navController.navigate(Screen.CompleteMnemonic.route) },
+                onAppearanceSettings = { navController.navigate(Screen.SettingsAppearance.route) },
+                onSecuritySettings = { navController.navigate(Screen.SettingsSecurity.route) },
+                onAdvancedSettings = { navController.navigate(Screen.SettingsAdvanced.route) },
+                onAbout = { navController.navigate(Screen.About.route) }
             )
         }
 
@@ -315,6 +324,11 @@ fun AppNavigation(
                 onBIP85 = { navController.navigate(Screen.BIP85Derive.route) },
                 onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
                 onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },
+                onLock = {
+                    navController.navigate(Screen.Unlock.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
                 onBack = {
                     if (navController.previousBackStackEntry != null) {
                         navController.popBackStack()
@@ -449,6 +463,44 @@ fun AppNavigation(
 
         composable(Screen.About.route) {
             AboutScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.SettingsAppearance.route) {
+            AppearanceSettingsScreen(
+                userPreferencesRepository = userPreferencesRepository,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.SettingsSecurity.route) {
+            SecuritySettingsScreen(
+                wallet = wallet,
+                secureStorage = secureStorage,
+                userPreferencesRepository = userPreferencesRepository,
+                activity = activity,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.SettingsAdvanced.route) {
+            AdvancedSettingsScreen(
+                wallet = wallet,
+                secureStorage = secureStorage,
+                userPreferencesRepository = userPreferencesRepository,
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)

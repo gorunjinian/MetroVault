@@ -323,7 +323,7 @@ fun ExportOptionsScreen(
                 showPasswordDialog = false
                 passwordError = ""
             },
-            title = { Text("Authentication Required") },
+            title = { Text("Confirm Password") },
             text = {
                 Column {
                     Text("Enter your password to view the seed phrase.")
@@ -338,6 +338,7 @@ fun ExportOptionsScreen(
                         singleLine = true,
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         isError = passwordError.isNotEmpty(),
+                        isPasswordField = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (passwordError.isNotEmpty()) {

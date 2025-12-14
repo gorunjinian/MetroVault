@@ -38,8 +38,8 @@
     </style>
 
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/splashscreen_color</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_monochrome</item>
+        <item name="windowSplashScreenBackground">@color/bitcoin_orange</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_monochrome_white</item>
         <item name="postSplashScreenTheme">@style/Theme.MetroVault</item>
     </style>
 </resources>

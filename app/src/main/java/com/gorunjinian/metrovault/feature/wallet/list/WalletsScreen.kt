@@ -52,6 +52,8 @@ fun WalletsListContent(
     val wallets by wallet.wallets.collectAsState()
     var showRenameDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showPassphraseDialog by remember { mutableStateOf<WalletMetadata?>(null) }
+    // Track pending shortcut action when passphrase is required
+    var pendingShortcut by remember { mutableStateOf<QuickShortcut?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     var expandedWalletId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -179,13 +181,19 @@ fun WalletsListContent(
                             expandedWalletId = if (expandedWalletId == walletItem.id) null else walletItem.id
                         },
                         onShortcutClick = { shortcut ->
-                            when (shortcut) {
-                                QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
-                                QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
-                                QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
-                                QuickShortcut.EXPORT -> onExport(walletItem.id)
-                                QuickShortcut.BIP85 -> onBIP85(walletItem.id)
-                                QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
+                            // Check if wallet needs passphrase re-entry before executing shortcut
+                            if (wallet.needsPassphraseInput(walletItem.id)) {
+                                pendingShortcut = shortcut
+                                showPassphraseDialog = walletItem
+                            } else {
+                                when (shortcut) {
+                                    QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
+                                    QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
+                                    QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
+                                    QuickShortcut.EXPORT -> onExport(walletItem.id)
+                                    QuickShortcut.BIP85 -> onBIP85(walletItem.id)
+                                    QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
+                                }
                             }
                         },
                         dragHandleModifier = Modifier.pointerInput(walletItem.id) {
@@ -277,13 +285,31 @@ fun WalletsListContent(
             PassphraseEntryDialog(
                 walletName = walletMeta.name,
                 originalFingerprint = walletMeta.masterFingerprint,
-                onDismiss = { showPassphraseDialog = null },
+                onDismiss = { 
+                    showPassphraseDialog = null
+                    pendingShortcut = null
+                },
                 onConfirm = { passphrase, calculatedFingerprint ->
                     // Store passphrase in session memory
                     wallet.setSessionPassphrase(walletMeta.id, passphrase)
                     showPassphraseDialog = null
-                    // Now open the wallet
-                    onWalletClick(walletMeta.id)
+                    
+                    // Execute pending shortcut action or open wallet
+                    val shortcut = pendingShortcut
+                    pendingShortcut = null
+                    
+                    if (shortcut != null) {
+                        when (shortcut) {
+                            QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletMeta.id)
+                            QuickShortcut.SIGN_PSBT -> onScanPSBT(walletMeta.id)
+                            QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletMeta.id)
+                            QuickShortcut.EXPORT -> onExport(walletMeta.id)
+                            QuickShortcut.BIP85 -> onBIP85(walletMeta.id)
+                            QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletMeta.id)
+                        }
+                    } else {
+                        onWalletClick(walletMeta.id)
+                    }
                 },
                 calculateFingerprint = { passphrase ->
                     wallet.calculateFingerprint(mnemonic!!, passphrase)
@@ -438,8 +464,10 @@ fun QuickActionButton(
 ) {
     FilledTonalButton(
         onClick = onClick,
-        modifier = Modifier.height(60.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
+        modifier = Modifier
+            .width(100.dp)
+            .height(60.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
