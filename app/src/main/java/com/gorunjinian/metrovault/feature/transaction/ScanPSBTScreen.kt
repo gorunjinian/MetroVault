@@ -11,10 +11,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.PsbtDetails
+import com.gorunjinian.metrovault.feature.transaction.components.OutputWithType
 import com.gorunjinian.metrovault.feature.transaction.components.PSBTScannerView
 import com.gorunjinian.metrovault.feature.transaction.components.SignedPSBTDisplay
 import com.gorunjinian.metrovault.feature.transaction.components.TransactionConfirmation
@@ -43,6 +45,7 @@ fun ScanPSBTScreen(
     // ==================== State ====================
     var scannedPSBT by remember { mutableStateOf<String?>(null) }
     var psbtDetails by remember { mutableStateOf<PsbtDetails?>(null) }
+    var outputsWithType by remember { mutableStateOf<List<OutputWithType>?>(null) }
     var signedPSBT by remember { mutableStateOf<String?>(null) }
     var signedQRResult by remember { mutableStateOf<QRCodeUtils.AnimatedQRResult?>(null) }
     var errorMessage by remember { mutableStateOf("") }
@@ -53,11 +56,13 @@ fun ScanPSBTScreen(
     val animatedScanner = remember { QRCodeUtils.AnimatedQRScanner() }
     var scanProgress by remember { mutableIntStateOf(0) }
     var isAnimatedScan by remember { mutableStateOf(false) }
+    var isParsingPSBT by remember { mutableStateOf(false) }
     
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
     var selectedOutputFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.UR_PSBT) }
     var isQRPaused by remember { mutableStateOf(false) }
+    var isRegeneratingQR by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
 
@@ -108,6 +113,7 @@ fun ScanPSBTScreen(
     fun resetScanner() {
         scannedPSBT = null
         psbtDetails = null
+        outputsWithType = null
         signedPSBT = null
         signedQRResult = null
         errorMessage = ""
@@ -139,6 +145,30 @@ fun ScanPSBTScreen(
             verticalArrangement = Arrangement.Center
         ) {
             when {
+                // ==================== PARSING PSBT LOADING STATE ====================
+                isParsingPSBT -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(64.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Parsing transaction...",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+                
                 // ==================== SIGNED TRANSACTION DISPLAY ====================
                 signedPSBT != null && signedQRResult != null -> {
                     SignedPSBTDisplay(
@@ -147,6 +177,7 @@ fun ScanPSBTScreen(
                         currentFrame = currentDisplayFrame,
                         selectedFormat = selectedOutputFormat,
                         isPaused = isQRPaused,
+                        isLoading = isRegeneratingQR,
                         onPauseToggle = { isQRPaused = it },
                         onPreviousFrame = {
                             val totalFrames = signedQRResult!!.frames.size
@@ -159,6 +190,7 @@ fun ScanPSBTScreen(
                         onFormatChange = { newFormat ->
                             selectedOutputFormat = newFormat
                             currentDisplayFrame = 0
+                            isRegeneratingQR = true
                             // Regenerate QR in new format - keep previous result if generation fails
                             val previousResult = signedQRResult
                             scope.launch {
@@ -176,6 +208,7 @@ fun ScanPSBTScreen(
                                     signedQRResult = previousResult
                                     android.util.Log.w("ScanPSBTScreen", "QR generation failed for format $newFormat, keeping previous")
                                 }
+                                isRegeneratingQR = false
                             }
                         },
                         onScanAnother = { resetScanner() },
@@ -184,10 +217,10 @@ fun ScanPSBTScreen(
                 }
 
                 // ==================== TRANSACTION DETAILS CONFIRMATION ====================
-                psbtDetails != null && scannedPSBT != null -> {
+                psbtDetails != null && scannedPSBT != null && outputsWithType != null -> {
                     TransactionConfirmation(
-                        wallet = wallet,
                         psbtDetails = psbtDetails!!,
+                        outputsWithType = outputsWithType!!,
                         isProcessing = isProcessing,
                         errorMessage = errorMessage,
                         onSign = {
@@ -243,18 +276,40 @@ fun ScanPSBTScreen(
                             isAnimatedScan = isAnimated
                         },
                         onScanComplete = { assembledPSBT ->
+                            // Set state immediately - callback is already on Main thread
+                            // (called from LaunchedEffect in PSBTScannerView)
                             scannedPSBT = assembledPSBT
-                            // Parse PSBT details
-                            val details = wallet.getPsbtDetails(assembledPSBT)
-                            if (details != null) {
-                                psbtDetails = details
-                            } else {
-                                errorMessage = "Failed to parse PSBT. Invalid format or unsupported transaction type."
-                                scannedPSBT = null
-                                animatedScanner.reset()
-                                scanProgress = 0
-                                isAnimatedScan = false
-                                barcodeView?.resume()
+                            isParsingPSBT = true
+
+                            // Parse PSBT details and compute output types on background thread
+                            // to avoid blocking the Main thread during composition
+                            scope.launch(Dispatchers.IO) {
+                                val details = wallet.getPsbtDetails(assembledPSBT)
+
+                                // Also pre-compute output types on background thread
+                                // (this involves expensive address scanning)
+                                val computedOutputsWithType = details?.outputs?.map { output ->
+                                    val checkResult = wallet.checkAddressBelongsToWallet(output.address)
+                                    val belongsToWallet = checkResult?.belongs == true
+                                    val isOnChangePath = checkResult?.isChange == true
+                                    OutputWithType(output, belongsToWallet, isOnChangePath)
+                                }
+
+                                // Switch back to Main thread for state updates
+                                withContext(Dispatchers.Main) {
+                                    if (details != null && computedOutputsWithType != null) {
+                                        psbtDetails = details
+                                        outputsWithType = computedOutputsWithType
+                                    } else {
+                                        errorMessage = "Failed to parse PSBT. Invalid format or unsupported transaction type."
+                                        scannedPSBT = null
+                                        animatedScanner.reset()
+                                        scanProgress = 0
+                                        isAnimatedScan = false
+                                        barcodeView?.resume()
+                                    }
+                                    isParsingPSBT = false
+                                }
                             }
                         },
                         onScanError = { message ->

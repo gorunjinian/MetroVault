@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.PsbtDetails
 
 /**
@@ -31,27 +30,13 @@ import com.gorunjinian.metrovault.domain.service.PsbtDetails
  */
 @Composable
 fun TransactionConfirmation(
-    wallet: Wallet,
     psbtDetails: PsbtDetails,
+    outputsWithType: List<OutputWithType>,
     isProcessing: Boolean,
     errorMessage: String,
     onSign: () -> Unit,
     onCancel: () -> Unit
 ) {
-    // Determine output types:
-    // - Change: belongs to wallet AND is on change derivation path (m/.../1/x)
-    // - Self-send: belongs to wallet BUT is on receive path (m/.../0/x)
-    // - External: doesn't belong to wallet
-    val outputsWithType = remember(psbtDetails) {
-        psbtDetails.outputs.map { output ->
-            val checkResult = wallet.checkAddressBelongsToWallet(output.address)
-            val belongsToWallet = checkResult?.belongs == true
-            // Check if it's specifically on the change derivation path
-            val isOnChangePath = checkResult?.isChange == true
-            OutputWithType(output, belongsToWallet, isOnChangePath)
-        }
-    }
-    
     // Unit toggle state: true = sats, false = BTC
     var showInSats by remember { mutableStateOf(true) }
     

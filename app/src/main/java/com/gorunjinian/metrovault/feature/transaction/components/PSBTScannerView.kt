@@ -14,7 +14,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import com.journeyapps.barcodescanner.CompoundBarcodeView
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * QR code scanner component for scanning PSBT QR codes.
@@ -42,6 +44,10 @@ fun PSBTScannerView(
     var lastScannedFrame by remember { mutableStateOf("") }
     var frameJustCaptured by remember { mutableStateOf(false) }
     
+    // State for pending result processing (to move heavy work off camera thread)
+    var pendingScanComplete by remember { mutableStateOf(false) }
+    var barcodeViewRef by remember { mutableStateOf<CompoundBarcodeView?>(null) }
+    
     // Flash effect when frame is captured
     val scannerBackgroundColor by animateColorAsState(
         targetValue = if (frameJustCaptured) 
@@ -59,12 +65,30 @@ fun PSBTScannerView(
         }
     }
     
+    // Process scan result in LaunchedEffect (runs on Main thread, can use withContext)
+    LaunchedEffect(pendingScanComplete) {
+        if (pendingScanComplete) {
+            // Do heavy work on background thread
+            val assembledPSBT = withContext(Dispatchers.Default) {
+                animatedScanner.getResult()
+            }
+            
+            if (assembledPSBT != null) {
+                onScanComplete(assembledPSBT)
+            } else {
+                barcodeViewRef?.resume()
+            }
+            pendingScanComplete = false
+        }
+    }
+    
     if (hasCameraPermission) {
         Column(modifier = modifier) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 AndroidView(
                     factory = { context ->
                         CompoundBarcodeView(context).apply {
+                            barcodeViewRef = this
                             onBarcodeViewCreated(this)
                             setStatusText("")
                             decodeContinuous { result ->
@@ -73,7 +97,7 @@ fun PSBTScannerView(
                                     if (text == lastScannedFrame) return@let
                                     lastScannedFrame = text
                                     
-                                    // Process the frame
+                                    // Process the frame (lightweight)
                                     val progress = animatedScanner.processFrame(text)
                                     
                                     if (progress != null) {
@@ -83,13 +107,10 @@ fun PSBTScannerView(
                                         val isAnimated = QRCodeUtils.parseAnimatedFrame(text) != null
                                         onScanProgress(progress, isAnimated)
                                         
-                                        // Check if scan is complete
+                                        // Check if scan is complete - trigger async processing
                                         if (animatedScanner.isComplete()) {
-                                            val assembledPSBT = animatedScanner.getResult()
-                                            if (assembledPSBT != null) {
-                                                pause()
-                                                onScanComplete(assembledPSBT)
-                                            }
+                                            pause()
+                                            pendingScanComplete = true
                                         }
                                     }
                                 }

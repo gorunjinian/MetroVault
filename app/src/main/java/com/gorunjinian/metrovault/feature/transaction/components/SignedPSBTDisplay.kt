@@ -41,6 +41,7 @@ fun SignedPSBTDisplay(
     currentFrame: Int,
     selectedFormat: QRCodeUtils.OutputFormat,
     isPaused: Boolean,
+    isLoading: Boolean = false,
     onPauseToggle: (Boolean) -> Unit,
     onPreviousFrame: () -> Unit,
     onNextFrame: () -> Unit,
@@ -114,22 +115,30 @@ fun SignedPSBTDisplay(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                // Clamp frame index to valid bounds (handles race condition when switching formats)
-                val safeFrameIndex = currentFrame.coerceIn(0, signedQRResult.frames.lastIndex.coerceAtLeast(0))
-                val displayBitmap = signedQRResult.frames.getOrNull(safeFrameIndex)
-                if (displayBitmap != null) {
-                    Image(
-                        bitmap = displayBitmap.asImageBitmap(),
-                        contentDescription = "Signed PSBT QR Code",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.FillBounds
-                    )
-                } else {
-                    // Placeholder while loading or if frame is null
+                if (isLoading) {
+                    // Show loading indicator while regenerating QR for new format
                     CircularProgressIndicator(
                         modifier = Modifier.size(48.dp),
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.surfaceContainer
                     )
+                } else {
+                    // Clamp frame index to valid bounds (handles race condition when switching formats)
+                    val safeFrameIndex = currentFrame.coerceIn(0, signedQRResult.frames.lastIndex.coerceAtLeast(0))
+                    val displayBitmap = signedQRResult.frames.getOrNull(safeFrameIndex)
+                    if (displayBitmap != null) {
+                        Image(
+                            bitmap = displayBitmap.asImageBitmap(),
+                            contentDescription = "Signed PSBT QR Code",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.FillBounds
+                        )
+                    } else {
+                        // Placeholder while loading or if frame is null
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
