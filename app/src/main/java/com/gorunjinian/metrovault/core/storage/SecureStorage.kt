@@ -394,12 +394,21 @@ class SecureStorage(private val context: Context) {
 
     /**
      * Loads wallet metadata by ID.
+     * Automatically migrates old format to new format and persists the change.
      */
     fun loadWalletMetadata(walletId: String, isDecoy: Boolean): WalletMetadata? {
         return try {
             val prefs = if (isDecoy) decoyPrefs else mainPrefs
             val json = prefs.getString("wallet_meta_$walletId", null) ?: return null
-            WalletMetadata.fromJson(json)
+            val metadata = WalletMetadata.fromJson(json)
+            
+            // Auto-migrate: if old format (has savePassphraseLocally), re-save in new format
+            if (json.contains("\"savePassphraseLocally\"")) {
+                saveWalletMetadata(metadata, isDecoy)
+                Log.d(TAG, "Migrated wallet metadata $walletId to new format")
+            }
+            
+            metadata
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load metadata: ${e.message}", e)
             null
@@ -468,6 +477,7 @@ class SecureStorage(private val context: Context) {
 
     /**
      * Loads wallet secrets, decrypting with the session key.
+     * Automatically migrates old format (passphrase) to new format (bip39Seed) and persists.
      */
     fun loadWalletSecrets(walletId: String, isDecoy: Boolean): WalletSecrets? {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
@@ -477,7 +487,17 @@ class SecureStorage(private val context: Context) {
             val encoded = prefs.getString("wallet_secrets_$walletId", null) ?: return null
             val encrypted = Base64.decode(encoded, Base64.NO_WRAP)
             val decrypted = sessionKeyManager.decrypt(encrypted)
-            WalletSecrets.fromJson(String(decrypted))
+            val json = String(decrypted)
+            val secrets = WalletSecrets.fromJson(json)
+            
+            // Auto-migrate: if old format (has passphrase, no bip39Seed), re-save in new format
+            val isOldFormat = json.contains("\"passphrase\"") && !json.contains("\"bip39Seed\"")
+            if (isOldFormat) {
+                saveWalletSecrets(walletId, secrets, isDecoy)
+                Log.d(TAG, "Migrated wallet secrets $walletId to new format (bip39Seed)")
+            }
+            
+            secrets
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load secrets: ${e.message}", e)
             null

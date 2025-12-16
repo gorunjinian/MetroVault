@@ -142,6 +142,42 @@ class BitcoinService {
         }
     }
 
+    /**
+     * Creates wallet from a pre-computed BIP39 seed.
+     * This is more efficient than createWalletFromMnemonic when the seed is already stored,
+     * as it skips the PBKDF2 derivation step.
+     * 
+     * @param seedHex Hex-encoded 64-byte (512-bit) BIP39 seed
+     * @param derivationPath Derivation path string (e.g., "m/84'/0'/0'")
+     * @return WalletCreationResult with keys and fingerprint, or null on error
+     */
+    fun createWalletFromSeed(
+        seedHex: String,
+        derivationPath: String
+    ): WalletCreationResult? {
+        return try {
+            val seedBytes = seedHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            val masterPrivateKey = DeterministicWallet.generate(seedBytes.byteVector())
+            val path = parseDerivationPath(derivationPath)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(path)
+            val accountPublicKey = accountPrivateKey.extendedPublicKey
+
+            val masterPubKey = masterPrivateKey.publicKey
+            val hash160 = Crypto.hash160(masterPubKey.value.toByteArray())
+            val fingerprint = hash160.take(4).joinToString("") { "%02x".format(it) }
+
+            WalletCreationResult(
+                masterPrivateKey = masterPrivateKey,
+                accountPrivateKey = accountPrivateKey,
+                accountPublicKey = accountPublicKey,
+                fingerprint = fingerprint
+            )
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to create wallet from seed")
+            null
+        }
+    }
+
     fun generateAddress(
         accountPublicKey: DeterministicWallet.ExtendedPublicKey,
         index: Int,

@@ -48,9 +48,9 @@ class Wallet(context: Context) {
     private val _walletMetadataList = mutableListOf<WalletMetadata>()
     private val walletListLock = Any()
 
-    // Session-only passphrases for wallets where savePassphraseLocally = false
-    // These are wiped when app goes to background (emergencyWipe)
-    private val sessionPassphrases = ConcurrentHashMap<String, String>()
+    // Session-only BIP39 seeds for wallets where hasPassphrase = true
+    // These are computed from user-entered passphrase and wiped when app goes to background
+    private val sessionSeeds = ConcurrentHashMap<String, String>()
 
     private val _wallets = MutableStateFlow<List<WalletMetadata>>(emptyList())
     val wallets: StateFlow<List<WalletMetadata>> = _wallets.asStateFlow()
@@ -96,7 +96,7 @@ class Wallet(context: Context) {
      */
     fun clearSession() {
         isDecoyMode = false
-        sessionPassphrases.clear()  // Clear session-only passphrases
+        sessionSeeds.clear()  // Clear session-only seeds
         secureStorage.clearSession()
         unloadAllWallets()
         Log.d(TAG, "Session cleared")
@@ -107,7 +107,7 @@ class Wallet(context: Context) {
      */
     fun emergencyWipe() {
         Log.w(TAG, "EMERGENCY WIPE - Clearing all wallet data from memory")
-        sessionPassphrases.clear()  // Clear session-only passphrases
+        sessionSeeds.clear()  // Clear session-only seeds
         clearSession()
         System.gc()
     }
@@ -159,9 +159,15 @@ class Wallet(context: Context) {
 
     /**
      * Creates a wallet from mnemonic.
-     * Fast operation (<10ms) after login.
      * 
-     * @param savePassphraseLocally If false, passphrase is only kept in session memory and not saved to disk
+     * Security model:
+     * - Always stores BIP39 seed derived from mnemonic + passphrase (if saveLocally=true)
+     *   or mnemonic + empty passphrase (if saveLocally=false)
+     * - Passphrase never stored directly on disk
+     * - hasPassphrase=true means passphrase entry required on wallet open
+     * 
+     * @param savePassphraseLocally If false, only base seed (without passphrase) is saved,
+     *        and hasPassphrase is set to require re-entry on open
      */
     suspend fun createWallet(
         name: String,
@@ -185,36 +191,37 @@ class Wallet(context: Context) {
                 return@withContext WalletCreationResult.Error(WalletCreationError.INVALID_MNEMONIC)
             }
 
-            // Create wallet to get fingerprint
+            // Create wallet with passphrase to get correct fingerprint
             val walletResult = bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, derivationPath)
                 ?: return@withContext WalletCreationResult.Error(WalletCreationError.WALLET_CREATION_FAILED)
 
             val walletId = java.util.UUID.randomUUID().toString()
             val mnemonicString = mnemonic.joinToString(" ")
 
-            // Create metadata
+            // Compute BIP39 seed to store
+            // If savePassphraseLocally=true: store seed WITH passphrase (wallet ready to use)
+            // If savePassphraseLocally=false: store seed WITHOUT passphrase (base seed, requires passphrase on open)
+            val seedPassphrase = if (savePassphraseLocally) passphrase else ""
+            val seedBytes = com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode.toSeed(mnemonic, seedPassphrase)
+            val seedHex = seedBytes.joinToString("") { "%02x".format(it) }
+
+            // hasPassphrase = true only if passphrase used AND not saved locally
+            // This triggers passphrase dialog on wallet open
+            val requiresPassphraseEntry = passphrase.isNotEmpty() && !savePassphraseLocally
+
             val metadata = WalletMetadata(
                 id = walletId,
                 name = name,
                 derivationPath = derivationPath,
-                masterFingerprint = walletResult.fingerprint,
-                hasPassphrase = passphrase.isNotEmpty(),
-                savePassphraseLocally = savePassphraseLocally,
+                masterFingerprint = walletResult.fingerprint,  // Always the fingerprint WITH passphrase
+                hasPassphrase = requiresPassphraseEntry,
                 createdAt = System.currentTimeMillis()
             )
 
-            // Create secrets (plaintext - encrypted by SecureStorage)
-            // If savePassphraseLocally is false, we save empty passphrase to disk and store in session
-            val secretsPassphrase = if (savePassphraseLocally) passphrase else ""
             val secrets = WalletSecrets(
                 mnemonic = mnemonicString,
-                passphrase = secretsPassphrase
+                bip39Seed = seedHex
             )
-            
-            // Store passphrase in session memory if not saving to disk
-            if (!savePassphraseLocally && passphrase.isNotEmpty()) {
-                sessionPassphrases[walletId] = passphrase
-            }
 
             // Save to storage
             if (!secureStorage.saveWalletMetadata(metadata, isDecoyMode)) {
@@ -235,7 +242,7 @@ class Wallet(context: Context) {
                 _wallets.value = _walletMetadataList.toList()
             }
 
-            Log.d(TAG, "Wallet created: $walletId")
+            Log.d(TAG, "Wallet created: $walletId (hasPassphrase=$requiresPassphraseEntry)")
             WalletCreationResult.Success(metadata)
         } catch (e: Exception) {
             Log.e(TAG, "Create wallet failed: ${e.message}", e)
@@ -279,17 +286,18 @@ class Wallet(context: Context) {
             val secrets = secureStorage.loadWalletSecrets(walletId, isDecoyMode)
                 ?: return@withContext false
 
-            val mnemonic = secrets.mnemonic.split(" ")
-            
-            // Use session passphrase if not saved locally
-            val passphrase = if (!metadata.savePassphraseLocally && metadata.hasPassphrase) {
-                // Get from session memory (user should have entered it via dialog)
-                sessionPassphrases[walletId] ?: secrets.passphrase
+            // Determine which BIP39 seed to use
+            // If hasPassphrase=true, check for session seed (computed from user-entered passphrase)
+            // Otherwise, use the stored seed directly
+            val seedToUse = if (metadata.hasPassphrase) {
+                // Check if user has entered passphrase this session
+                sessionSeeds[walletId] ?: secrets.bip39Seed  // Fallback to stored base seed
             } else {
-                secrets.passphrase
+                secrets.bip39Seed
             }
 
-            val walletResult = bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, metadata.derivationPath)
+            // Load wallet from pre-computed seed (fast - skips PBKDF2)
+            val walletResult = bitcoinService.createWalletFromSeed(seedToUse, metadata.derivationPath)
                 ?: return@withContext false
 
             // Create secure mnemonic storage for in-memory use
@@ -310,7 +318,7 @@ class Wallet(context: Context) {
 
             walletStates[walletId] = walletState
             activeWalletId = walletId
-            Log.d(TAG, "Wallet loaded: $walletId")
+            Log.d(TAG, "Wallet loaded: $walletId (fingerprint=${walletResult.fingerprint})")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load wallet: ${e.message}", e)
@@ -483,18 +491,15 @@ class Wallet(context: Context) {
         return bitcoinService.getAddressKeys(accountPrivateKey, index, isChange)
     }
 
-    // ==================== Session Passphrase Management ====================
+    // ==================== Session Seed Management ====================
 
     /**
      * Checks if a wallet needs passphrase re-entry.
-     * This happens when the wallet has a passphrase but it wasn't saved locally,
-     * and we don't have it in session memory.
+     * This happens when hasPassphrase=true and we don't have a session seed.
      */
     fun needsPassphraseInput(walletId: String): Boolean {
         val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return false
-        return metadata.hasPassphrase && 
-               !metadata.savePassphraseLocally && 
-               !sessionPassphrases.containsKey(walletId)
+        return metadata.hasPassphrase && !sessionSeeds.containsKey(walletId)
     }
 
     /**
@@ -506,18 +511,31 @@ class Wallet(context: Context) {
     }
 
     /**
-     * Sets the session passphrase for a wallet.
+     * Sets the session seed for a wallet by computing it from the entered passphrase.
      * Used when user re-enters passphrase after app restart.
+     * 
+     * @param walletId Wallet ID
+     * @param passphrase User-entered passphrase
      */
-    fun setSessionPassphrase(walletId: String, passphrase: String) {
-        sessionPassphrases[walletId] = passphrase
+    suspend fun setSessionPassphrase(walletId: String, passphrase: String) = withContext(Dispatchers.IO) {
+        // Load mnemonic for this wallet
+        val secrets = secureStorage.loadWalletSecrets(walletId, isDecoyMode) ?: return@withContext
+        val mnemonic = secrets.mnemonic.split(" ")
+        
+        // Compute BIP39 seed from mnemonic + passphrase
+        val seedBytes = com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode.toSeed(mnemonic, passphrase)
+        val seedHex = seedBytes.joinToString("") { "%02x".format(it) }
+        
+        // Store in session
+        sessionSeeds[walletId] = seedHex
+        Log.d(TAG, "Session seed set for wallet: $walletId")
     }
 
     /**
-     * Gets the session passphrase for a wallet if stored.
+     * Checks if a session seed exists for a wallet.
      */
-    fun getSessionPassphrase(walletId: String): String? {
-        return sessionPassphrases[walletId]
+    fun hasSessionSeed(walletId: String): Boolean {
+        return sessionSeeds.containsKey(walletId)
     }
 
     /**

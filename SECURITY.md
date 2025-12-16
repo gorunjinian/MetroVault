@@ -179,7 +179,7 @@ All app data is stored in `EncryptedSharedPreferences`, providing:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                          Wallet Secrets                         │
-│                  (mnemonic, passphrase)                         │
+│                  (mnemonic, BIP39 seed)                         │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -243,31 +243,43 @@ Wallet data is split into two categories with different security levels:
 ├─────────────────────────────────────────────────────────────────┤
 │  Contents:                                                      │
 │  • Mnemonic Phrase (12 or 24 words)                             │
-│  • Optional Passphrase (if savePassphraseLocally = true)        │
+│  • BIP39 Seed (512-bit, hex-encoded)                            │
+│                                                                 │
+│  IMPORTANT: The raw passphrase is NEVER stored to disk.         │
+│  Only the derived BIP39 seed is saved, which is computed        │
+│  using PBKDF2 (mnemonic + passphrase). This seed cannot be      │
+│  reversed to recover the original passphrase.                   │
 │                                                                 │
 │  Storage: Session-key encrypted within EncryptedSharedPreferences│
 │  Encryption: Dual layer (session key + platform)                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-#### Session-Only Passphrase Storage
+#### Passphrase-Protected Wallets (Session-Only Passphrase Mode)
 
-Users can optionally choose to **not save their BIP-39 passphrase** to device storage:
+Users can choose **not to save their passphrase locally**. In this case:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │               Session-Only Passphrase Mode                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  When enabled:                                                  │
-│  • Passphrase stored only in RAM (never written to disk)        │
-│  • User must re-enter passphrase each time app opens            │
-│  • Passphrase wiped on: logout, app background, force close     │
+│  Storage Behavior:                                              │
+│  • Mnemonic: Always saved (encrypted)                           │
+│  • BIP39 Seed: Base seed (without passphrase) saved to disk     │
+│  • Passphrase: NEVER stored to disk in any form                 │
+│                                                                 │
+│  On Wallet Open:                                                │
+│  • User prompted to enter passphrase                            │
+│  • Correct BIP39 seed computed in RAM (mnemonic + passphrase)   │
+│  • Session seed stored in memory, wiped on logout               │
 │                                                                 │
 │  Security Benefits:                                             │
-│  • Even if device is seized, passphrase cannot be extracted     │
+│  • Passphrase never touches persistent storage                  │
+│  • Even if device seized, passphrase cannot be extracted        │
 │  • Protects against malware extracting encrypted storage        │
 │  • Higher security for high-value wallets                       │
+│  • Passphrase reuse on other services cannot be compromised     │
 │                                                                 │
 │  Trade-offs:                                                    │
 │  • Less convenient (re-entry required each session)             │
@@ -275,7 +287,35 @@ Users can optionally choose to **not save their BIP-39 passphrase** to device st
 │                                                                 │
 │  Fingerprint Mismatch Detection:                                │
 │  • Master fingerprint displayed in RED if wrong passphrase      │
+│  • Stored fingerprint is from the WITH-passphrase derivation    │
 │  • Allows user to verify correct passphrase was entered         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### BIP39 Seed Storage Security
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               BIP39 Seed Storage Model                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Wallet Creation:                                               │
+│                                                                 │
+│  1. User provides: mnemonic + passphrase                        │
+│  2. BIP39 seed derived: PBKDF2(mnemonic, passphrase, 2048 iter) │
+│  3. Stored to disk:                                             │
+│     • mnemonic (encrypted)                                      │
+│     • bip39Seed (512-bit hex, encrypted) ← NOT the passphrase   │
+│                                                                 │
+│  Why This is Secure:                                            │
+│  • PBKDF2 is one-way function (cannot reverse to passphrase)    │
+│  • Seed is 512 bits of entropy (infeasible to brute force)      │
+│  • Passphrase commonly reused - seed is unique to this wallet   │
+│                                                                 │
+│  Performance Benefit:                                           │
+│  • Wallet loading skips PBKDF2 (seed already derived)           │
+│  • Faster app responsiveness on wallet open                     │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```

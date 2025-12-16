@@ -290,25 +290,28 @@ fun WalletsListContent(
                     pendingShortcut = null
                 },
                 onConfirm = { passphrase, calculatedFingerprint ->
-                    // Store passphrase in session memory
-                    wallet.setSessionPassphrase(walletMeta.id, passphrase)
-                    showPassphraseDialog = null
-                    
-                    // Execute pending shortcut action or open wallet
+                    // Store session seed (computed from passphrase) and navigate
                     val shortcut = pendingShortcut
                     pendingShortcut = null
+                    showPassphraseDialog = null
                     
-                    if (shortcut != null) {
-                        when (shortcut) {
-                            QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletMeta.id)
-                            QuickShortcut.SIGN_PSBT -> onScanPSBT(walletMeta.id)
-                            QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletMeta.id)
-                            QuickShortcut.EXPORT -> onExport(walletMeta.id)
-                            QuickShortcut.BIP85 -> onBIP85(walletMeta.id)
-                            QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletMeta.id)
+                    scope.launch {
+                        // Compute and store BIP39 seed from passphrase
+                        wallet.setSessionPassphrase(walletMeta.id, passphrase)
+                        
+                        // Execute pending shortcut action or open wallet
+                        if (shortcut != null) {
+                            when (shortcut) {
+                                QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletMeta.id)
+                                QuickShortcut.SIGN_PSBT -> onScanPSBT(walletMeta.id)
+                                QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletMeta.id)
+                                QuickShortcut.EXPORT -> onExport(walletMeta.id)
+                                QuickShortcut.BIP85 -> onBIP85(walletMeta.id)
+                                QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletMeta.id)
+                            }
+                        } else {
+                            onWalletClick(walletMeta.id)
                         }
-                    } else {
-                        onWalletClick(walletMeta.id)
                     }
                 },
                 calculateFingerprint = { passphrase ->

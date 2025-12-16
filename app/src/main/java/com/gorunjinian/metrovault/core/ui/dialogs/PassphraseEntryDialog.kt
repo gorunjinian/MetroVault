@@ -13,7 +13,7 @@ import kotlinx.coroutines.delay
 
 /**
  * Dialog for re-entering BIP39 passphrase when opening a wallet
- * that has savePassphraseLocally = false.
+ * that has hasPassphrase = true (passphrase not saved locally).
  * 
  * Shows a live-updating master fingerprint as user types.
  * Fingerprint is red if it doesn't match the original.
