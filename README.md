@@ -54,6 +54,8 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 - **Passphrase Support**: Optional BIP-39 passphrase with choice to save locally or keep in session memory only
 - **Custom Entropy**: Add your own randomness via dice rolls or coin flips
 - **Mnemonic Tools**: Built-in checksum calculator and validator
+- **BIP-85 Derivation**: Generate child seeds (12/24 words) and secure passwords from your master seed
+- **XPRIV Export**: Export wallet's extended private key (if needed)
 
 ### 📝 Transaction Signing
 - **PSBT Workflow** (BIP-174): Partially Signed Bitcoin Transactions
