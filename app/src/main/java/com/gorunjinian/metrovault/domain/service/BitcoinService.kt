@@ -407,6 +407,16 @@ class BitcoinService {
         return accountPublicKey.encode(prefix)
     }
 
+    fun getAccountXpriv(accountPrivateKey: DeterministicWallet.ExtendedPrivateKey, scriptType: ScriptType): String {
+        val prefix = when (scriptType) {
+            ScriptType.P2PKH -> DeterministicWallet.xprv
+            ScriptType.P2SH_P2WPKH -> DeterministicWallet.yprv
+            ScriptType.P2WPKH -> DeterministicWallet.zprv
+            ScriptType.P2TR -> DeterministicWallet.xprv
+        }
+        return accountPrivateKey.encode(prefix)
+    }
+
     fun checkAddressBelongsToWallet(
         address: String,
         accountPublicKey: DeterministicWallet.ExtendedPublicKey,

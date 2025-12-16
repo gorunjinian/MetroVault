@@ -1,7 +1,10 @@
 package com.gorunjinian.metrovault.feature.wallet.create
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -13,8 +16,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -104,31 +109,72 @@ fun ImportWalletScreen(
                     style = MaterialTheme.typography.headlineSmall
                 )
                 
-                // Word count selector and keyboard toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Toggle switch for 12/24 words
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        FilterChip(
-                            selected = expectedWordCount == 12,
-                            onClick = { 
-                                expectedWordCount = 12
-                                if (mnemonicWords.size > 12) {
-                                    mnemonicWords = mnemonicWords.take(12)
+                        // 12 Words option
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    if (expectedWordCount == 12) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
+                                )
+                                .clickable { 
+                                    expectedWordCount = 12
+                                    if (mnemonicWords.size > 12) {
+                                        mnemonicWords = mnemonicWords.take(12)
+                                    }
                                 }
-                            },
-                            label = { Text("12 words") }
-                        )
-                        FilterChip(
-                            selected = expectedWordCount == 24,
-                            onClick = { expectedWordCount = 24 },
-                            label = { Text("24 words") }
-                        )
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "12 words",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (expectedWordCount == 12) MaterialTheme.colorScheme.onPrimary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        
+                        // 24 Words option
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    if (expectedWordCount == 24) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
+                                )
+                                .clickable { expectedWordCount = 24 }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "24 words",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (expectedWordCount == 24) MaterialTheme.colorScheme.onPrimary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
+                    
+                    Spacer(modifier = Modifier.width(8.dp))
                     
                     // Keyboard visibility toggle
                     FilledTonalIconButton(

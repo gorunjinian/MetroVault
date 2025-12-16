@@ -16,8 +16,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import com.gorunjinian.metrovault.domain.Wallet
@@ -25,6 +28,7 @@ import com.gorunjinian.metrovault.domain.service.BitcoinService
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 
+@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddressDetailScreen(
@@ -104,7 +108,16 @@ fun AddressDetailScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = address,
+                text = buildAnnotatedString {
+                    // Normal text for all but last 5 characters
+                    if (address.length > 5) {
+                        append(address.dropLast(5))
+                    }
+                    // Bold style for the last 5 characters
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(address.takeLast(5))
+                    }
+                },
                 style = MaterialTheme.typography.bodyMedium
             )
 

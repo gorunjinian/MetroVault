@@ -271,9 +271,9 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Export Options
+            // Sign/Verify Message
             ElevatedCard(
-                onClick = onExport,
+                onClick = onSignMessage,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -282,18 +282,18 @@ fun WalletDetailsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_download),
+                        painter = painterResource(R.drawable.ic_edit),
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Column {
                         Text(
-                            text = "Export",
+                            text = "Sign/Verify Message",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Export account public key or seed phrase",
+                            text = "Sign messages or verify signatures",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -331,9 +331,9 @@ fun WalletDetailsScreen(
                 }
             }
 
-            // Sign/Verify Message
+            // Export Options
             ElevatedCard(
-                onClick = onSignMessage,
+                onClick = onExport,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -342,18 +342,18 @@ fun WalletDetailsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_edit),
+                        painter = painterResource(R.drawable.ic_upload),
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Column {
                         Text(
-                            text = "Sign/Verify Message",
+                            text = "Export",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Sign messages or verify signatures",
+                            text = "Export account public key or seed phrase",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

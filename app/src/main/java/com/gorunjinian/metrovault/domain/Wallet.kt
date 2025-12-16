@@ -440,6 +440,13 @@ class Wallet(context: Context) {
         return bitcoinService.getAccountXpub(accountPublicKey, scriptType)
     }
 
+    fun getActiveXpriv(): String? {
+        val state = getActiveWalletState() ?: return null
+        val accountPrivateKey = state.getAccountPrivateKey() ?: return null
+        val scriptType = getScriptType(state.derivationPath)
+        return bitcoinService.getAccountXpriv(accountPrivateKey, scriptType)
+    }
+
     @Suppress("unused")
     fun getActiveDescriptor(): Pair<String, String>? {
         val state = getActiveWalletState() ?: return null

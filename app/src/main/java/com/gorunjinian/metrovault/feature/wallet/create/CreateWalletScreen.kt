@@ -2,6 +2,7 @@ package com.gorunjinian.metrovault.feature.wallet.create
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -183,21 +184,57 @@ private fun ColumnScope.Step1Configuration(
     )
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(8.dp)
+            )
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        FilterChip(
-            selected = wordCount == 12,
-            onClick = { onWordCountChange(12) },
-            label = { Text("12 Words") },
-            modifier = Modifier.weight(1f)
-        )
-        FilterChip(
-            selected = wordCount == 24,
-            onClick = { onWordCountChange(24) },
-            label = { Text("24 Words") },
-            modifier = Modifier.weight(1f)
-        )
+        // 12 Words option
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    if (wordCount == 12) MaterialTheme.colorScheme.primary
+                    else Color.Transparent
+                )
+                .clickable { onWordCountChange(12) }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "12 Words",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (wordCount == 12) MaterialTheme.colorScheme.onPrimary
+                       else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        // 24 Words option
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    if (wordCount == 24) MaterialTheme.colorScheme.primary
+                    else Color.Transparent
+                )
+                .clickable { onWordCountChange(24) }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "24 Words",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (wordCount == 24) MaterialTheme.colorScheme.onPrimary
+                       else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     Spacer(modifier = Modifier.height(16.dp))
@@ -300,21 +337,57 @@ private fun ColumnScope.Step2Entropy(
     )
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(8.dp)
+            )
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        FilterChip(
-            selected = entropyType == "coin",
-            onClick = { onEntropyTypeChange("coin") },
-            label = { Text("Coin Toss") },
-            modifier = Modifier.weight(1f)
-        )
-        FilterChip(
-            selected = entropyType == "dice",
-            onClick = { onEntropyTypeChange("dice") },
-            label = { Text("Dice Rolls") },
-            modifier = Modifier.weight(1f)
-        )
+        // Coin Toss option
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    if (entropyType == "coin") MaterialTheme.colorScheme.primary
+                    else Color.Transparent
+                )
+                .clickable { onEntropyTypeChange("coin") }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Coin Toss",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (entropyType == "coin") MaterialTheme.colorScheme.onPrimary
+                       else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        // Dice Rolls option
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    if (entropyType == "dice") MaterialTheme.colorScheme.primary
+                    else Color.Transparent
+                )
+                .clickable { onEntropyTypeChange("dice") }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Dice Rolls",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (entropyType == "dice") MaterialTheme.colorScheme.onPrimary
+                       else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     if (entropyType.isNotEmpty()) {

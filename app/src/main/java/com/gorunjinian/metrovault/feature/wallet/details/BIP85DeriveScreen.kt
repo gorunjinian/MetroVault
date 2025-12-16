@@ -1,5 +1,8 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
+import android.util.Base64
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -10,13 +13,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.core.ui.components.SettingsInfoCard
+import kotlinx.coroutines.launch
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -43,9 +55,16 @@ fun BIP85DeriveScreen(
     var indexInput by remember { mutableStateOf("") }
     var wordCount by remember { mutableIntStateOf(12) }
     var derivedSeed by remember { mutableStateOf<List<String>?>(null) }
+    var derivedPassword by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     // Track the current index for quick navigation
     var currentIndex by remember { mutableIntStateOf(0) }
+    
+    // Clipboard and haptic feedback for password copy
+    val clipboard = LocalClipboard.current
+    val hapticFeedback = LocalHapticFeedback.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -57,7 +76,8 @@ fun BIP85DeriveScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -67,7 +87,7 @@ fun BIP85DeriveScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (derivedSeed == null) {
+            if (derivedSeed == null && derivedPassword == null) {
                 Text(
                     text = "Derive Child Seed",
                     style = MaterialTheme.typography.headlineSmall
@@ -103,22 +123,59 @@ fun BIP85DeriveScreen(
                     style = MaterialTheme.typography.titleMedium
                 )
 
+                // Toggle switch matching TransactionConfirmation design
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                        )
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FilterChip(
-                        selected = wordCount == 12,
-                        onClick = { wordCount = 12 },
-                        label = { Text("12 Words") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = wordCount == 24,
-                        onClick = { wordCount = 24 },
-                        label = { Text("24 Words") },
-                        modifier = Modifier.weight(1f)
-                    )
+                    // 12 Words option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                            .background(
+                                if (wordCount == 12) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { wordCount = 12 }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "12 Words",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (wordCount == 12) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    // 24 Words option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                            .background(
+                                if (wordCount == 24) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { wordCount = 24 }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "24 Words",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (wordCount == 24) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 if (errorMessage.isNotEmpty()) {
@@ -137,14 +194,76 @@ fun BIP85DeriveScreen(
 
                 Spacer(modifier = Modifier.weight(1f))
 
+                // Derive Password Button
+                OutlinedButton(
+                    onClick = {
+                        val index = indexInput.toIntOrNull() ?: 0
+                        currentIndex = index
+                        indexInput = index.toString()
+
+                        val walletState = wallet.getActiveWalletState()
+                        if (walletState == null) {
+                            errorMessage = "No active wallet loaded"
+                            return@OutlinedButton
+                        }
+
+                        try {
+                            // BIP-85 Protocol A: Direct password derivation
+                            // Path: m/83696968'/707764'/24'/index'
+                            val masterPrivateKey = walletState.getMasterPrivateKey()
+                            if (masterPrivateKey == null) {
+                                errorMessage = "Master private key not available"
+                                return@OutlinedButton
+                            }
+
+                            val path = listOf(
+                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968), // bip85
+                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(707764),   // pwd
+                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(24),       // length
+                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
+                            )
+
+                            val derivedKey = masterPrivateKey.derivePrivateKey(path)
+                            val entropy = derivedKey.secretkeybytes.toByteArray()
+
+                            // BIP-85 entropy derivation using HMAC-SHA512
+                            val hmacKey = "bip-entropy-from-k".toByteArray()
+                            val hmac = hmacSha512(hmacKey, entropy)
+
+                            // Take first 32 bytes and encode to Base64
+                            val passwordBytes = hmac.sliceArray(0..31)
+                            val base64Password = Base64.encodeToString(passwordBytes, Base64.NO_WRAP)
+                            
+                            // Truncate to 24 characters
+                            var password = base64Password.take(24)
+                            
+                            // If no symbols (+, /) present, append "!"
+                            if (!password.contains('+') && !password.contains('/')) {
+                                password += "!"
+                            }
+
+                            derivedPassword = password
+                            errorMessage = ""
+                        } catch (e: Exception) {
+                            errorMessage = "Failed to derive password: ${e.message}"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.secondary
+                    ),
+                    border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
+                        brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.secondary)
+                    )
+                ) {
+                    Text("Derive Password")
+                }
+
                 Button(
                     onClick = {
-                        val index = indexInput.toIntOrNull()
-                        if (index == null) {
-                            errorMessage = "Please enter a valid index"
-                            return@Button
-                        }
+                        val index = indexInput.toIntOrNull() ?: 0
                         currentIndex = index
+                        indexInput = index.toString()
 
                         val walletState = wallet.getActiveWalletState()
                         if (walletState == null) {
@@ -194,7 +313,136 @@ fun BIP85DeriveScreen(
                 ) {
                     Text("Derive Seed")
                 }
-            } else {
+            } else if (derivedPassword != null) {
+                // Password display state
+                Text(
+                    text = "Derived Password",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+
+                // Card with index info and quick navigation arrows
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Index: $currentIndex",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        
+                        // Quick navigation arrows
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Decrement button
+                            IconButton(
+                                onClick = {
+                                    if (currentIndex > 0) {
+                                        currentIndex--
+                                        indexInput = currentIndex.toString()
+                                        // Re-derive with new index
+                                        derivePassword(wallet, currentIndex)?.let { 
+                                            derivedPassword = it 
+                                        }
+                                    }
+                                },
+                                enabled = currentIndex > 0
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_arrow_circle_left),
+                                    contentDescription = "Previous index",
+                                    tint = if (currentIndex > 0) 
+                                        MaterialTheme.colorScheme.onPrimaryContainer 
+                                    else 
+                                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.38f)
+                                )
+                            }
+                            
+                            // Increment button
+                            IconButton(
+                                onClick = {
+                                    currentIndex++
+                                    indexInput = currentIndex.toString()
+                                    // Re-derive with new index
+                                    derivePassword(wallet, currentIndex)?.let { 
+                                        derivedPassword = it 
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_arrow_circle_right),
+                                    contentDescription = "Next index",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Password display card with tap-to-copy
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            scope.launch {
+                                clipboard.setClipEntry(ClipEntry(android.content.ClipData.newPlainText("password", derivedPassword!!)))
+                                snackbarHostState.showSnackbar(
+                                    message = "Password copied to clipboard",
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
+                        },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = derivedPassword!!,
+                            style = MaterialTheme.typography.headlineSmall,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Tap to copy",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Info card explaining password derivation
+                SettingsInfoCard(
+                    icon = R.drawable.ic_key,
+                    title = "BIP-85 Password",
+                    description = "This password is derived using BIP-85, with path m/83696968'/707764'/24'/index'. It's deterministic and recoverable from your master seed."
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                Button(
+                    onClick = { derivedPassword = null },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Derive Another")
+                }
+            } else if (derivedSeed != null) {
+                // Seed display state
                 Text(
                     text = "Derived Child Seed",
                     style = MaterialTheme.typography.headlineSmall
@@ -371,7 +619,48 @@ private fun deriveSeed(wallet: Wallet, index: Int, wordCount: Int): List<String>
         }
 
         MnemonicCode.toMnemonics(finalEntropy)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/**
+ * Helper function to derive a password at a specific index using BIP85 Protocol A.
+ * Path: m/83696968'/707764'/24'/index'
+ * Returns null if derivation fails.
+ */
+private fun derivePassword(wallet: Wallet, index: Int): String? {
+    return try {
+        val walletState = wallet.getActiveWalletState() ?: return null
+        val masterPrivateKey = walletState.getMasterPrivateKey() ?: return null
+
+        val path = listOf(
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968), // bip85
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(707764),   // pwd
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(24),       // length
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
+        )
+
+        val derivedKey = masterPrivateKey.derivePrivateKey(path)
+        val entropy = derivedKey.secretkeybytes.toByteArray()
+
+        val hmacKey = "bip-entropy-from-k".toByteArray()
+        val hmac = hmacSha512(hmacKey, entropy)
+
+        // Take first 32 bytes and encode to Base64
+        val passwordBytes = hmac.sliceArray(0..31)
+        val base64Password = Base64.encodeToString(passwordBytes, Base64.NO_WRAP)
+        
+        // Truncate to 24 characters
+        var password = base64Password.take(24)
+        
+        // If no symbols (+, /) present, append "!"
+        if (!password.contains('+') && !password.contains('/')) {
+            password = "$password!"
+        }
+
+        password
+    } catch (_: Exception) {
         null
     }
 }
