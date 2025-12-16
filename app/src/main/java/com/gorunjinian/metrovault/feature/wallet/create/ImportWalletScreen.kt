@@ -20,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -104,85 +106,88 @@ fun ImportWalletScreen(
                     .padding(top = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(
-                    text = "Enter Seed Phrase",
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                
+                // Title row with keyboard toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Toggle switch for 12/24 words
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // 12 Words option
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (expectedWordCount == 12) MaterialTheme.colorScheme.primary
-                                    else Color.Transparent
-                                )
-                                .clickable { 
-                                    expectedWordCount = 12
-                                    if (mnemonicWords.size > 12) {
-                                        mnemonicWords = mnemonicWords.take(12)
-                                    }
-                                }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "12 words",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (expectedWordCount == 12) MaterialTheme.colorScheme.onPrimary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        
-                        // 24 Words option
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (expectedWordCount == 24) MaterialTheme.colorScheme.primary
-                                    else Color.Transparent
-                                )
-                                .clickable { expectedWordCount = 24 }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "24 words",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (expectedWordCount == 24) MaterialTheme.colorScheme.onPrimary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Enter Seed Phrase",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
                     
                     // Keyboard visibility toggle
+                    val haptic = LocalHapticFeedback.current
                     FilledTonalIconButton(
-                        onClick = { isKeyboardVisible = !isKeyboardVisible }
+                        onClick = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isKeyboardVisible = !isKeyboardVisible 
+                        }
                     ) {
                         Icon(
                             imageVector = if (isKeyboardVisible) Icons.Default.KeyboardHide else Icons.Default.Keyboard,
                             contentDescription = if (isKeyboardVisible) "Hide keyboard" else "Show keyboard"
+                        )
+                    }
+                }
+                
+                // Toggle switch for 12/24 words - full width
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 12 Words option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (expectedWordCount == 12) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { 
+                                expectedWordCount = 12
+                                if (mnemonicWords.size > 12) {
+                                    mnemonicWords = mnemonicWords.take(12)
+                                }
+                            }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "12 words",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (expectedWordCount == 12) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    // 24 Words option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (expectedWordCount == 24) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { expectedWordCount = 24 }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "24 words",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (expectedWordCount == 24) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
