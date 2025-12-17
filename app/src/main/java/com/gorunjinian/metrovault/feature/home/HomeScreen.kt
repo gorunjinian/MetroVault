@@ -246,6 +246,8 @@ fun HomeScreen(
                     .padding(top = padding.calculateTopPadding()),
                 key = { it },
                 beyondViewportPageCount = 1,
+                // Disable swiping in edit mode to prevent accidental page changes
+                userScrollEnabled = !isEditMode,
                 flingBehavior = PagerDefaults.flingBehavior(
                     state = pagerState,
                     snapAnimationSpec = spring(
