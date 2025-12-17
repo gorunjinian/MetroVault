@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SECURITY: Network Security Configuration for MetroVault
+    
+    This configuration explicitly denies all network connections to reinforce
+    the app's offline-only design. Even if INTERNET permission were accidentally
+    added, this config would prevent connections from succeeding.
+    
+    Key settings:
+    - cleartextTrafficPermitted="false": Blocks all HTTP connections
+    - Empty trust-anchors: Refuses to trust any SSL/TLS certificates
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Intentionally empty: trust no certificates, deny all HTTPS -->
+        </trust-anchors>
+    </base-config>
+</network-security-config>
