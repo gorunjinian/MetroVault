@@ -21,6 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalView
 import android.view.HapticFeedbackConstants
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
@@ -59,6 +61,9 @@ fun HomeScreen(
 
     // FIX: Observe loading state for UI feedback (Bug #3 & #4)
     val isLoading by wallet.isLoading.collectAsState()
+    
+    // Edit mode state for wallet list
+    var isEditMode by remember { mutableStateOf(false) }
 
     val pagerState = rememberPagerState(
         pageCount = { 2 },
@@ -186,6 +191,18 @@ fun HomeScreen(
     if (isLoading) {
         LoadingDialog()
     }
+    
+    // Handle back gesture/button to exit edit mode
+    BackHandler(enabled = isEditMode) {
+        isEditMode = false
+    }
+    
+    // Exit edit mode when switching away from Wallets tab
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != 0 && isEditMode) {
+            isEditMode = false
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background, // Use normal background
@@ -196,6 +213,20 @@ fun HomeScreen(
                         text = "Metro Vault",
                         fontWeight = FontWeight.Bold
                     )
+                },
+                actions = {
+                    // Edit button - only on Wallets tab
+                    if (pagerState.currentPage == 0) {
+                        IconButton(onClick = { isEditMode = !isEditMode }) {
+                            Icon(
+                                painter = painterResource(
+                                    if (isEditMode) R.drawable.ic_check else R.drawable.ic_edit
+                                ),
+                                contentDescription = if (isEditMode) "Done Editing" else "Edit Wallets",
+                                modifier = if (isEditMode) Modifier.size(28.dp) else Modifier
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
@@ -233,6 +264,7 @@ fun HomeScreen(
                         0 -> WalletsListContent(
                             wallet = wallet,
                             secureStorage = secureStorage,
+                            isEditMode = isEditMode,
                             autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
                             quickShortcuts = userPreferencesRepository.quickShortcuts.collectAsState().value,
                             onWalletClick = onWalletClickCallback,
@@ -264,28 +296,69 @@ fun HomeScreen(
                     .padding(bottom = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // FAB above the nav bar - centered over lock button
+                // FAB above the nav bar - centered over lock button (hidden in edit mode)
                 val maxWallets = if (wallet.isDecoyMode) Wallet.MAX_DECOY_WALLETS else Wallet.MAX_MAIN_WALLETS
-                val showFab = wallets.size < maxWallets && pagerState.currentPage == 0
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = showFab,
-                    enter = androidx.compose.animation.scaleIn(),
-                    exit = androidx.compose.animation.scaleOut()
-                ) {
-                    FloatingActionButton(
-                        onClick = { showCreateDialog = true },
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier
-                            .padding(bottom = 12.dp)
-                            .size(56.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_add),
-                            contentDescription = "Add Wallet",
-                            modifier = Modifier.size(24.dp)
-                        )
+                val canShowFab = wallets.size < maxWallets && pagerState.currentPage == 0
+                
+                // Determine what to show: FAB, Info message, or nothing
+                // Using a sealed approach with AnimatedContent for smooth crossfade
+                val fabState = when {
+                    isEditMode && pagerState.currentPage == 0 -> "edit_info"
+                    canShowFab && !isEditMode -> "fab"
+                    else -> "none"
+                }
+                
+                androidx.compose.animation.AnimatedContent(
+                    targetState = fabState,
+                    transitionSpec = {
+                        androidx.compose.animation.fadeIn(
+                            animationSpec = androidx.compose.animation.core.tween(200)
+                        ) togetherWith androidx.compose.animation.fadeOut(
+                            animationSpec = androidx.compose.animation.core.tween(200)
+                        ) using androidx.compose.animation.SizeTransform(clip = false)
+                    },
+                    label = "fab_edit_crossfade"
+                ) { state ->
+                    when (state) {
+                        "edit_info" -> {
+                            Surface(
+                                modifier = Modifier
+                                    .padding(bottom = 12.dp)
+                                    .padding(horizontal = 8.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                tonalElevation = 2.dp
+                            ) {
+                                Text(
+                                    text = "Drag the handle to rearrange or tap on wallet card to rename",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                        "fab" -> {
+                            FloatingActionButton(
+                                onClick = { showCreateDialog = true },
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier
+                                    .padding(bottom = 12.dp)
+                                    .size(56.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_add),
+                                    contentDescription = "Add Wallet",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        else -> {
+                            // Empty spacer to maintain consistent layout
+                            Spacer(modifier = Modifier.height(68.dp))
+                        }
                     }
                 }
                 

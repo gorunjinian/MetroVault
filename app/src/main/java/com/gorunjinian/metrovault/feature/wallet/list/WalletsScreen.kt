@@ -4,7 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -17,6 +17,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
@@ -35,10 +36,12 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 
+@Suppress("AssignedValueIsNeverRead")
 @Composable
 fun WalletsListContent(
     wallet: Wallet,
     secureStorage: SecureStorage,
+    isEditMode: Boolean = false,
     autoExpandSingleWallet: Boolean = false,
     quickShortcuts: List<QuickShortcut> = QuickShortcut.DEFAULT,
     onWalletClick: (String) -> Unit,
@@ -67,6 +70,7 @@ fun WalletsListContent(
 
     // Drag and Drop State
     var draggingItemIndex by remember { mutableStateOf<Int?>(null) }
+    var dragStartIndex by remember { mutableIntStateOf(0) } // Track where drag started
     var draggingItemOffset by remember { mutableFloatStateOf(0f) }
     val itemHeight = remember { mutableIntStateOf(0) }
 
@@ -109,7 +113,7 @@ fun WalletsListContent(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             // Disable user scroll during drag for smoother experience
-            userScrollEnabled = draggingItemIndex == null
+            userScrollEnabled = draggingItemIndex == null && !isEditMode
         ) {
             itemsIndexed(
                 items = wallets,
@@ -125,17 +129,32 @@ fun WalletsListContent(
                         walletItem.id == draggingItemIndex?.let { wallets.getOrNull(it)?.id }
                     }
                 }
-                val offset by remember { derivedStateOf { if (isDragging) draggingItemOffset else 0f } }
+                
+                // Calculate visual offset: total drag minus the layout displacement from swaps
+                // This keeps the card exactly under the finger regardless of swaps
+                val slotHeight = itemHeight.intValue.toFloat() + with(LocalDensity.current) { 12.dp.toPx() }
+                val visualOffset by remember(slotHeight) { 
+                    derivedStateOf { 
+                        if (isDragging) {
+                            val currentIdx = draggingItemIndex ?: dragStartIndex
+                            val layoutDisplacement = (currentIdx - dragStartIndex) * slotHeight
+                            draggingItemOffset - layoutDisplacement
+                        } else 0f
+                    } 
+                }
+                
                 val zIndex by remember { derivedStateOf { if (isDragging) 1f else 0f } }
-                val scale by remember { derivedStateOf { if (isDragging) 1.05f else 1f } }
+                // In edit mode, cards are 97% scale (subtle shrink); when dragging, bump slightly
+                val baseScale = if (isEditMode) 0.97f else 1f
+                val scale by remember(isEditMode) { derivedStateOf { if (isDragging) baseScale * 1.05f else baseScale } }
                 val shadow by remember { derivedStateOf { if (isDragging) 8.dp else 2.dp } }
 
                 Box(
                     modifier = Modifier
-                        // Only apply graphicsLayer when dragging to reduce GPU overhead
+                        // Apply graphicsLayer in edit mode for scaling, or when dragging for translation
                         .then(
-                            if (isDragging) Modifier.graphicsLayer {
-                                translationY = offset
+                            if (isEditMode || isDragging) Modifier.graphicsLayer {
+                                translationY = visualOffset
                                 scaleX = scale
                                 scaleY = scale
                             } else Modifier
@@ -164,21 +183,28 @@ fun WalletsListContent(
                         type = walletType,
                         masterFingerprint = walletItem.masterFingerprint,
                         elevation = shadow,
-                        isExpanded = expandedWalletId == walletItem.id,
+                        isEditMode = isEditMode,
+                        isExpanded = if (isEditMode) false else expandedWalletId == walletItem.id,
                         quickShortcuts = quickShortcuts,
                         onClick = { 
                             if (draggingItemIndex == null) {
-                                // Check if wallet needs passphrase re-entry
-                                if (wallet.needsPassphraseInput(walletItem.id)) {
-                                    showPassphraseDialog = walletItem
+                                if (isEditMode) {
+                                    // In edit mode, tapping card opens rename dialog
+                                    showRenameDialog = walletItem.id to walletItem.name
                                 } else {
-                                    onWalletClick(walletItem.id)
+                                    // Normal mode: navigate to wallet details
+                                    if (wallet.needsPassphraseInput(walletItem.id)) {
+                                        showPassphraseDialog = walletItem
+                                    } else {
+                                        onWalletClick(walletItem.id)
+                                    }
                                 }
                             }
                         },
-                        onEditClick = { showRenameDialog = walletItem.id to walletItem.name },
                         onExpandClick = {
-                            expandedWalletId = if (expandedWalletId == walletItem.id) null else walletItem.id
+                            if (!isEditMode) {
+                                expandedWalletId = if (expandedWalletId == walletItem.id) null else walletItem.id
+                            }
                         },
                         onShortcutClick = { shortcut ->
                             // Check if wallet needs passphrase re-entry before executing shortcut
@@ -196,57 +222,59 @@ fun WalletsListContent(
                                 }
                             }
                         },
-                        dragHandleModifier = Modifier.pointerInput(walletItem.id) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    draggingItemIndex = currentIndex
-                                    draggingItemOffset = 0f
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    draggingItemOffset += dragAmount.y
+                        // In edit mode, use immediate drag; otherwise no drag handle interaction
+                        modifier = if (isEditMode) {
+                            Modifier.pointerInput(walletItem.id) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        draggingItemIndex = currentIndex
+                                        dragStartIndex = currentIndex
+                                        draggingItemOffset = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        draggingItemOffset += dragAmount.y
 
-                                    // Use draggingItemIndex instead of captured index for swap calculations
-                                    val dragIdx = draggingItemIndex ?: return@detectDragGesturesAfterLongPress
-
-                                    // Calculate swap with larger threshold for smoother feel
-                                    val currentOffset = draggingItemOffset
-                                    val height = itemHeight.intValue.toFloat() + 12.dp.toPx() // Item height + spacing
-                                    val swapThreshold = height * 0.6f // Use 60% threshold for smoother swapping
-
-                                    // Swap down
-                                    if (currentOffset > swapThreshold) {
-                                        val nextIndex = dragIdx + 1
-                                        if (nextIndex < currentWallets.size) {
-                                            wallet.swapWallets(dragIdx, nextIndex)
-                                            draggingItemIndex = nextIndex
-                                            draggingItemOffset -= height
+                                        val dragIdx = draggingItemIndex ?: return@detectDragGestures
+                                        
+                                        // Calculate item slot height
+                                        val slotHeight = itemHeight.intValue.toFloat() + 12.dp.toPx()
+                                        
+                                        // Calculate visual offset (offset from current layout position)
+                                        val layoutDisplacement = (dragIdx - dragStartIndex) * slotHeight
+                                        val currentVisualOffset = draggingItemOffset - layoutDisplacement
+                                        
+                                        // Swap when visual offset exceeds threshold (60% of slot height)
+                                        val swapThreshold = slotHeight * 0.6f
+                                        
+                                        // Swap down
+                                        if (currentVisualOffset > swapThreshold && dragIdx < currentWallets.size - 1) {
+                                            wallet.swapWallets(dragIdx, dragIdx + 1)
+                                            draggingItemIndex = dragIdx + 1
                                         }
-                                    }
-                                    // Swap up
-                                    else if (currentOffset < -swapThreshold) {
-                                        val prevIndex = dragIdx - 1
-                                        if (prevIndex >= 0) {
-                                            wallet.swapWallets(dragIdx, prevIndex)
-                                            draggingItemIndex = prevIndex
-                                            draggingItemOffset += height
+                                        // Swap up
+                                        else if (currentVisualOffset < -swapThreshold && dragIdx > 0) {
+                                            wallet.swapWallets(dragIdx, dragIdx - 1)
+                                            draggingItemIndex = dragIdx - 1
                                         }
-                                    }
-                                },
-                                onDragEnd = {
-                                    draggingItemIndex = null
-                                    draggingItemOffset = 0f
+                                    },
+                                    onDragEnd = {
+                                        draggingItemIndex = null
+                                        draggingItemOffset = 0f
 
-                                    // Save new order
-                                    scope.launch {
-                                        wallet.saveWalletListOrder()
+                                        // Save new order
+                                        scope.launch {
+                                            wallet.saveWalletListOrder()
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        draggingItemIndex = null
+                                        draggingItemOffset = 0f
                                     }
-                                },
-                                onDragCancel = {
-                                    draggingItemIndex = null
-                                    draggingItemOffset = 0f
-                                }
-                            )
+                                )
+                            }
+                        } else {
+                            Modifier
                         }
                     )
                 }
@@ -338,18 +366,18 @@ fun WalletsListContent(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WalletCard(
+    modifier: Modifier = Modifier,
     walletId: String,
     name: String,
     type: String,
     masterFingerprint: String = "",
     elevation: androidx.compose.ui.unit.Dp = 2.dp,
+    isEditMode: Boolean = false,
     isExpanded: Boolean = false,
     quickShortcuts: List<QuickShortcut> = QuickShortcut.DEFAULT,
     onClick: () -> Unit,
-    onEditClick: () -> Unit,
     onExpandClick: () -> Unit,
-    onShortcutClick: (QuickShortcut) -> Unit,
-    dragHandleModifier: Modifier = Modifier
+    onShortcutClick: (QuickShortcut) -> Unit
 ) {
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
@@ -378,21 +406,25 @@ fun WalletCard(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Drag Handle
-                    Icon(
-                        painter = painterResource(R.drawable.ic_drag_handle),
-                        contentDescription = "Drag to reorder",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = dragHandleModifier
-                    )
+                    // Drag Handle - only visible in edit mode
+                    if (isEditMode) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_drag_handle),
+                            contentDescription = "Drag to reorder",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = modifier
+                        )
+                    }
 
                     Column {
                         Text(
                             text = name,
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            // In edit mode, use primary color to hint it's editable
+                            color = if (isEditMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
-                        if (masterFingerprint.isNotEmpty()) {
+                        if (masterFingerprint.isNotEmpty() && !isEditMode) {
                             Text(
                                 text = masterFingerprint,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -403,24 +435,16 @@ fun WalletCard(
                     }
                 }
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onEditClick) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_edit),
-                            contentDescription = "Edit Name",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
+                // Chevron button - hidden in edit mode
+                if (!isEditMode) {
                     IconButton(onClick = onExpandClick) {
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = if (isExpanded) "Collapse" else "Expand",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.rotate(chevronRotation)
+                            modifier = Modifier
+                                .size(28.dp)
+                                .rotate(chevronRotation)
                         )
                     }
                 }
