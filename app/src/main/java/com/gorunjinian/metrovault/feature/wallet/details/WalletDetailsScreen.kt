@@ -15,13 +15,12 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
 import com.gorunjinian.metrovault.data.model.DerivationPaths
-import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.data.model.WalletMetadata
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,8 +37,14 @@ fun WalletDetailsScreen(
     onBack: () -> Unit
 ) {
     val view = LocalView.current
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showDeletePasswordDialog by remember { mutableStateOf(false) }
+    
+    // Collect wallets to get the active wallet metadata
+    val wallets by wallet.wallets.collectAsState()
+    val activeWalletId = wallet.getActiveWalletId()
+    val activeWalletMetadata = wallets.find { it.id == activeWalletId }
+    
+    // Delete wallet dialog state
+    var walletToDelete by remember { mutableStateOf<WalletMetadata?>(null) }
 
     Scaffold(
         topBar = {
@@ -91,9 +96,7 @@ fun WalletDetailsScreen(
             val fingerprint = wallet.getMasterFingerprint()
             
             // Check for fingerprint mismatch (different passphrase entered)
-            val wallets by wallet.wallets.collectAsState()
-            val activeWalletId = wallet.getActiveWalletId()
-            val originalFingerprint = wallets.find { it.id == activeWalletId }?.masterFingerprint
+            val originalFingerprint = activeWalletMetadata?.masterFingerprint
             val fingerprintMismatch = fingerprint != null && 
                                       originalFingerprint != null && 
                                       fingerprint != originalFingerprint
@@ -363,7 +366,7 @@ fun WalletDetailsScreen(
 
             // Delete Wallet
             ElevatedCard(
-                onClick = { showDeleteDialog = true },
+                onClick = { walletToDelete = activeWalletMetadata },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -393,126 +396,15 @@ fun WalletDetailsScreen(
         }
     }
 
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete Wallet") },
-            text = { 
-                Text("Are you sure you want to delete this wallet?\nThis action cannot be undone unless you have your seed phrase backed up.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteDialog = false
-                        showDeletePasswordDialog = true
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-            icon = { 
-                Icon(
-                    painter = painterResource(R.drawable.ic_delete), 
-                    contentDescription = null, 
-                    tint = MaterialTheme.colorScheme.error
-                ) 
-            }
-        )
-    }
-
-    val scope = rememberCoroutineScope()
-
-    if (showDeletePasswordDialog) {
-        var password by remember { mutableStateOf("") }
-        var passwordError by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = { 
-                showDeletePasswordDialog = false 
-                passwordError = ""
-            },
-            title = { Text("Confirm Deletion") },
-            text = {
-                Column {
-                    Text("Enter your password to confirm deletion.")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SecureOutlinedTextField(
-                        value = password,
-                        onValueChange = { 
-                            password = it
-                            passwordError = ""
-                        },
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        isError = passwordError.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (passwordError.isNotEmpty()) {
-                        Text(
-                            text = passwordError,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            val isDecoy = wallet.isDecoyMode
-                            val isValid = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                if (isDecoy) {
-                                    secureStorage.isDecoyPassword(password)
-                                } else {
-                                    secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
-                                }
-                            }
-                            
-                            if (isValid) {
-                                val walletId = wallet.getActiveWalletState()?.let { activeState ->
-                                    wallet.wallets.value.find { walletData -> walletData.name == activeState.name }?.id
-                                }
-                                
-                                if (walletId != null) {
-                                    // Use the simplified delete method that relies on session password
-                                    val deleted = wallet.deleteWallet(walletId)
-                                    if (deleted) {
-                                        // Deletion successful - wallet removed from memory and storage
-                                        showDeletePasswordDialog = false
-                                        onBack() // Navigate back to home
-                                    } else {
-                                        passwordError = "Failed to delete wallet. Session might be expired."
-                                    }
-                                } else {
-                                    passwordError = "Failed to find wallet"
-                                }
-                            } else {
-                                passwordError = "Incorrect password"
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Confirm Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showDeletePasswordDialog = false 
-                    passwordError = ""
-                }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
+    // Delete wallet dialogs (reusable component handles both confirmation and password steps)
+    DeleteWalletDialogs(
+        walletToDelete = walletToDelete,
+        wallet = wallet,
+        secureStorage = secureStorage,
+        onDismiss = { walletToDelete = null },
+        onDeleted = { 
+            walletToDelete = null
+            onBack() // Navigate back to home after deletion
+        }
+    )
 }

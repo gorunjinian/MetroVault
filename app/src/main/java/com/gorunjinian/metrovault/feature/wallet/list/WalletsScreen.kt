@@ -1,9 +1,12 @@
 package com.gorunjinian.metrovault.feature.wallet.list
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +21,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
@@ -29,6 +33,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.rememberUpdatedState
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
 import com.gorunjinian.metrovault.core.ui.dialogs.PassphraseEntryDialog
 import com.gorunjinian.metrovault.core.ui.dialogs.RenameWalletDialog
 import com.gorunjinian.metrovault.domain.Wallet
@@ -53,12 +58,16 @@ fun WalletsListContent(
     onSignMessage: (String) -> Unit
 ) {
     val wallets by wallet.wallets.collectAsState()
+    val view = LocalView.current
     var showRenameDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showPassphraseDialog by remember { mutableStateOf<WalletMetadata?>(null) }
     // Track pending shortcut action when passphrase is required
     var pendingShortcut by remember { mutableStateOf<QuickShortcut?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     var expandedWalletId by remember { mutableStateOf<String?>(null) }
+    
+    // Delete wallet dialog state (single state drives the reusable component)
+    var walletToDelete by remember { mutableStateOf<WalletMetadata?>(null) }
     val scope = rememberCoroutineScope()
 
     // Auto-expand the wallet card when there's only one wallet (if preference is enabled)
@@ -199,6 +208,13 @@ fun WalletsListContent(
                                         onWalletClick(walletItem.id)
                                     }
                                 }
+                            }
+                        },
+                        onLongPress = {
+                            // Long press to delete wallet (only when not in edit mode)
+                            if (!isEditMode && draggingItemIndex == null) {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                walletToDelete = walletItem
                             }
                         },
                         onExpandClick = {
@@ -361,9 +377,18 @@ fun WalletsListContent(
             }
         )
     }
+    
+    // Delete wallet dialogs (reusable component handles both confirmation and password steps)
+    DeleteWalletDialogs(
+        walletToDelete = walletToDelete,
+        wallet = wallet,
+        secureStorage = secureStorage,
+        onDismiss = { walletToDelete = null },
+        onDeleted = { walletToDelete = null }
+    )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun WalletCard(
     modifier: Modifier = Modifier,
@@ -376,6 +401,7 @@ fun WalletCard(
     isExpanded: Boolean = false,
     quickShortcuts: List<QuickShortcut> = QuickShortcut.DEFAULT,
     onClick: () -> Unit,
+    onLongPress: () -> Unit = {},
     onExpandClick: () -> Unit,
     onShortcutClick: (QuickShortcut) -> Unit
 ) {
@@ -385,8 +411,12 @@ fun WalletCard(
     )
 
     ElevatedCard(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress
+            ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
