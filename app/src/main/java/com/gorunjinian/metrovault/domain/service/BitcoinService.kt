@@ -19,7 +19,7 @@ class BitcoinService {
         private const val TAG = "BitcoinService"
         private val CHAIN_HASH = Block.LivenetGenesisBlock.hash // Mainnet
         // Increased from 100 to 500 per chain (1000 total) for better coverage
-        private const val ADDRESS_SCAN_GAP = 500
+        private const val ADDRESS_SCAN_GAP = 2000
     }
 
     data class WalletCreationResult(
