@@ -428,6 +428,7 @@ fun AppNavigation(
         composable(Screen.DifferentAccounts.route) {
             DifferentAccountsScreen(
                 wallet = wallet,
+                secureStorage = secureStorage,
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)

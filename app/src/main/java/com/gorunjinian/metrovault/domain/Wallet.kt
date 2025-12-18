@@ -426,6 +426,41 @@ class Wallet(context: Context) {
         } else false
     }
 
+    /** 
+     * Remove an account from a wallet. 
+     * Returns false if: account doesn't exist, is currently active, or is the last account.
+     */
+    suspend fun removeAccountFromWallet(walletId: String, accountNumber: Int): Boolean = withContext(Dispatchers.IO) {
+        val metadata = synchronized(walletListLock) {
+            _walletMetadataList.find { it.id == walletId }
+        } ?: return@withContext false
+        
+        // Cannot remove account that doesn't exist
+        if (!metadata.accounts.contains(accountNumber)) return@withContext false
+        
+        // Cannot remove the currently active account
+        if (metadata.activeAccountNumber == accountNumber) return@withContext false
+        
+        // Cannot remove the last remaining account
+        if (metadata.accounts.size <= 1) return@withContext false
+        
+        val updated = metadata.copy(
+            accounts = metadata.accounts.filter { it != accountNumber }
+        )
+        
+        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+            synchronized(walletListLock) {
+                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                if (idx >= 0) {
+                    _walletMetadataList[idx] = updated
+                    _wallets.value = _walletMetadataList.toList()
+                }
+            }
+            Log.d(TAG, "Removed account $accountNumber from wallet $walletId")
+            true
+        } else false
+    }
+
     /** Switch active account. Reloads wallet with new derivation path. */
     suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean = withContext(Dispatchers.IO) {
         val metadata = synchronized(walletListLock) {

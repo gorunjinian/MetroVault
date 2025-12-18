@@ -152,7 +152,7 @@ fun HomeScreen(
             scope.launch {
                 val loaded = wallet.openWallet(walletId)
                 if (loaded) {
-                    navController.navigate(Screen.SignMessage.route)
+                    navController.navigate(Screen.SignMessage.createRoute())
                 }
             }
         }
