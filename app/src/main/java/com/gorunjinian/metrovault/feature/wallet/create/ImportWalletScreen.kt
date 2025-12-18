@@ -319,7 +319,7 @@ private fun Step1Configuration(
                 OutlinedTextField(
                     value = if (accountNumber == 0) "" else accountNumber.toString(),
                     onValueChange = { value ->
-                        val num = value.filter { it.isDigit() }.take(4).toIntOrNull() ?: 0
+                        val num = value.filter { it.isDigit() }.take(2).toIntOrNull() ?: 0
                         onAccountNumberChange(num)
                     },
                     label = { Text("Account Number") },
