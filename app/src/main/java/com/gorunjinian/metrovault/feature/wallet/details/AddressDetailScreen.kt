@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -21,12 +24,15 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.BitcoinService
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 
 @Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,6 +48,7 @@ fun AddressDetailScreen(
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     
     // Show Keys dialog states
+    var showWarningDialog by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var showKeysDialog by remember { mutableStateOf(false) }
     var passwordInput by remember { mutableStateOf("") }
@@ -51,9 +58,14 @@ fun AddressDetailScreen(
     val context = LocalContext.current
     val secureStorage = remember { SecureStorage(context) }
 
-    // Generate QR code only once when screen is shown
+
+
+    // Generate QR code on background thread to avoid blocking UI animation
     LaunchedEffect(address) {
-        qrBitmap = QRCodeUtils.generateAddressQRCode(address)
+        withContext(Dispatchers.IO) {
+            val bitmap = QRCodeUtils.generateAddressQRCode(address)
+            qrBitmap = bitmap
+        }
     }
 
     Scaffold(
@@ -64,7 +76,10 @@ fun AddressDetailScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent
+                )
             )
         }
     ) { padding ->
@@ -77,23 +92,30 @@ fun AddressDetailScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
-            qrBitmap?.let { bitmap ->
-                Card(
-                    modifier = Modifier
-                        .size(320.dp)
-                        .clickable {
-                            // Copy address to clipboard
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("Bitcoin Address", address)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Address copied to clipboard", Toast.LENGTH_SHORT).show()
-                        }
-                ) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "QR Code - Tap to copy address",
-                        modifier = Modifier.fillMaxSize()
-                    )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(320.dp)
+            ) {
+                if (qrBitmap != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable {
+                                // Copy address to clipboard
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText("Bitcoin Address", address)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "Address copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }
+                    ) {
+                        Image(
+                            bitmap = qrBitmap!!.asImageBitmap(),
+                            contentDescription = "QR Code - Tap to copy address",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                } else {
+                    CircularProgressIndicator()
                 }
             }
 
@@ -135,11 +157,7 @@ fun AddressDetailScreen(
 
             // Show Keys button
             OutlinedButton(
-                onClick = { 
-                    showPasswordDialog = true
-                    passwordInput = ""
-                    passwordError = ""
-                },
+                onClick = { showWarningDialog = true },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Show Keys")
@@ -166,61 +184,56 @@ fun AddressDetailScreen(
         }
     }
     
-    // Password Confirmation Dialog
-    if (showPasswordDialog) {
+    // Security Warning Dialog
+    if (showWarningDialog) {
         AlertDialog(
-            onDismissRequest = { showPasswordDialog = false },
-            title = { Text("Confirm Password") },
+            onDismissRequest = { showWarningDialog = false },
+            title = { Text("Security Warning") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Enter your password to view the keys for this address.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    SecureOutlinedTextField(
-                        value = passwordInput,
-                        onValueChange = { 
-                            passwordInput = it
-                            passwordError = ""
-                        },
-                        label = { Text("Password") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        isPasswordField = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        isError = passwordError.isNotEmpty(),
-                        supportingText = if (passwordError.isNotEmpty()) {
-                            { Text(passwordError, color = MaterialTheme.colorScheme.error) }
-                        } else null
-                    )
-                }
+                Text("The private key can spend all funds sent to this address.\n\nNever share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.")
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (secureStorage.verifyPasswordSimple(passwordInput) && 
-                            !secureStorage.isDecoyPassword(passwordInput)) {
-                            // Password correct - get the keys
-                            addressKeys = wallet.getAddressKeys(
-                                index = addressIndex,
-                                isChange = isChange
-                            )
-                            showPasswordDialog = false
-                            showKeysDialog = true
-                        } else {
-                            passwordError = "Incorrect password"
-                        }
-                    },
-                    enabled = passwordInput.isNotEmpty()
+                        showWarningDialog = false
+                        passwordError = ""
+                        showPasswordDialog = true
+                    }
                 ) {
-                    Text("Confirm")
+                    Text("I Understand")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showPasswordDialog = false }) {
+                TextButton(onClick = { showWarningDialog = false }) {
                     Text("Cancel")
                 }
-            }
+            },
+            icon = { Icon(painter = painterResource(R.drawable.ic_warning), contentDescription = null) }
+        )
+    }
+    
+    // Password Confirmation Dialog
+    if (showPasswordDialog) {
+        ConfirmPasswordDialog(
+            onDismiss = {
+                showPasswordDialog = false
+                passwordError = ""
+            },
+            onConfirm = { password ->
+                if (secureStorage.verifyPasswordSimple(password) && 
+                    !secureStorage.isDecoyPassword(password)) {
+                    // Password correct - get the keys
+                    addressKeys = wallet.getAddressKeys(
+                        index = addressIndex,
+                        isChange = isChange
+                    )
+                    showPasswordDialog = false
+                    showKeysDialog = true
+                } else {
+                    passwordError = "Incorrect password"
+                }
+            },
+            errorMessage = passwordError
         )
     }
     

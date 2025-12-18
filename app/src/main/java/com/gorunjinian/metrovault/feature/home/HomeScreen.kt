@@ -263,20 +263,27 @@ fun HomeScreen(
                         .padding(bottom = 100.dp) // Clear space for floating nav
                 ) {
                     when (page) {
-                        0 -> WalletsListContent(
-                            wallet = wallet,
-                            secureStorage = secureStorage,
-                            isEditMode = isEditMode,
-                            autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
-                            quickShortcuts = userPreferencesRepository.quickShortcuts.collectAsState().value,
-                            onWalletClick = onWalletClickCallback,
-                            onViewAddresses = onViewAddressesCallback,
-                            onScanPSBT = onScanPSBTCallback,
-                            onCheckAddress = onCheckAddressCallback,
-                            onExport = onExportCallback,
-                            onBIP85 = onBIP85Callback,
-                            onSignMessage = onSignMessageCallback
-                        )
+                        0 -> {
+                            // Filter out BIP85 from shortcuts if disabled
+                            val bip85Enabled = userPreferencesRepository.bip85Enabled.collectAsState().value
+                            val filteredShortcuts = userPreferencesRepository.quickShortcuts.collectAsState().value
+                                .filter { bip85Enabled || it != com.gorunjinian.metrovault.data.model.QuickShortcut.BIP85 }
+                            
+                            WalletsListContent(
+                                wallet = wallet,
+                                secureStorage = secureStorage,
+                                isEditMode = isEditMode,
+                                autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
+                                quickShortcuts = filteredShortcuts,
+                                onWalletClick = onWalletClickCallback,
+                                onViewAddresses = onViewAddressesCallback,
+                                onScanPSBT = onScanPSBTCallback,
+                                onCheckAddress = onCheckAddressCallback,
+                                onExport = onExportCallback,
+                                onBIP85 = onBIP85Callback,
+                                onSignMessage = onSignMessageCallback
+                            )
+                        }
                         1 -> SettingsContent(
                             onAppearanceSettings = onAppearanceSettings,
                             onSecuritySettings = onSecuritySettings,

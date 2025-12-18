@@ -9,6 +9,7 @@ import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.data.model.WalletCreationError
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
 import com.gorunjinian.metrovault.data.model.WalletMetadata
+import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletSecrets
 import com.gorunjinian.metrovault.data.model.WalletState
 import com.gorunjinian.metrovault.core.storage.SecureStorage
@@ -174,7 +175,8 @@ class Wallet(context: Context) {
         mnemonic: List<String>,
         derivationPath: String,
         passphrase: String = "",
-        savePassphraseLocally: Boolean = true
+        savePassphraseLocally: Boolean = true,
+        accountNumber: Int = 0
     ): WalletCreationResult = withContext(Dispatchers.IO) {
         try {
             if (!sessionKeyManager.isSessionActive.value) {
@@ -191,8 +193,11 @@ class Wallet(context: Context) {
                 return@withContext WalletCreationResult.Error(WalletCreationError.INVALID_MNEMONIC)
             }
 
+            // Build full derivation path with account number
+            val fullPath = DerivationPaths.withAccountNumber(derivationPath, accountNumber)
+
             // Create wallet with passphrase to get correct fingerprint
-            val walletResult = bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, derivationPath)
+            val walletResult = bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, fullPath)
                 ?: return@withContext WalletCreationResult.Error(WalletCreationError.WALLET_CREATION_FAILED)
 
             val walletId = java.util.UUID.randomUUID().toString()
@@ -212,10 +217,12 @@ class Wallet(context: Context) {
             val metadata = WalletMetadata(
                 id = walletId,
                 name = name,
-                derivationPath = derivationPath,
+                derivationPath = fullPath,
                 masterFingerprint = walletResult.fingerprint,  // Always the fingerprint WITH passphrase
                 hasPassphrase = requiresPassphraseEntry,
-                createdAt = System.currentTimeMillis()
+                createdAt = System.currentTimeMillis(),
+                accounts = listOf(accountNumber),
+                activeAccountNumber = accountNumber
             )
 
             val secrets = WalletSecrets(
@@ -242,7 +249,7 @@ class Wallet(context: Context) {
                 _wallets.value = _walletMetadataList.toList()
             }
 
-            Log.d(TAG, "Wallet created: $walletId (hasPassphrase=$requiresPassphraseEntry)")
+            Log.d(TAG, "Wallet created: $walletId (account=$accountNumber, hasPassphrase=$requiresPassphraseEntry)")
             WalletCreationResult.Success(metadata)
         } catch (e: Exception) {
             Log.e(TAG, "Create wallet failed: ${e.message}", e)
@@ -296,8 +303,11 @@ class Wallet(context: Context) {
                 secrets.bip39Seed
             }
 
+            // Use active account's derivation path
+            val derivationPath = metadata.getActiveDerivationPath()
+
             // Load wallet from pre-computed seed (fast - skips PBKDF2)
-            val walletResult = bitcoinService.createWalletFromSeed(seedToUse, metadata.derivationPath)
+            val walletResult = bitcoinService.createWalletFromSeed(seedToUse, derivationPath)
                 ?: return@withContext false
 
             // Create secure mnemonic storage for in-memory use
@@ -309,7 +319,7 @@ class Wallet(context: Context) {
             val walletState = WalletState(
                 name = metadata.name,
                 mnemonic = secureMnemonic,
-                derivationPath = metadata.derivationPath,
+                derivationPath = derivationPath,
                 fingerprint = walletResult.fingerprint,
                 masterPrivateKey = walletResult.masterPrivateKey,
                 accountPrivateKey = walletResult.accountPrivateKey,
@@ -387,6 +397,76 @@ class Wallet(context: Context) {
         secureStorage.saveWalletOrder(orderedIds, isDecoyMode)
     }
 
+    // ==================== Account Management ====================
+
+    /** Add a new account number to a wallet. Returns false if already exists. */
+    suspend fun addAccountToWallet(walletId: String, accountNumber: Int): Boolean = withContext(Dispatchers.IO) {
+        val metadata = synchronized(walletListLock) {
+            _walletMetadataList.find { it.id == walletId }
+        } ?: return@withContext false
+        
+        if (metadata.accounts.contains(accountNumber)) return@withContext false
+        
+        val updated = metadata.copy(
+            accounts = (metadata.accounts + accountNumber).sorted()
+        )
+        
+        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+            synchronized(walletListLock) {
+                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                if (idx >= 0) {
+                    _walletMetadataList[idx] = updated
+                    _wallets.value = _walletMetadataList.toList()
+                }
+            }
+            Log.d(TAG, "Added account $accountNumber to wallet $walletId")
+            true
+        } else false
+    }
+
+    /** Switch active account. Reloads wallet with new derivation path. */
+    suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean = withContext(Dispatchers.IO) {
+        val metadata = synchronized(walletListLock) {
+            _walletMetadataList.find { it.id == walletId }
+        } ?: return@withContext false
+        
+        if (!metadata.accounts.contains(accountNumber)) return@withContext false
+        if (metadata.activeAccountNumber == accountNumber) return@withContext true
+        
+        val updated = metadata.copy(activeAccountNumber = accountNumber)
+        
+        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+            synchronized(walletListLock) {
+                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                if (idx >= 0) {
+                    _walletMetadataList[idx] = updated
+                    _wallets.value = _walletMetadataList.toList()
+                }
+            }
+            // Reload wallet with new account's path
+            unloadWallet(walletId)
+            val reloaded = openWallet(walletId)
+            Log.d(TAG, "Switched to account $accountNumber: reload=$reloaded")
+            reloaded
+        } else false
+    }
+
+    /** Get accounts list for active wallet */
+    fun getActiveWalletAccounts(): List<Int> {
+        val walletId = activeWalletId ?: return listOf(0)
+        return synchronized(walletListLock) {
+            _walletMetadataList.find { it.id == walletId }?.accounts ?: listOf(0)
+        }
+    }
+
+    /** Get active account number for active wallet */
+    fun getActiveAccountNumber(): Int {
+        val walletId = activeWalletId ?: return 0
+        return synchronized(walletListLock) {
+            _walletMetadataList.find { it.id == walletId }?.activeAccountNumber ?: 0
+        }
+    }
+
     // ==================== Memory Management ====================
 
     fun unloadWallet(walletId: String) {
@@ -395,7 +475,28 @@ class Wallet(context: Context) {
         if (activeWalletId == walletId) activeWalletId = null
     }
 
+    /**
+     * Wipe all wallet keys from memory but keep metadata list.
+     * Use when navigating away from wallet screens (security).
+     * Resets RAM to same state as fresh app launch.
+     */
+    fun unloadAllWalletKeys() {
+        val count = walletStates.size
+        val seedCount = sessionSeeds.size
+        walletStates.values.forEach { it.wipe() }
+        walletStates.clear()
+        sessionSeeds.clear()  // Clear passphrase-derived seeds
+        activeWalletId = null
+        Log.d(TAG, "Wiped $count wallet key(s) + $seedCount session seed(s) from memory (HomeScreen navigation)")
+    }
+
+    /**
+     * Full session wipe - clears both keys AND metadata.
+     * Use for lock/logout/emergency wipe.
+     */
     fun unloadAllWallets() {
+        val keyCount = walletStates.size
+        val metadataCount = _walletMetadataList.size
         walletStates.values.forEach { it.wipe() }
         walletStates.clear()
         synchronized(walletListLock) {
@@ -403,6 +504,7 @@ class Wallet(context: Context) {
             _wallets.value = emptyList()
         }
         activeWalletId = null
+        Log.d(TAG, "🔒 Full session wipe: $keyCount keys + $metadataCount metadata cleared (Lock/Logout)")
     }
 
     // ==================== Bitcoin Operations ====================

@@ -32,8 +32,23 @@ data class WalletMetadata(
     val derivationPath: String,
     val masterFingerprint: String,
     val hasPassphrase: Boolean,  // true = passphrase entry required on open
-    val createdAt: Long
+    val createdAt: Long,
+    val accounts: List<Int> = listOf(0),      // Account numbers under this wallet
+    val activeAccountNumber: Int = 0           // Currently active account number
 ) {
+    /**
+     * Get the derivation path for the active account.
+     * If activeAccountNumber differs from the stored path's account, builds a new path.
+     */
+    fun getActiveDerivationPath(): String {
+        val pathAccount = DerivationPaths.getAccountNumber(derivationPath)
+        return if (pathAccount == activeAccountNumber) {
+            derivationPath
+        } else {
+            DerivationPaths.withAccountNumber(derivationPath, activeAccountNumber)
+        }
+    }
+
     fun toJson(): String {
         return org.json.JSONObject().apply {
             put("id", id)
@@ -42,6 +57,8 @@ data class WalletMetadata(
             put("masterFingerprint", masterFingerprint)
             put("hasPassphrase", hasPassphrase)
             put("createdAt", createdAt)
+            put("accounts", org.json.JSONArray(accounts))
+            put("activeAccountNumber", activeAccountNumber)
         }.toString()
     }
 
@@ -73,13 +90,24 @@ data class WalletMetadata(
                 obj.optBoolean("hasPassphrase", false)
             }
             
+            // MIGRATION: Wallets without accounts array get [0] as default
+            val accounts = if (obj.has("accounts")) {
+                val arr = obj.getJSONArray("accounts")
+                (0 until arr.length()).map { arr.getInt(it) }
+            } else {
+                listOf(0)
+            }
+            val activeAccountNumber = obj.optInt("activeAccountNumber", 0)
+            
             return WalletMetadata(
                 id = obj.getString("id"),
                 name = obj.getString("name"),
                 derivationPath = obj.getString("derivationPath"),
                 masterFingerprint = obj.optString("masterFingerprint", ""),
                 hasPassphrase = hasPassphrase,
-                createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                accounts = accounts,
+                activeAccountNumber = activeAccountNumber
             )
         }
     }

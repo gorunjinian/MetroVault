@@ -60,6 +60,12 @@ class UserPreferencesRepository(context: Context) {
     )
     val quickShortcuts: StateFlow<List<QuickShortcut>> = _quickShortcuts.asStateFlow()
 
+    private val _differentAccountsEnabled = MutableStateFlow(prefs.getBoolean(KEY_DIFFERENT_ACCOUNTS_ENABLED, true))
+    val differentAccountsEnabled: StateFlow<Boolean> = _differentAccountsEnabled.asStateFlow()
+
+    private val _bip85Enabled = MutableStateFlow(prefs.getBoolean(KEY_BIP85_ENABLED, true))
+    val bip85Enabled: StateFlow<Boolean> = _bip85Enabled.asStateFlow()
+
     fun setThemeMode(mode: String) {
         if (mode in listOf(THEME_LIGHT, THEME_DARK, THEME_SYSTEM)) {
             prefs.edit { putString(KEY_THEME_MODE, mode) }
@@ -99,6 +105,11 @@ class UserPreferencesRepository(context: Context) {
         _autoExpandSingleWallet.value = enabled
     }
 
+    fun setDifferentAccountsEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_DIFFERENT_ACCOUNTS_ENABLED, enabled) }
+        _differentAccountsEnabled.value = enabled
+    }
+
     /**
      * Sets the quick shortcuts for the expanded wallet card.
      * Must be exactly 3 shortcuts.
@@ -107,6 +118,32 @@ class UserPreferencesRepository(context: Context) {
         if (shortcuts.size != 3) return
         prefs.edit { putString(KEY_QUICK_SHORTCUTS, QuickShortcut.toStorageString(shortcuts)) }
         _quickShortcuts.value = shortcuts
+    }
+
+    /**
+     * Enable or disable BIP-85 derivation feature.
+     * When disabled, auto-replaces BIP85 quick shortcut if assigned.
+     */
+    fun setBip85Enabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_BIP85_ENABLED, enabled) }
+        _bip85Enabled.value = enabled
+        
+        if (!enabled) {
+            // Auto-replace BIP85 shortcut if assigned
+            val current = _quickShortcuts.value
+            if (QuickShortcut.BIP85 in current) {
+                val available = QuickShortcut.entries.filter { 
+                    it != QuickShortcut.BIP85 && it !in current 
+                }
+                if (available.isNotEmpty()) {
+                    val replacement = available.first()
+                    val newList = current.map { 
+                        if (it == QuickShortcut.BIP85) replacement else it 
+                    }
+                    setQuickShortcuts(newList)
+                }
+            }
+        }
     }
 
     companion object {
@@ -119,6 +156,8 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_WIPE_ON_FAILED_ATTEMPTS = "wipe_on_failed_attempts"
         private const val KEY_AUTO_EXPAND_SINGLE_WALLET = "auto_expand_single_wallet"
         private const val KEY_QUICK_SHORTCUTS = "quick_shortcuts"
+        private const val KEY_DIFFERENT_ACCOUNTS_ENABLED = "different_accounts_enabled"
+        private const val KEY_BIP85_ENABLED = "bip85_enabled"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
         const val THEME_SYSTEM = "system"

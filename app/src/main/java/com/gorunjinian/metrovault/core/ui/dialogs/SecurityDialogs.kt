@@ -276,3 +276,92 @@ fun BiometricSetupDialog(
         }
     )
 }
+
+/**
+ * Generic password confirmation dialog for sensitive operations.
+ * Used throughout the app for consistent password verification UX.
+ *
+ * @param onDismiss Called when user cancels the dialog
+ * @param onConfirm Called with the entered password when user confirms
+ * @param isLoading Show loading state (disables inputs and shows spinner)
+ * @param errorMessage Error message to display (e.g., "Incorrect password")
+ */
+@Composable
+fun ConfirmPasswordDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (password: String) -> Unit,
+    isLoading: Boolean = false,
+    errorMessage: String = ""
+) {
+    var password by remember { mutableStateOf("") }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    AlertDialog(
+        onDismissRequest = { if (!isLoading) onDismiss() },
+        title = { Text("Confirm Password") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (isLoading) {
+                    // Loading state
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "Please wait...",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else {
+                    Text("Enter password to continue")
+                    SecureOutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        isPasswordField = true,
+                        isError = errorMessage.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                keyboardController?.hide()
+                                if (password.isNotEmpty()) onConfirm(password)
+                            }
+                        )
+                    )
+                    if (errorMessage.isNotEmpty()) {
+                        Text(
+                            text = errorMessage,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (!isLoading) {
+                TextButton(
+                    onClick = { onConfirm(password) },
+                    enabled = password.isNotEmpty()
+                ) {
+                    Text("Confirm")
+                }
+            }
+        },
+        dismissButton = {
+            if (!isLoading) {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        }
+    )
+}

@@ -21,18 +21,21 @@ import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletMetadata
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WalletDetailsScreen(
     wallet: Wallet,
     secureStorage: SecureStorage,
+    userPreferencesRepository: UserPreferencesRepository,
     onViewAddresses: () -> Unit,
     onScanPSBT: () -> Unit,
     onExport: () -> Unit,
     onBIP85: () -> Unit,
     onSignMessage: () -> Unit,
     onCheckAddress: () -> Unit,
+    onDifferentAccounts: () -> Unit,
     onLock: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -42,6 +45,11 @@ fun WalletDetailsScreen(
     val wallets by wallet.wallets.collectAsState()
     val activeWalletId = wallet.getActiveWalletId()
     val activeWalletMetadata = wallets.find { it.id == activeWalletId }
+    
+    // Settings
+    val differentAccountsEnabled by userPreferencesRepository.differentAccountsEnabled.collectAsState()
+    val bip85Enabled by userPreferencesRepository.bip85Enabled.collectAsState()
+    val activeAccountNumber = wallet.getActiveAccountNumber()
     
     // Delete wallet dialog state
     var walletToDelete by remember { mutableStateOf<WalletMetadata?>(null) }
@@ -80,17 +88,17 @@ fun WalletDetailsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Wallet Info Card
             val derivationPath = wallet.getActiveWalletDerivationPath()
-            val walletType = when (derivationPath) {
-                DerivationPaths.TAPROOT -> "Taproot (bc1p...)"
-                DerivationPaths.NATIVE_SEGWIT -> "Native SegWit (bc1...)"
-                DerivationPaths.NESTED_SEGWIT -> "Nested SegWit (3...)"
-                DerivationPaths.LEGACY -> "Legacy (1...)"
+            val walletType = when (DerivationPaths.getPurpose(derivationPath)) {
+                86 -> "Taproot (bc1p...)"
+                84 -> "Native SegWit (bc1...)"
+                49 -> "Nested SegWit (3...)"
+                44 -> "Legacy (1...)"
                 else -> "Unknown"
             }
             val fingerprint = wallet.getMasterFingerprint()
@@ -304,32 +312,66 @@ fun WalletDetailsScreen(
                 }
             }
 
-            // BIP-85 Derivation
-            ElevatedCard(
-                onClick = onBIP85,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // BIP-85 Derivation (only if enabled in settings)
+            if (bip85Enabled) {
+                ElevatedCard(
+                    onClick = onBIP85,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_account_tree),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column {
-                        Text(
-                            text = "BIP-85 Derivation",
-                            style = MaterialTheme.typography.titleMedium
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_account_tree),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "Derive child seed phrases",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Column {
+                            Text(
+                                text = "BIP-85 Derivation",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Derive child seed phrases",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Different Accounts (only if enabled in settings)
+            if (differentAccountsEnabled) {
+                ElevatedCard(
+                    onClick = onDifferentAccounts,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_accounts),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
+                        Column {
+                            Text(
+                                text = "Different Accounts",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Manage BIP44 account numbers (current: $activeAccountNumber)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

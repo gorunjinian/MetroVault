@@ -16,9 +16,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
-import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.core.ui.components.SettingsInfoCard
 import com.gorunjinian.metrovault.core.ui.components.SettingsItem
+import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 
@@ -37,8 +37,18 @@ fun AdvancedSettingsScreen(
     val autoOpenSingleWalletMain by userPreferencesRepository.autoOpenSingleWalletMain.collectAsState()
     val autoOpenSingleWalletDecoy by userPreferencesRepository.autoOpenSingleWalletDecoy.collectAsState()
     val autoExpandEnabled by userPreferencesRepository.autoExpandSingleWallet.collectAsState()
+    val differentAccountsEnabled by userPreferencesRepository.differentAccountsEnabled.collectAsState()
+    val bip85Enabled by userPreferencesRepository.bip85Enabled.collectAsState()
 
     var showDeleteAllWalletsDialog by remember { mutableStateOf(false) }
+    var showDeletePasswordDialog by remember { mutableStateOf(false) }
+    var showDisableAccountsWarningDialog by remember { mutableStateOf(false) }
+
+    // Check if any wallet has multiple accounts
+    val walletsList by wallet.wallets.collectAsState()
+    val hasMultiAccountWallets = remember(walletsList) {
+        walletsList.any { it.accounts.size > 1 }
+    }
 
     Scaffold(
         topBar = {
@@ -147,6 +157,88 @@ fun AdvancedSettingsScreen(
                 )
             }
 
+            // BIP-85 Derivation toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_key),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "BIP-85 Derivation",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Enable child seed phrase derivation",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = bip85Enabled,
+                    onCheckedChange = { enabled ->
+                        userPreferencesRepository.setBip85Enabled(enabled)
+                    }
+                )
+            }
+
+            // Different Accounts toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_account_tree),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Different Accounts",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Enable BIP44 account number management",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = differentAccountsEnabled,
+                    onCheckedChange = { enabled ->
+                        if (!enabled && hasMultiAccountWallets) {
+                            showDisableAccountsWarningDialog = true
+                        } else {
+                            userPreferencesRepository.setDifferentAccountsEnabled(enabled)
+                        }
+                    }
+                )
+            }
+
             // Delete All Wallets
             SettingsItem(
                 icon = R.drawable.ic_delete,
@@ -167,108 +259,125 @@ fun AdvancedSettingsScreen(
         }
     }
 
-    // Delete All Wallets confirmation dialog
+    // Delete All Wallets warning dialog (Step 1)
     if (showDeleteAllWalletsDialog) {
-        var password by remember { mutableStateOf("") }
-        var passwordError by remember { mutableStateOf("") }
-        var isDeleting by remember { mutableStateOf(false) }
-
         AlertDialog(
-            onDismissRequest = {
-                if (!isDeleting) {
-                    showDeleteAllWalletsDialog = false
-                    passwordError = ""
-                }
+            onDismissRequest = { showDeleteAllWalletsDialog = false },
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_warning),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
             },
             title = { Text("Delete All Wallets") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "⚠️ This will permanently delete all wallets from this vault. This action cannot be undone.",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Text("Enter your password to confirm:")
-                    SecureOutlinedTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it
-                            passwordError = ""
-                        },
-                        label = { Text("Password") },
-                        singleLine = true,
-                        isPasswordField = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        isError = passwordError.isNotEmpty(),
-                        enabled = !isDeleting,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (passwordError.isNotEmpty()) {
-                        Text(
-                            text = passwordError,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+                Text(
+                    "This will permanently delete all wallets from this vault.\n\n" +
+                    "This action cannot be undone unless you have your seed phrases backed up."
+                )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val isDecoy = wallet.isDecoyMode
-                        val isValidPassword = if (isDecoy) {
-                            secureStorage.isDecoyPassword(password)
-                        } else {
-                            secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
-                        }
-
-                        if (isValidPassword) {
-                            isDeleting = true
-                            scope.launch {
-                                val walletList = wallet.wallets.value
-                                var allDeleted = true
-                                for (w in walletList) {
-                                    val deleted = wallet.deleteWallet(w.id)
-                                    if (!deleted) {
-                                        allDeleted = false
-                                        break
-                                    }
-                                }
-                                isDeleting = false
-                                if (allDeleted) {
-                                    showDeleteAllWalletsDialog = false
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "All wallets deleted",
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
-                                } else {
-                                    passwordError = "Failed to delete all wallets"
-                                }
-                            }
-                        } else {
-                            passwordError = "Incorrect password"
-                        }
-                    },
-                    enabled = password.isNotEmpty() && !isDeleting
-                ) {
-                    if (isDeleting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Delete All", color = MaterialTheme.colorScheme.error)
+                        showDeleteAllWalletsDialog = false
+                        showDeletePasswordDialog = true
                     }
+                ) {
+                    Text("I Understand", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteAllWalletsDialog = false
-                        passwordError = ""
-                    },
-                    enabled = !isDeleting
-                ) {
+                TextButton(onClick = { showDeleteAllWalletsDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Delete All Wallets password confirmation dialog (Step 2)
+    if (showDeletePasswordDialog) {
+        var passwordError by remember { mutableStateOf("") }
+        var isDeleting by remember { mutableStateOf(false) }
+
+        ConfirmPasswordDialog(
+            onDismiss = {
+                if (!isDeleting) {
+                    showDeletePasswordDialog = false
+                    passwordError = ""
+                }
+            },
+            onConfirm = { password ->
+                val isDecoy = wallet.isDecoyMode
+                val isValidPassword = if (isDecoy) {
+                    secureStorage.isDecoyPassword(password)
+                } else {
+                    secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
+                }
+
+                if (isValidPassword) {
+                    isDeleting = true
+                    scope.launch {
+                        val walletList = wallet.wallets.value
+                        var allDeleted = true
+                        for (w in walletList) {
+                            val deleted = wallet.deleteWallet(w.id)
+                            if (!deleted) {
+                                allDeleted = false
+                                break
+                            }
+                        }
+                        isDeleting = false
+                        if (allDeleted) {
+                            showDeletePasswordDialog = false
+                            android.widget.Toast.makeText(
+                                context,
+                                "All wallets deleted",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            passwordError = "Failed to delete all wallets"
+                        }
+                    }
+                } else {
+                    passwordError = "Incorrect password"
+                }
+            },
+            isLoading = isDeleting,
+            errorMessage = passwordError
+        )
+    }
+
+    // Warning dialog for disabling Different Accounts with multi-account wallets
+    if (showDisableAccountsWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showDisableAccountsWarningDialog = false },
+            icon = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_warning),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Hide Different Accounts?") },
+            text = {
+                Text(
+                    "One or more wallets have multiple account numbers. " +
+                    "Hiding this option will not delete the accounts, but you won't " +
+                    "be able to access or switch between them from within the app.\n\n" +
+                    "You can re-enable this setting at any time to regain access."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    userPreferencesRepository.setDifferentAccountsEnabled(false)
+                    showDisableAccountsWarningDialog = false
+                }) {
+                    Text("Hide Anyway", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisableAccountsWarningDialog = false }) {
                     Text("Cancel")
                 }
             }

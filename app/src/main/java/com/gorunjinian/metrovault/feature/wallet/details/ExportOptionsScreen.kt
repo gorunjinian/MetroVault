@@ -2,16 +2,18 @@ package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.graphics.Bitmap
 import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -21,6 +23,7 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 
 /**
@@ -46,8 +49,10 @@ fun ExportOptionsScreen(
 
     var showWarningDialog by remember { mutableStateOf(false) }
     var showXPrivWarningDialog by remember { mutableStateOf(false) }
+    
+    // Unified password confirmation state
     var showPasswordDialog by remember { mutableStateOf(false) }
-    var showXPrivPasswordDialog by remember { mutableStateOf(false) }
+    var passwordAction by remember { mutableStateOf<String?>(null) }  // "seed" or "xpriv"
     var passwordError by remember { mutableStateOf("") }
 
     val xpub = remember(wallet) { wallet.getActiveXpub() ?: "" }
@@ -71,7 +76,10 @@ fun ExportOptionsScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent
+                )
             )
         }
     ) { padding ->
@@ -174,7 +182,10 @@ fun ExportOptionsScreen(
                 // which was causing choppy back navigation animations
                 LaunchedEffect(xpub) {
                     if (xpub.isNotEmpty()) {
-                        xpubQR = QRCodeUtils.generateQRCode(xpub)
+                        withContext(Dispatchers.IO) {
+                            val bitmap = QRCodeUtils.generateQRCode(xpub)
+                            xpubQR = bitmap
+                        }
                     }
                 }
 
@@ -183,27 +194,33 @@ fun ExportOptionsScreen(
                     style = MaterialTheme.typography.titleMedium
                 )
 
-                xpubQR?.let { qr ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .clickable {
-                                // Copy xpub to clipboard with auto-clear after 20 seconds
-                                SecurityUtils.copyToClipboardWithAutoClear(
-                                    context = context,
-                                    label = "Extended Public Key",
-                                    text = xpub,
-                                    delayMs = 20_000
-                                )
-                                Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
-                            }
-                    ) {
-                        Image(
-                            bitmap = qr.asImageBitmap(),
-                            contentDescription = "xPub QR Code - Tap to copy",
-                            modifier = Modifier.fillMaxSize()
-                        )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                ) {
+                    if (xpubQR != null) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable {
+                                    // Copy xpub to clipboard with auto-clear after 20 seconds
+                                    SecurityUtils.copyToClipboardWithAutoClear(
+                                        context = context,
+                                        label = "Extended Public Key",
+                                        text = xpub,
+                                        delayMs = 20_000
+                                    )
+                                    Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
+                                }
+                        ) {
+                            Image(
+                                bitmap = xpubQR!!.asImageBitmap(),
+                                contentDescription = "xPub QR Code - Tap to copy",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else {
+                        CircularProgressIndicator()
                     }
                 }
 
@@ -236,7 +253,10 @@ fun ExportOptionsScreen(
                 // Generate QR code only once when this view is shown
                 LaunchedEffect(xpriv) {
                     if (xpriv.isNotEmpty()) {
-                        xprivQR = QRCodeUtils.generateQRCode(xpriv)
+                        withContext(Dispatchers.IO) {
+                            val bitmap = QRCodeUtils.generateQRCode(xpriv)
+                            xprivQR = bitmap
+                        }
                     }
                 }
 
@@ -259,27 +279,33 @@ fun ExportOptionsScreen(
                     )
                 }
 
-                xprivQR?.let { qr ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .clickable {
-                                // Copy xpriv to clipboard with auto-clear after 20 seconds
-                                SecurityUtils.copyToClipboardWithAutoClear(
-                                    context = context,
-                                    label = "Extended Private Key",
-                                    text = xpriv,
-                                    delayMs = 20_000
-                                )
-                                Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
-                            }
-                    ) {
-                        Image(
-                            bitmap = qr.asImageBitmap(),
-                            contentDescription = "xPriv QR Code - Tap to copy",
-                            modifier = Modifier.fillMaxSize()
-                        )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                ) {
+                    if (xprivQR != null) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable {
+                                    // Copy xpriv to clipboard with auto-clear after 20 seconds
+                                    SecurityUtils.copyToClipboardWithAutoClear(
+                                        context = context,
+                                        label = "Extended Private Key",
+                                        text = xpriv,
+                                        delayMs = 20_000
+                                    )
+                                    Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
+                                }
+                        ) {
+                            Image(
+                                bitmap = xprivQR!!.asImageBitmap(),
+                                contentDescription = "xPriv QR Code - Tap to copy",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else {
+                        CircularProgressIndicator()
                     }
                 }
 
@@ -416,6 +442,8 @@ fun ExportOptionsScreen(
                 TextButton(
                     onClick = {
                         showWarningDialog = false
+                        passwordAction = "seed"
+                        passwordError = ""
                         showPasswordDialog = true
                     }
                 ) {
@@ -427,75 +455,7 @@ fun ExportOptionsScreen(
                     Text("Cancel")
                 }
             },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null) }
-        )
-    }
-
-    if (showPasswordDialog) {
-        var password by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = {
-                showPasswordDialog = false
-                passwordError = ""
-            },
-            title = { Text("Confirm Password") },
-            text = {
-                Column {
-                    Text("Enter your password to view the seed phrase.")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SecureOutlinedTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it
-                            passwordError = ""
-                        },
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        isError = passwordError.isNotEmpty(),
-                        isPasswordField = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (passwordError.isNotEmpty()) {
-                        Text(
-                            text = passwordError,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val isDecoy = wallet.isDecoyMode
-                        val isValid = if (isDecoy) {
-                            secureStorage.isDecoyPassword(password)
-                        } else {
-                            secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
-                        }
-
-                        if (isValid) {
-                            showPasswordDialog = false
-                            showSeedPhrase = true
-                        } else {
-                            passwordError = "Incorrect password"
-                        }
-                    }
-                ) {
-                    Text("Confirm")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showPasswordDialog = false
-                    passwordError = ""
-                }) {
-                    Text("Cancel")
-                }
-            }
+            icon = { Icon(painter = painterResource(R.drawable.ic_warning), contentDescription = null) }
         )
     }
 
@@ -510,7 +470,9 @@ fun ExportOptionsScreen(
                 TextButton(
                     onClick = {
                         showXPrivWarningDialog = false
-                        showXPrivPasswordDialog = true
+                        passwordAction = "xpriv"
+                        passwordError = ""
+                        showPasswordDialog = true
                     }
                 ) {
                     Text("I Understand")
@@ -521,75 +483,38 @@ fun ExportOptionsScreen(
                     Text("Cancel")
                 }
             },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null) }
+            icon = { Icon(painter = painterResource(R.drawable.ic_warning), contentDescription = null) }
         )
     }
 
-    if (showXPrivPasswordDialog) {
-        var password by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = {
-                showXPrivPasswordDialog = false
+    // Unified password confirmation dialog for both seed phrase and xpriv
+    if (showPasswordDialog && passwordAction != null) {
+        ConfirmPasswordDialog(
+            onDismiss = {
+                showPasswordDialog = false
+                passwordAction = null
                 passwordError = ""
             },
-            title = { Text("Confirm Password") },
-            text = {
-                Column {
-                    Text("Enter your password to view the extended private key.")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SecureOutlinedTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it
-                            passwordError = ""
-                        },
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        isError = passwordError.isNotEmpty(),
-                        isPasswordField = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (passwordError.isNotEmpty()) {
-                        Text(
-                            text = passwordError,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
+            onConfirm = { password ->
+                val isDecoy = wallet.isDecoyMode
+                val isValid = if (isDecoy) {
+                    secureStorage.isDecoyPassword(password)
+                } else {
+                    secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val isDecoy = wallet.isDecoyMode
-                        val isValid = if (isDecoy) {
-                            secureStorage.isDecoyPassword(password)
-                        } else {
-                            secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
-                        }
 
-                        if (isValid) {
-                            showXPrivPasswordDialog = false
-                            showXPriv = true
-                        } else {
-                            passwordError = "Incorrect password"
-                        }
+                if (isValid) {
+                    showPasswordDialog = false
+                    when (passwordAction) {
+                        "seed" -> showSeedPhrase = true
+                        "xpriv" -> showXPriv = true
                     }
-                ) {
-                    Text("Confirm")
+                    passwordAction = null
+                } else {
+                    passwordError = "Incorrect password"
                 }
             },
-            dismissButton = {
-                TextButton(onClick = {
-                    showXPrivPasswordDialog = false
-                    passwordError = ""
-                }) {
-                    Text("Cancel")
-                }
-            }
+            errorMessage = passwordError
         )
     }
 }

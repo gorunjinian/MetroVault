@@ -13,6 +13,7 @@ import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
@@ -89,7 +90,10 @@ fun AddressesScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent
+                )
             )
         },
         floatingActionButton = {
@@ -112,7 +116,8 @@ fun AddressesScreen(
                 .padding(padding)
         ) {
             SecondaryTabRow(
-                selectedTabIndex = selectedTabIndex
+                selectedTabIndex = selectedTabIndex,
+                containerColor = Color.Transparent
             ) {
                 Tab(
                     selected = selectedTabIndex == 0,

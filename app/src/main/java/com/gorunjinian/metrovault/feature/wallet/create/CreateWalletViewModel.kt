@@ -34,6 +34,7 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         // Step 1: Configuration
         val wordCount: Int = 12,
         val selectedDerivationPath: String = DerivationPaths.NATIVE_SEGWIT,
+        val accountNumber: Int = 0,
 
         // Step 2: Entropy
         val entropyType: String = "", // "coin" or "dice"
@@ -113,6 +114,10 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
 
     fun setDerivationPath(path: String) {
         _uiState.update { it.copy(selectedDerivationPath = path) }
+    }
+
+    fun setAccountNumber(accountNumber: Int) {
+        _uiState.update { it.copy(accountNumber = accountNumber) }
     }
 
     // ========== Step 2: Entropy ==========
@@ -228,7 +233,8 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
                 mnemonic = state.generatedMnemonic,
                 derivationPath = state.selectedDerivationPath,
                 passphrase = finalPassphrase,
-                savePassphraseLocally = state.savePassphraseLocally
+                savePassphraseLocally = state.savePassphraseLocally,
+                accountNumber = state.accountNumber
             )
 
             _uiState.update { it.copy(isCreatingWallet = false) }

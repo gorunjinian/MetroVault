@@ -1,16 +1,12 @@
 package com.gorunjinian.metrovault.core.ui.dialogs
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -142,87 +138,45 @@ fun DeleteWalletDialogs(
     
     // Step 2: Password confirmation dialog
     if (walletToDelete != null && showPasswordDialog) {
-        var password by remember { mutableStateOf("") }
         var passwordError by remember { mutableStateOf("") }
         val scope = rememberCoroutineScope()
         
-        // Reset password when dialog opens
+        // Reset error when dialog opens
         LaunchedEffect(walletToDelete.id) {
-            password = ""
             passwordError = ""
         }
 
-        AlertDialog(
-            onDismissRequest = { 
+        ConfirmPasswordDialog(
+            onDismiss = { 
                 showPasswordDialog = false
                 onDismiss()
             },
-            title = { Text("Confirm Deletion") },
-            text = {
-                Column {
-                    Text("Enter your password to confirm deletion of \"${walletToDelete.name}\".")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SecureOutlinedTextField(
-                        value = password,
-                        onValueChange = { 
-                            password = it
-                            passwordError = ""
-                        },
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        isError = passwordError.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (passwordError.isNotEmpty()) {
-                        Text(
-                            text = passwordError,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
+            onConfirm = { password ->
+                scope.launch {
+                    val isDecoy = wallet.isDecoyMode
+                    val isValid = withContext(Dispatchers.IO) {
+                        if (isDecoy) {
+                            secureStorage.isDecoyPassword(password)
+                        } else {
+                            secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
+                        }
+                    }
+                    
+                    if (isValid) {
+                        val deleted = wallet.deleteWallet(walletToDelete.id)
+                        if (deleted) {
+                            showPasswordDialog = false
+                            onDeleted()
+                        } else {
+                            passwordError = "Failed to delete wallet. Session might be expired."
+                        }
+                    } else {
+                        passwordError = "Incorrect password"
                     }
                 }
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            val isDecoy = wallet.isDecoyMode
-                            val isValid = withContext(Dispatchers.IO) {
-                                if (isDecoy) {
-                                    secureStorage.isDecoyPassword(password)
-                                } else {
-                                    secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
-                                }
-                            }
-                            
-                            if (isValid) {
-                                val deleted = wallet.deleteWallet(walletToDelete.id)
-                                if (deleted) {
-                                    showPasswordDialog = false
-                                    onDeleted()
-                                } else {
-                                    passwordError = "Failed to delete wallet. Session might be expired."
-                                }
-                            } else {
-                                passwordError = "Incorrect password"
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Confirm Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showPasswordDialog = false
-                    onDismiss()
-                }) {
-                    Text("Cancel")
-                }
-            }
+            errorMessage = passwordError
         )
     }
 }
+

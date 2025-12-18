@@ -36,6 +36,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SignMessageScreen
 import com.gorunjinian.metrovault.feature.wallet.details.WalletDetailsScreen
+import com.gorunjinian.metrovault.feature.wallet.details.DifferentAccountsScreen
 import com.gorunjinian.metrovault.feature.settings.AppearanceSettingsScreen
 import com.gorunjinian.metrovault.feature.settings.SecuritySettingsScreen
 import com.gorunjinian.metrovault.feature.settings.AdvancedSettingsScreen
@@ -75,6 +76,7 @@ sealed class Screen(val route: String) {
     object SettingsAppearance : Screen("settings_appearance")
     object SettingsSecurity : Screen("settings_security")
     object SettingsAdvanced : Screen("settings_advanced")
+    object DifferentAccounts : Screen("different_accounts")
 }
 
 @Suppress("AssignedValueIsNeverRead")
@@ -271,6 +273,11 @@ fun AppNavigation(
         }
 
         composable(Screen.Home.route) {
+            // Wipe wallet keys from memory when returning to Home (security)
+            LaunchedEffect(Unit) {
+                wallet.unloadAllWalletKeys()
+            }
+            
             HomeScreen(
                 navController = navController,
                 wallet = wallet,
@@ -318,12 +325,14 @@ fun AppNavigation(
             WalletDetailsScreen(
                 wallet = wallet,
                 secureStorage = secureStorage,
+                userPreferencesRepository = userPreferencesRepository,
                 onViewAddresses = { navController.navigate(Screen.Addresses.route) },
                 onScanPSBT = { navController.navigate(Screen.ScanPSBT.route) },
                 onExport = { navController.navigate(Screen.ExportOptions.route) },
                 onBIP85 = { navController.navigate(Screen.BIP85Derive.route) },
                 onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
                 onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },
+                onDifferentAccounts = { navController.navigate(Screen.DifferentAccounts.route) },
                 onLock = {
                     navController.navigate(Screen.Unlock.route) {
                         popUpTo(0) { inclusive = true }
@@ -407,6 +416,17 @@ fun AppNavigation(
 
         composable(Screen.BIP85Derive.route) {
             BIP85DeriveScreen(
+                wallet = wallet,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.DifferentAccounts.route) {
+            DifferentAccountsScreen(
                 wallet = wallet,
                 onBack = {
                     if (!navController.popBackStack()) {

@@ -26,6 +26,7 @@ fun AppearanceSettingsScreen(
 ) {
     val themeMode by userPreferencesRepository.themeMode.collectAsState()
     val quickShortcuts by userPreferencesRepository.quickShortcuts.collectAsState()
+    val bip85Enabled by userPreferencesRepository.bip85Enabled.collectAsState()
     var shortcutToReplace by remember { mutableStateOf<Int?>(null) }
 
     Scaffold(
@@ -161,8 +162,11 @@ fun AppearanceSettingsScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Grid of all shortcuts (2 columns)
-                    QuickShortcut.entries.chunked(2).forEach { row ->
+                    // Grid of all shortcuts (2 columns), filtered based on settings
+                    val availableShortcuts = QuickShortcut.entries.filter {
+                        bip85Enabled || it != QuickShortcut.BIP85
+                    }
+                    availableShortcuts.chunked(2).forEach { row ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)

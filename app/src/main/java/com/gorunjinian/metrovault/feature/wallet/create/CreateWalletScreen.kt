@@ -8,7 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,9 +25,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.data.model.DerivationPaths
+import com.gorunjinian.metrovault.R
+import androidx.compose.ui.res.painterResource
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -84,16 +86,15 @@ fun CreateWalletScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             when (uiState.currentStep) {
                 1 -> Step1Configuration(
                     wordCount = uiState.wordCount,
                     selectedDerivationPath = uiState.selectedDerivationPath,
+                    accountNumber = uiState.accountNumber,
                     onWordCountChange = { viewModel.setWordCount(it) },
                     onDerivationPathChange = { viewModel.setDerivationPath(it) },
+                    onAccountNumberChange = { viewModel.setAccountNumber(it) },
                     onNext = { viewModel.goToNextStep() }
                 )
 
@@ -163,7 +164,7 @@ fun CreateWalletScreen(
                     Text("Cancel")
                 }
             },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null) }
+            icon = { Icon(painter = painterResource(R.drawable.ic_warning), contentDescription = null) }
         )
     }
 }
@@ -171,17 +172,26 @@ fun CreateWalletScreen(
 // ========== Step 1: Configuration ==========
 
 @Composable
-private fun ColumnScope.Step1Configuration(
+private fun Step1Configuration(
     wordCount: Int,
     selectedDerivationPath: String,
+    accountNumber: Int,
     onWordCountChange: (Int) -> Unit,
     onDerivationPathChange: (String) -> Unit,
+    onAccountNumberChange: (Int) -> Unit,
     onNext: () -> Unit
 ) {
-    Text(
-        text = "Select Seed Phrase Length",
-        style = MaterialTheme.typography.headlineSmall
-    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = "Select Seed Phrase Length",
+            style = MaterialTheme.typography.headlineSmall
+        )
 
     Row(
         modifier = Modifier
@@ -237,7 +247,7 @@ private fun ColumnScope.Step1Configuration(
         }
     }
 
-    Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(4.dp))
 
     Text(
         text = "Address Type",
@@ -285,6 +295,42 @@ private fun ColumnScope.Step1Configuration(
         }
     }
 
+    Spacer(modifier = Modifier.height(4.dp))
+
+    // Account Number
+    Text(
+        text = "Account Number (Advanced)",
+        style = MaterialTheme.typography.titleMedium
+    )
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "BIP44 account index in derivation path. Default is 0.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = if (accountNumber == 0) "" else accountNumber.toString(),
+                onValueChange = { value ->
+                    val num = value.filter { it.isDigit() }.take(4).toIntOrNull() ?: 0
+                    onAccountNumberChange(num)
+                },
+                label = { Text("Account Number") },
+                placeholder = { Text("0") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+        }
+    }
+
     Spacer(modifier = Modifier.weight(1f))
 
     Button(
@@ -293,13 +339,14 @@ private fun ColumnScope.Step1Configuration(
     ) {
         Text("Next")
     }
+    }
 }
 
 // ========== Step 2: Entropy ==========
 
 @SuppressLint("DefaultLocale")
 @Composable
-private fun ColumnScope.Step2Entropy(
+private fun Step2Entropy(
     entropyType: String,
     collectedEntropy: List<Int>,
     entropyProgress: Float,
@@ -311,10 +358,17 @@ private fun ColumnScope.Step2Entropy(
     onResetEntropy: () -> Unit,
     onRevealSeed: () -> Unit
 ) {
-    Text(
-        text = "User Provided Entropy",
-        style = MaterialTheme.typography.headlineSmall
-    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = "User Provided Entropy",
+            style = MaterialTheme.typography.headlineSmall
+        )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -490,19 +544,27 @@ private fun ColumnScope.Step2Entropy(
             else "Skip to reveal seed"
         )
     }
+    }
 }
 
 // ========== Step 3: Seed Phrase ==========
 
 @Composable
-private fun ColumnScope.Step3SeedPhrase(
+private fun Step3SeedPhrase(
     generatedMnemonic: List<String>,
     onContinue: () -> Unit
 ) {
-    Text(
-        text = "Backup Your Seed Phrase",
-        style = MaterialTheme.typography.headlineSmall
-    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = "Backup Your Seed Phrase",
+            style = MaterialTheme.typography.headlineSmall
+        )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -577,12 +639,13 @@ private fun ColumnScope.Step3SeedPhrase(
     ) {
         Text("Continue")
     }
+    }
 }
 
 // ========== Step 4: Passphrase ==========
 
 @Composable
-private fun ColumnScope.Step4Passphrase(
+private fun Step4Passphrase(
     useBip39Passphrase: Boolean,
     bip39Passphrase: String,
     confirmBip39Passphrase: String,
@@ -598,10 +661,17 @@ private fun ColumnScope.Step4Passphrase(
     onSavePassphraseLocallyChange: (Boolean) -> Unit,
     onCreateWallet: () -> Unit
 ) {
-    Text(
-        text = "BIP39 Passphrase (Optional)",
-        style = MaterialTheme.typography.headlineSmall
-    )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = "BIP39 Passphrase (Optional)",
+            style = MaterialTheme.typography.headlineSmall
+        )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -782,6 +852,7 @@ private fun ColumnScope.Step4Passphrase(
         } else {
             Text(if (useBip39Passphrase) "Create Wallet with Passphrase" else "Create Wallet")
         }
+    }
     }
 }
 
