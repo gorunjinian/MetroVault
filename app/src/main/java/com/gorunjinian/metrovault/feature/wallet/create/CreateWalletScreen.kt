@@ -184,10 +184,14 @@ private fun Step1Configuration(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(24.dp)
     ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Text(
             text = "Select Seed Phrase Length",
             style = MaterialTheme.typography.headlineSmall
@@ -331,9 +335,11 @@ private fun Step1Configuration(
         }
     }
 
-    Spacer(modifier = Modifier.weight(1f))
+        }
 
-    Button(
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
         onClick = onNext,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -361,10 +367,14 @@ private fun Step2Entropy(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(24.dp)
     ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Text(
             text = "User Provided Entropy",
             style = MaterialTheme.typography.headlineSmall
@@ -533,11 +543,13 @@ private fun Step2Entropy(
         }
     }
 
-    Spacer(modifier = Modifier.weight(1f))
+        }
 
-    Button(
-        onClick = onRevealSeed,
-        modifier = Modifier.fillMaxWidth()
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onRevealSeed,
+            modifier = Modifier.fillMaxWidth()
     ) {
         Text(
             if (collectedEntropy.isNotEmpty()) "Reveal Seed Phrase"
@@ -557,10 +569,14 @@ private fun Step3SeedPhrase(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(24.dp)
     ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Text(
             text = "Backup Your Seed Phrase",
             style = MaterialTheme.typography.headlineSmall
@@ -631,9 +647,11 @@ private fun Step3SeedPhrase(
         }
     }
 
-    Spacer(modifier = Modifier.weight(1f))
+        }
 
-    Button(
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
         onClick = onContinue,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -664,10 +682,14 @@ private fun Step4Passphrase(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(24.dp)
     ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Text(
             text = "BIP39 Passphrase (Optional)",
             style = MaterialTheme.typography.headlineSmall
@@ -836,9 +858,11 @@ private fun Step4Passphrase(
         }
     }
 
-    Spacer(modifier = Modifier.weight(1f))
+        }
 
-    Button(
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
         onClick = onCreateWallet,
         modifier = Modifier.fillMaxWidth(),
         enabled = !isCreatingWallet

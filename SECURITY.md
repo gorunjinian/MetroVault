@@ -293,6 +293,48 @@ Users can choose **not to save their passphrase locally**. In this case:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+#### Session Seed Memory Security
+
+When session seeds are stored in RAM, they use a specialized `SecureSeedCache` instead of plain String objects:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               Session Seed Memory Protection                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Problem with Java Strings:                                     │
+│  • Strings are IMMUTABLE in the JVM                             │
+│  • String contents cannot be overwritten/zeroed                 │
+│  • Calling clear() on a map only removes the reference          │
+│  • Actual string data remains in heap until garbage collected   │
+│  • GC timing is unpredictable - seeds may linger in memory      │
+│                                                                 │
+│  Solution - SecureSeedCache:                                    │
+│  • Seeds stored as byte arrays (SecureByteArray wrapper)        │
+│  • Byte arrays CAN be zeroed (filled with 0x00)                 │
+│  • On clear(): all bytes zeroed BEFORE removing references      │
+│  • On replace: old seed wiped before storing new one            │
+│  • Deterministic cleanup - no waiting for GC                    │
+│                                                                 │
+│  Memory Wipe Flow:                                              │
+│                                                                 │
+│  sessionSeeds.clear()                                           │
+│       │                                                         │
+│       ▼                                                         │
+│  For each seed:                                                 │
+│    1. Get underlying byte array                                 │
+│    2. Fill with zeros: Arrays.fill(data, 0)                     │
+│    3. Set reference to null                                     │
+│       │                                                         │
+│       ▼                                                         │
+│  Clear map references                                           │
+│       │                                                         │
+│       ▼                                                         │
+│  Seed data is GONE (not waiting for GC)                         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 #### BIP39 Seed Storage Security
 
 ```

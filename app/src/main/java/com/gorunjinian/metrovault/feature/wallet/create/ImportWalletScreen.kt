@@ -180,10 +180,14 @@ private fun Step1Configuration(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(24.dp)
     ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Text(
             text = "Select Seed Phrase Length",
             style = MaterialTheme.typography.headlineSmall
@@ -327,7 +331,9 @@ private fun Step1Configuration(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = onNext,
@@ -406,6 +412,14 @@ private fun Step2SeedPhrase(
                 }
             )
 
+        }
+
+        // Pin button to bottom of content area (above keyboard)
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 16.dp)
+        ) {
             if (validationError.isNotEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -419,9 +433,8 @@ private fun Step2SeedPhrase(
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
                 }
+                Spacer(modifier = Modifier.height(8.dp))
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             Button(
                 onClick = {
@@ -443,8 +456,6 @@ private fun Step2SeedPhrase(
             ) {
                 Text("Next")
             }
-            
-            Spacer(modifier = Modifier.height(8.dp))
         }
 
         // Secure keyboard at the bottom (visible when toggled on and not complete)
@@ -504,10 +515,14 @@ private fun Step3Passphrase(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(24.dp)
     ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Text(
             text = "BIP39 Passphrase (Optional)",
             style = MaterialTheme.typography.headlineSmall
@@ -660,7 +675,9 @@ private fun Step3Passphrase(
             }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = {

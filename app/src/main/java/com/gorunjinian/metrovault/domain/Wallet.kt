@@ -17,6 +17,7 @@ import com.gorunjinian.metrovault.domain.service.BitcoinService
 import com.gorunjinian.metrovault.domain.service.AddressCheckResult
 import com.gorunjinian.metrovault.domain.service.PsbtDetails
 import com.gorunjinian.metrovault.core.crypto.SecureByteArray
+import com.gorunjinian.metrovault.core.crypto.SecureSeedCache
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,7 +52,8 @@ class Wallet(context: Context) {
 
     // Session-only BIP39 seeds for wallets where hasPassphrase = true
     // These are computed from user-entered passphrase and wiped when app goes to background
-    private val sessionSeeds = ConcurrentHashMap<String, String>()
+    // Uses SecureSeedCache instead of String map to ensure seeds can be securely wiped from memory
+    private val sessionSeeds = SecureSeedCache()
 
     private val _wallets = MutableStateFlow<List<WalletMetadata>>(emptyList())
     val wallets: StateFlow<List<WalletMetadata>> = _wallets.asStateFlow()
@@ -298,7 +300,7 @@ class Wallet(context: Context) {
             // Otherwise, use the stored seed directly
             val seedToUse = if (metadata.hasPassphrase) {
                 // Check if user has entered passphrase this session
-                sessionSeeds[walletId] ?: secrets.bip39Seed  // Fallback to stored base seed
+                sessionSeeds.get(walletId) ?: secrets.bip39Seed  // Fallback to stored base seed
             } else {
                 secrets.bip39Seed
             }
@@ -313,7 +315,7 @@ class Wallet(context: Context) {
             // Create secure mnemonic storage for in-memory use
             val mnemonicBytes = secrets.mnemonic.toByteArray()
             val secureMnemonic = SecureByteArray(mnemonicBytes.size)
-            System.arraycopy(mnemonicBytes, 0, secureMnemonic.get(), 0, mnemonicBytes.size)
+            secureMnemonic.copyFrom(mnemonicBytes)
             mnemonicBytes.fill(0) // Wipe intermediate
 
             val walletState = WalletState(
@@ -574,7 +576,7 @@ class Wallet(context: Context) {
         return try {
             val state = getActiveWalletState() ?: return null
             val mnemonic = state.getMnemonic() ?: return null
-            String(mnemonic.get()).split(" ")
+            mnemonic.asString().split(" ")
         } catch (_: Exception) {
             Log.e(TAG, "Failed to retrieve mnemonic")
             null
@@ -623,14 +625,19 @@ class Wallet(context: Context) {
         // Load mnemonic for this wallet
         val secrets = secureStorage.loadWalletSecrets(walletId, isDecoyMode) ?: return@withContext
         val mnemonic = secrets.mnemonic.split(" ")
-        
+
         // Compute BIP39 seed from mnemonic + passphrase
         val seedBytes = com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode.toSeed(mnemonic, passphrase)
-        val seedHex = seedBytes.joinToString("") { "%02x".format(it) }
-        
-        // Store in session
-        sessionSeeds[walletId] = seedHex
-        Log.d(TAG, "Session seed set for wallet: $walletId")
+        try {
+            val seedHex = seedBytes.joinToString("") { "%02x".format(it) }
+
+            // Store in session (SecureSeedCache ensures old seeds are wiped before replacement)
+            sessionSeeds.store(walletId, seedHex)
+            Log.d(TAG, "Session seed set for wallet: $walletId")
+        } finally {
+            // Wipe seed bytes from memory
+            seedBytes.fill(0)
+        }
     }
 
     /**

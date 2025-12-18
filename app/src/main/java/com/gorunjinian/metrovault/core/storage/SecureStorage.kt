@@ -101,6 +101,9 @@ class SecureStorage(private val context: Context) {
         private const val KEY_DECOY_PASSWORD_HASH = "decoy_password_hash"
         private const val KEY_WALLET_IDS = "wallet_ids"
         private const val KEY_WALLET_ORDER = "wallet_order"
+        // Migration keys for crash recovery during password change
+        private const val KEY_PASSWORD_MIGRATION_PENDING = "password_migration_pending"
+        private const val KEY_PASSWORD_MIGRATION_OLD_SALT = "password_migration_old_salt"
     }
 
     private val masterKey by lazy {
@@ -283,46 +286,27 @@ class SecureStorage(private val context: Context) {
     }
 
     // ============================================================================
-    // PASSWORD CHANGE
+    // PASSWORD CHANGE (Atomic with crash recovery)
     // ============================================================================
 
     /**
-     * Changes the main password.
-     * Re-encrypts all wallet secrets with the new session key.
+     * Changes the main password with atomic transaction safety.
+     *
+     * Strategy:
+     * 1. Load all secrets with OLD session key
+     * 2. Pre-encrypt all secrets with NEW key (in memory)
+     * 3. Write everything atomically in a single SharedPreferences commit
+     * 4. Update session to new key
+     *
+     * If app crashes during step 3, data remains in old format (old password still works).
+     * The atomic commit ensures either ALL data is updated or NONE.
      */
     fun changeMainPassword(oldPassword: String, newPassword: String): Boolean {
         if (!verifyMainPassword(oldPassword)) return false
         if (isDecoyPassword(oldPassword)) return false
 
         return try {
-            // Load all secrets with current session
-            val walletIds = getWalletIds(isDecoy = false)
-            val secretsMap = mutableMapOf<String, WalletSecrets>()
-
-            for (walletId in walletIds) {
-                loadWalletSecrets(walletId, isDecoy = false)?.let {
-                    secretsMap[walletId] = it
-                }
-            }
-
-            // Create new password hash
-            val newSalt = sessionKeyManager.generateSalt()
-            val newHash = derivePasswordHash(newPassword, newSalt)
-            val newPasswordHash = PasswordHash(newHash, newSalt)
-
-            // Initialize new session
-            sessionKeyManager.initializeSession(newPassword, newSalt)
-
-            // Re-encrypt all secrets with new session key
-            for ((walletId, secrets) in secretsMap) {
-                saveWalletSecrets(walletId, secrets, isDecoy = false)
-            }
-
-            // Save new password hash
-            mainPrefs.edit { putString(KEY_PASSWORD_HASH, newPasswordHash.toStorageString()) }
-
-            Log.d(TAG, "Main password changed successfully")
-            true
+            changePasswordInternal(oldPassword, newPassword, isDecoy = false)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to change main password: ${e.message}", e)
             false
@@ -330,45 +314,96 @@ class SecureStorage(private val context: Context) {
     }
 
     /**
-     * Changes the decoy password.
-     * Re-encrypts all decoy wallet secrets with the new session key.
+     * Changes the decoy password with atomic transaction safety.
      */
     fun changeDecoyPassword(oldPassword: String, newPassword: String): Boolean {
         if (!verifyDecoyPassword(oldPassword)) return false
 
         return try {
-            // Load all secrets with current session
-            val walletIds = getWalletIds(isDecoy = true)
-            val secretsMap = mutableMapOf<String, WalletSecrets>()
-
-            for (walletId in walletIds) {
-                loadWalletSecrets(walletId, isDecoy = true)?.let {
-                    secretsMap[walletId] = it
-                }
-            }
-
-            // Create new password hash
-            val newSalt = sessionKeyManager.generateSalt()
-            val newHash = derivePasswordHash(newPassword, newSalt)
-            val newPasswordHash = PasswordHash(newHash, newSalt)
-
-            // Initialize new session
-            sessionKeyManager.initializeSession(newPassword, newSalt)
-
-            // Re-encrypt all secrets with new session key
-            for ((walletId, secrets) in secretsMap) {
-                saveWalletSecrets(walletId, secrets, isDecoy = true)
-            }
-
-            // Save new password hash
-            decoyPrefs.edit { putString(KEY_DECOY_PASSWORD_HASH, newPasswordHash.toStorageString()) }
-
-            Log.d(TAG, "Decoy password changed successfully")
-            true
+            changePasswordInternal(oldPassword, newPassword, isDecoy = true)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to change decoy password: ${e.message}", e)
             false
         }
+    }
+
+    /**
+     * Internal implementation for atomic password change.
+     * Uses a single SharedPreferences.Editor.commit() for atomicity.
+     */
+    private fun changePasswordInternal(oldPassword: String, newPassword: String, isDecoy: Boolean): Boolean {
+        val prefs = if (isDecoy) decoyPrefs else mainPrefs
+        val passwordKey = if (isDecoy) KEY_DECOY_PASSWORD_HASH else KEY_PASSWORD_HASH
+
+        // PHASE 1: Load all secrets with current (old) session key
+        // Session is already initialized from verify*Password call
+        val walletIds = getWalletIds(isDecoy)
+        val secretsMap = mutableMapOf<String, WalletSecrets>()
+
+        for (walletId in walletIds) {
+            val secrets = loadWalletSecrets(walletId, isDecoy)
+            if (secrets != null) {
+                secretsMap[walletId] = secrets
+            } else {
+                Log.e(TAG, "Failed to load wallet $walletId during password change - aborting")
+                return false
+            }
+        }
+
+        // PHASE 2: Generate new credentials
+        val newSalt = sessionKeyManager.generateSalt()
+        val newHash = derivePasswordHash(newPassword, newSalt)
+        val newPasswordHash = PasswordHash(newHash, newSalt)
+
+        // PHASE 3: Pre-encrypt all secrets with NEW key (in memory only)
+        // This validates we can encrypt everything before committing
+        val newEncryptedSecrets = mutableMapOf<String, String>()
+
+        // Temporarily switch to new session for encryption
+        sessionKeyManager.initializeSession(newPassword, newSalt)
+
+        try {
+            for ((walletId, secrets) in secretsMap) {
+                val plaintext = secrets.toJson().toByteArray()
+                val encrypted = sessionKeyManager.encrypt(plaintext)
+                val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
+                newEncryptedSecrets[walletId] = encoded
+            }
+        } catch (e: Exception) {
+            // Encryption failed - restore old session and abort
+            Log.e(TAG, "Failed to pre-encrypt secrets: ${e.message}")
+            val oldHashStr = prefs.getString(passwordKey, null)
+            if (oldHashStr != null) {
+                val oldHash = PasswordHash.fromStorageString(oldHashStr)
+                sessionKeyManager.initializeSession(oldPassword, oldHash.salt)
+            }
+            return false
+        }
+
+        // PHASE 4: Atomic write - all or nothing
+        // SharedPreferences.Editor.commit() is atomic for a single edit block
+        val success = prefs.edit()
+            .putString(passwordKey, newPasswordHash.toStorageString())
+            .apply {
+                newEncryptedSecrets.forEach { (walletId, encrypted) ->
+                    putString("wallet_secrets_$walletId", encrypted)
+                }
+            }
+            .commit()  // commit() returns boolean and is synchronous
+
+        if (success) {
+            Log.d(TAG, "${if (isDecoy) "Decoy" else "Main"} password changed successfully (${secretsMap.size} wallets re-encrypted)")
+        } else {
+            Log.e(TAG, "SharedPreferences commit failed during password change")
+            // Restore old session since commit failed
+            val oldHashStr = prefs.getString(passwordKey, null)
+            if (oldHashStr != null) {
+                val oldHash = PasswordHash.fromStorageString(oldHashStr)
+                sessionKeyManager.initializeSession(oldPassword, oldHash.salt)
+            }
+        }
+
+        return success
     }
 
     // ============================================================================
