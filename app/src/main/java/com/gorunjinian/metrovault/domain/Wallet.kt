@@ -504,6 +504,45 @@ class Wallet(context: Context) {
         }
     }
 
+    /**
+     * Rename an account's display name.
+     * Pass empty string or default name ("Account N") to remove custom name.
+     */
+    suspend fun renameAccount(walletId: String, accountNumber: Int, newName: String): Boolean = withContext(Dispatchers.IO) {
+        val metadata = synchronized(walletListLock) {
+            _walletMetadataList.find { it.id == walletId }
+        } ?: return@withContext false
+        
+        // Account must exist
+        if (!metadata.accounts.contains(accountNumber)) return@withContext false
+        
+        // Determine if we should store the name or use default
+        val defaultName = "Account $accountNumber"
+        val trimmedName = newName.trim()
+        
+        val updatedNames = if (trimmedName.isEmpty() || trimmedName == defaultName) {
+            // Remove custom name, use default
+            metadata.accountNames - accountNumber
+        } else {
+            // Store custom name
+            metadata.accountNames + (accountNumber to trimmedName)
+        }
+        
+        val updated = metadata.copy(accountNames = updatedNames)
+        
+        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+            synchronized(walletListLock) {
+                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                if (idx >= 0) {
+                    _walletMetadataList[idx] = updated
+                    _wallets.value = _walletMetadataList.toList()
+                }
+            }
+            Log.d(TAG, "Renamed account $accountNumber to '$trimmedName' in wallet $walletId")
+            true
+        } else false
+    }
+
     // ==================== Memory Management ====================
 
     fun unloadWallet(walletId: String) {

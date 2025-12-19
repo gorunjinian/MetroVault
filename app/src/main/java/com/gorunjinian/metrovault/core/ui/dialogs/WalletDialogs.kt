@@ -76,6 +76,65 @@ fun RenameWalletDialog(
     )
 }
 
+private const val MAX_ACCOUNT_NAME_LENGTH = 25
+
+@Composable
+fun RenameAccountDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var newName by remember { mutableStateOf(currentName.take(MAX_ACCOUNT_NAME_LENGTH)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Account") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.End
+            ) {
+                SecureOutlinedTextField(
+                    value = newName,
+                    onValueChange = { 
+                        if (it.length <= MAX_ACCOUNT_NAME_LENGTH) {
+                            newName = it
+                        }
+                    },
+                    label = { Text("Account Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "${newName.length}/$MAX_ACCOUNT_NAME_LENGTH",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (newName.length >= MAX_ACCOUNT_NAME_LENGTH) 
+                        MaterialTheme.colorScheme.error 
+                    else 
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (newName.isNotBlank()) {
+                        onConfirm(newName.trim())
+                    }
+                },
+                enabled = newName.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
 /**
  * Reusable two-step delete wallet dialog flow.
  * Step 1: Confirmation dialog asking if user wants to delete

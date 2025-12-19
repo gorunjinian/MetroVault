@@ -34,8 +34,16 @@ data class WalletMetadata(
     val hasPassphrase: Boolean,  // true = passphrase entry required on open
     val createdAt: Long,
     val accounts: List<Int> = listOf(0),      // Account numbers under this wallet
-    val activeAccountNumber: Int = 0           // Currently active account number
+    val activeAccountNumber: Int = 0,          // Currently active account number
+    val accountNames: Map<Int, String> = emptyMap()  // Custom display names (empty = use default)
 ) {
+    /**
+     * Get the display name for an account.
+     * Returns custom name if set, otherwise default "Account N" format.
+     */
+    fun getAccountDisplayName(accountNumber: Int): String {
+        return accountNames[accountNumber] ?: "Account $accountNumber"
+    }
     /**
      * Get the derivation path for the active account.
      * If activeAccountNumber differs from the stored path's account, builds a new path.
@@ -59,6 +67,12 @@ data class WalletMetadata(
             put("createdAt", createdAt)
             put("accounts", org.json.JSONArray(accounts))
             put("activeAccountNumber", activeAccountNumber)
+            // Serialize accountNames map
+            if (accountNames.isNotEmpty()) {
+                put("accountNames", org.json.JSONObject().apply {
+                    accountNames.forEach { (k, v) -> put(k.toString(), v) }
+                })
+            }
         }.toString()
     }
 
@@ -99,6 +113,16 @@ data class WalletMetadata(
             }
             val activeAccountNumber = obj.optInt("activeAccountNumber", 0)
             
+            // MIGRATION: Parse accountNames map, default to empty for existing wallets
+            val accountNames = if (obj.has("accountNames")) {
+                val namesObj = obj.getJSONObject("accountNames")
+                namesObj.keys().asSequence().associate { key ->
+                    key.toInt() to namesObj.getString(key)
+                }
+            } else {
+                emptyMap()
+            }
+            
             return WalletMetadata(
                 id = obj.getString("id"),
                 name = obj.getString("name"),
@@ -107,7 +131,8 @@ data class WalletMetadata(
                 hasPassphrase = hasPassphrase,
                 createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                 accounts = accounts,
-                activeAccountNumber = activeAccountNumber
+                activeAccountNumber = activeAccountNumber,
+                accountNames = accountNames
             )
         }
     }

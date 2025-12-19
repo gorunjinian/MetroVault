@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.view.HapticFeedbackConstants
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.RenameAccountDialog
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
@@ -64,14 +66,42 @@ fun DifferentAccountsScreen(
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf("") }
     var isDeleting by remember { mutableStateOf(false) }
+    
+    // Edit mode state
+    var isEditMode by remember { mutableStateOf(false) }
+    
+    // Rename dialog state
+    var accountToRename by remember { mutableStateOf<Int?>(null) }
+    
+    // Handle back press to exit edit mode
+    BackHandler(enabled = isEditMode) {
+        isEditMode = false
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Different Accounts") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        if (isEditMode) {
+                            isEditMode = false
+                        } else {
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { isEditMode = !isEditMode }) {
+                        Icon(
+                            painter = painterResource(
+                                if (isEditMode) R.drawable.ic_check else R.drawable.ic_edit
+                            ),
+                            contentDescription = if (isEditMode) "Done" else "Edit",
+                            modifier = if (isEditMode) Modifier.size(28.dp) else Modifier
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -105,7 +135,7 @@ fun DifferentAccountsScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Long-press an inactive account to delete it.",
+                    text = if (isEditMode) "Tap to rename or delete accounts." else "Long-press an inactive account to delete it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
@@ -116,6 +146,7 @@ fun DifferentAccountsScreen(
                 val isActive = accountNum == currentAccount
                 val path = DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
                 val canDelete = !isActive && accounts.size > 1
+                val displayName = activeWalletMetadata?.getAccountDisplayName(accountNum) ?: "Account $accountNum"
                 
                 OutlinedCard(
                     modifier = Modifier
@@ -123,7 +154,11 @@ fun DifferentAccountsScreen(
                         .combinedClickable(
                             enabled = !isSwitching && !isDeleting,
                             onClick = {
-                                if (!isActive && walletId != null) {
+                                if (isEditMode) {
+                                    // In edit mode, tap opens rename dialog
+                                    accountToRename = accountNum
+                                } else if (!isActive && walletId != null) {
+                                    // Normal mode: switch to this account
                                     isSwitching = true
                                     scope.launch {
                                         wallet.switchActiveAccount(walletId, accountNum)
@@ -132,21 +167,23 @@ fun DifferentAccountsScreen(
                                 }
                             },
                             onLongClick = {
-                                if (canDelete) {
+                                // Long-press delete only in normal mode
+                                if (!isEditMode && canDelete) {
                                     view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                     accountToDelete = accountNum
                                     showDeleteWarning = true
                                 }
                             }
                         ),
-                    colors = if (isActive) {
+                    // In edit mode, all cards look the same (no active highlighting)
+                    colors = if (isActive && !isEditMode) {
                         CardDefaults.outlinedCardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer
                         )
                     } else {
                         CardDefaults.outlinedCardColors()
                     },
-                    border = if (isActive) {
+                    border = if (isActive && !isEditMode) {
                         BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
                     } else {
                         BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -161,16 +198,18 @@ fun DifferentAccountsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Account $accountNum",
+                                text = displayName,
                                 style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                // In edit mode, use primary color to hint it's editable
+                                color = if (isEditMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = path,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (isActive) {
+                            // Show "Currently active" only when not in edit mode
+                            if (isActive && !isEditMode) {
                                 Text(
                                     text = "Currently active",
                                     style = MaterialTheme.typography.labelSmall,
@@ -178,7 +217,25 @@ fun DifferentAccountsScreen(
                                 )
                             }
                         }
-                        if (isActive) {
+                        // In edit mode: show trash icon for deletable accounts
+                        // In normal mode: show check icon for active account
+                        if (isEditMode && canDelete) {
+                            IconButton(
+                                onClick = {
+                                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                                    accountToDelete = accountNum
+                                    // In edit mode, skip warning and go directly to password dialog
+                                    passwordError = ""
+                                    showPasswordDialog = true
+                                }
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_delete),
+                                    contentDescription = "Delete",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        } else if (isActive && !isEditMode) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_check),
                                 contentDescription = "Active",
@@ -339,6 +396,23 @@ fun DifferentAccountsScreen(
                     newAccountNumber = ""
                     addError = ""
                 }) { Text("Cancel") }
+            }
+        )
+    }
+    
+    // Rename Account Dialog
+    if (accountToRename != null) {
+        val currentName = activeWalletMetadata?.getAccountDisplayName(accountToRename!!) ?: "Account ${accountToRename!!}"
+        RenameAccountDialog(
+            currentName = currentName,
+            onDismiss = { accountToRename = null },
+            onConfirm = { newName ->
+                if (walletId != null) {
+                    scope.launch {
+                        wallet.renameAccount(walletId, accountToRename!!, newName)
+                        accountToRename = null
+                    }
+                }
             }
         )
     }
