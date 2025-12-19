@@ -135,7 +135,7 @@ fun DifferentAccountsScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = if (isEditMode) "Tap to rename or delete accounts." else "Long-press an inactive account to delete it.",
+                    text = if (isEditMode) "Tap to rename or remove accounts." else "Long-press an inactive account to remove it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
@@ -250,6 +250,7 @@ fun DifferentAccountsScreen(
     
     // Delete Warning Dialog
     if (showDeleteWarning && accountToDelete != null) {
+        val deleteDisplayName = activeWalletMetadata?.getAccountDisplayName(accountToDelete!!) ?: "Account ${accountToDelete!!}"
         AlertDialog(
             onDismissRequest = { 
                 showDeleteWarning = false
@@ -262,10 +263,10 @@ fun DifferentAccountsScreen(
                     tint = MaterialTheme.colorScheme.error
                 ) 
             },
-            title = { Text("Delete Account ${accountToDelete}?") },
+            title = { Text("Remove $deleteDisplayName?") },
             text = {
                 Text(
-                    "This will remove Account ${accountToDelete} from this wallet.\n\n" +
+                    "This will remove \"$deleteDisplayName\" from this wallet.\n\n" +
                     "The account can be re-added later using the same account number. " +
                     "Any funds on this account will still be accessible by re-adding it."
                 )
