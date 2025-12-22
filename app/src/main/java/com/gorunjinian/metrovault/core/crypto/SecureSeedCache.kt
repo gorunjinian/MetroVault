@@ -53,8 +53,6 @@ class SecureSeedCache {
 
             // Store the new secure seed
             cache[walletId] = secureArray
-
-            Log.d(TAG, "Stored secure seed for wallet: $walletId")
         } finally {
             // Always wipe the intermediate byte array
             seedBytes.fill(0)

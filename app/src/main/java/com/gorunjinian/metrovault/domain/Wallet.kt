@@ -250,8 +250,6 @@ class Wallet(context: Context) {
                 _walletMetadataList.add(metadata)
                 _wallets.value = _walletMetadataList.toList()
             }
-
-            Log.d(TAG, "Wallet created: $walletId (account=$accountNumber, hasPassphrase=$requiresPassphraseEntry)")
             WalletCreationResult.Success(metadata)
         } catch (e: Exception) {
             Log.e(TAG, "Create wallet failed: ${e.message}", e)

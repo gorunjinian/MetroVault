@@ -94,7 +94,11 @@ class BiometricPasswordManager(context: Context) {
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setUserAuthenticationRequired(true)
-                // In a real app, check Android version for setInvalidatedByBiometricEnrollment(true)
+                .apply {
+                    // Invalidate biometric key if new fingerprint/face is enrolled
+                    // Prevents attacker from adding their biometric to access wallet
+                    setInvalidatedByBiometricEnrollment(true)
+                }
                 .build()
             
             keyGenerator.init(keyGenParameterSpec)
