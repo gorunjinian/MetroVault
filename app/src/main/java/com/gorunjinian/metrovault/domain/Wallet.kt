@@ -162,13 +162,13 @@ class Wallet(context: Context) {
 
     /**
      * Creates a wallet from mnemonic.
-     * 
+     *
      * Security model:
      * - Always stores BIP39 seed derived from mnemonic + passphrase (if saveLocally=true)
      *   or mnemonic + empty passphrase (if saveLocally=false)
      * - Passphrase never stored directly on disk
      * - hasPassphrase=true means passphrase entry required on wallet open
-     * 
+     *
      * @param savePassphraseLocally If false, only base seed (without passphrase) is saved,
      *        and hasPassphrase is set to require re-entry on open
      */
@@ -199,8 +199,9 @@ class Wallet(context: Context) {
             val fullPath = DerivationPaths.withAccountNumber(derivationPath, accountNumber)
 
             // Create wallet with passphrase to get correct fingerprint
-            val walletResult = bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, fullPath)
-                ?: return@withContext WalletCreationResult.Error(WalletCreationError.WALLET_CREATION_FAILED)
+            val walletResult =
+                bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, fullPath)
+                    ?: return@withContext WalletCreationResult.Error(WalletCreationError.WALLET_CREATION_FAILED)
 
             val walletId = java.util.UUID.randomUUID().toString()
             val mnemonicString = mnemonic.joinToString(" ")
@@ -209,7 +210,8 @@ class Wallet(context: Context) {
             // If savePassphraseLocally=true: store seed WITH passphrase (wallet ready to use)
             // If savePassphraseLocally=false: store seed WITHOUT passphrase (base seed, requires passphrase on open)
             val seedPassphrase = if (savePassphraseLocally) passphrase else ""
-            val seedBytes = com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode.toSeed(mnemonic, seedPassphrase)
+            val seedBytes =
+                com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode.toSeed(mnemonic, seedPassphrase)
             val seedHex = seedBytes.joinToString("") { "%02x".format(it) }
 
             // hasPassphrase = true only if passphrase used AND not saved locally
@@ -241,7 +243,8 @@ class Wallet(context: Context) {
             }
 
             // Update wallet order
-            val currentOrder = secureStorage.loadWalletOrder(isDecoyMode)?.toMutableList() ?: mutableListOf()
+            val currentOrder =
+                secureStorage.loadWalletOrder(isDecoyMode)?.toMutableList() ?: mutableListOf()
             currentOrder.add(walletId)
             secureStorage.saveWalletOrder(currentOrder, isDecoyMode)
 
@@ -360,24 +363,25 @@ class Wallet(context: Context) {
         secureStorage.deleteWallet(walletId, isDecoyMode)
     }
 
-    suspend fun renameWallet(walletId: String, newName: String): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            _walletMetadataList.find { it.id == walletId }
-        } ?: return@withContext false
+    suspend fun renameWallet(walletId: String, newName: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val metadata = synchronized(walletListLock) {
+                _walletMetadataList.find { it.id == walletId }
+            } ?: return@withContext false
 
-        val updated = metadata.copy(name = newName)
-        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                if (idx != -1) {
-                    _walletMetadataList[idx] = updated
-                    _wallets.value = _walletMetadataList.toList()
+            val updated = metadata.copy(name = newName)
+            if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+                synchronized(walletListLock) {
+                    val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                    if (idx != -1) {
+                        _walletMetadataList[idx] = updated
+                        _wallets.value = _walletMetadataList.toList()
+                    }
                 }
-            }
-            walletStates[walletId]?.rename(newName)
-            true
-        } else false
-    }
+                walletStates[walletId]?.rename(newName)
+                true
+            } else false
+        }
 
     fun swapWallets(index1: Int, index2: Int) {
         synchronized(walletListLock) {
@@ -400,91 +404,94 @@ class Wallet(context: Context) {
     // ==================== Account Management ====================
 
     /** Add a new account number to a wallet. Returns false if already exists. */
-    suspend fun addAccountToWallet(walletId: String, accountNumber: Int): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            _walletMetadataList.find { it.id == walletId }
-        } ?: return@withContext false
-        
-        if (metadata.accounts.contains(accountNumber)) return@withContext false
-        
-        val updated = metadata.copy(
-            accounts = (metadata.accounts + accountNumber).sorted()
-        )
-        
-        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    _walletMetadataList[idx] = updated
-                    _wallets.value = _walletMetadataList.toList()
-                }
-            }
-            Log.d(TAG, "Added account $accountNumber to wallet $walletId")
-            true
-        } else false
-    }
+    suspend fun addAccountToWallet(walletId: String, accountNumber: Int): Boolean =
+        withContext(Dispatchers.IO) {
+            val metadata = synchronized(walletListLock) {
+                _walletMetadataList.find { it.id == walletId }
+            } ?: return@withContext false
 
-    /** 
-     * Remove an account from a wallet. 
+            if (metadata.accounts.contains(accountNumber)) return@withContext false
+
+            val updated = metadata.copy(
+                accounts = (metadata.accounts + accountNumber).sorted()
+            )
+
+            if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+                synchronized(walletListLock) {
+                    val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                    if (idx >= 0) {
+                        _walletMetadataList[idx] = updated
+                        _wallets.value = _walletMetadataList.toList()
+                    }
+                }
+                Log.d(TAG, "Added account $accountNumber to wallet $walletId")
+                true
+            } else false
+        }
+
+    /**
+     * Remove an account from a wallet.
      * Returns false if: account doesn't exist, is currently active, or is the last account.
      */
-    suspend fun removeAccountFromWallet(walletId: String, accountNumber: Int): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            _walletMetadataList.find { it.id == walletId }
-        } ?: return@withContext false
-        
-        // Cannot remove account that doesn't exist
-        if (!metadata.accounts.contains(accountNumber)) return@withContext false
-        
-        // Cannot remove the currently active account
-        if (metadata.activeAccountNumber == accountNumber) return@withContext false
-        
-        // Cannot remove the last remaining account
-        if (metadata.accounts.size <= 1) return@withContext false
-        
-        val updated = metadata.copy(
-            accounts = metadata.accounts.filter { it != accountNumber }
-        )
-        
-        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    _walletMetadataList[idx] = updated
-                    _wallets.value = _walletMetadataList.toList()
+    suspend fun removeAccountFromWallet(walletId: String, accountNumber: Int): Boolean =
+        withContext(Dispatchers.IO) {
+            val metadata = synchronized(walletListLock) {
+                _walletMetadataList.find { it.id == walletId }
+            } ?: return@withContext false
+
+            // Cannot remove account that doesn't exist
+            if (!metadata.accounts.contains(accountNumber)) return@withContext false
+
+            // Cannot remove the currently active account
+            if (metadata.activeAccountNumber == accountNumber) return@withContext false
+
+            // Cannot remove the last remaining account
+            if (metadata.accounts.size <= 1) return@withContext false
+
+            val updated = metadata.copy(
+                accounts = metadata.accounts.filter { it != accountNumber }
+            )
+
+            if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+                synchronized(walletListLock) {
+                    val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                    if (idx >= 0) {
+                        _walletMetadataList[idx] = updated
+                        _wallets.value = _walletMetadataList.toList()
+                    }
                 }
-            }
-            Log.d(TAG, "Removed account $accountNumber from wallet $walletId")
-            true
-        } else false
-    }
+                Log.d(TAG, "Removed account $accountNumber from wallet $walletId")
+                true
+            } else false
+        }
 
     /** Switch active account. Reloads wallet with new derivation path. */
-    suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            _walletMetadataList.find { it.id == walletId }
-        } ?: return@withContext false
-        
-        if (!metadata.accounts.contains(accountNumber)) return@withContext false
-        if (metadata.activeAccountNumber == accountNumber) return@withContext true
-        
-        val updated = metadata.copy(activeAccountNumber = accountNumber)
-        
-        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    _walletMetadataList[idx] = updated
-                    _wallets.value = _walletMetadataList.toList()
+    suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean =
+        withContext(Dispatchers.IO) {
+            val metadata = synchronized(walletListLock) {
+                _walletMetadataList.find { it.id == walletId }
+            } ?: return@withContext false
+
+            if (!metadata.accounts.contains(accountNumber)) return@withContext false
+            if (metadata.activeAccountNumber == accountNumber) return@withContext true
+
+            val updated = metadata.copy(activeAccountNumber = accountNumber)
+
+            if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+                synchronized(walletListLock) {
+                    val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                    if (idx >= 0) {
+                        _walletMetadataList[idx] = updated
+                        _wallets.value = _walletMetadataList.toList()
+                    }
                 }
-            }
-            // Reload wallet with new account's path
-            unloadWallet(walletId)
-            val reloaded = openWallet(walletId)
-            Log.d(TAG, "Switched to account $accountNumber: reload=$reloaded")
-            reloaded
-        } else false
-    }
+                // Reload wallet with new account's path
+                unloadWallet(walletId)
+                val reloaded = openWallet(walletId)
+                Log.d(TAG, "Switched to account $accountNumber: reload=$reloaded")
+                reloaded
+            } else false
+        }
 
     /** Get accounts list for active wallet */
     fun getActiveWalletAccounts(): List<Int> {
@@ -506,40 +513,41 @@ class Wallet(context: Context) {
      * Rename an account's display name.
      * Pass empty string or default name ("Account N") to remove custom name.
      */
-    suspend fun renameAccount(walletId: String, accountNumber: Int, newName: String): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            _walletMetadataList.find { it.id == walletId }
-        } ?: return@withContext false
-        
-        // Account must exist
-        if (!metadata.accounts.contains(accountNumber)) return@withContext false
-        
-        // Determine if we should store the name or use default
-        val defaultName = "Account $accountNumber"
-        val trimmedName = newName.trim()
-        
-        val updatedNames = if (trimmedName.isEmpty() || trimmedName == defaultName) {
-            // Remove custom name, use default
-            metadata.accountNames - accountNumber
-        } else {
-            // Store custom name
-            metadata.accountNames + (accountNumber to trimmedName)
-        }
-        
-        val updated = metadata.copy(accountNames = updatedNames)
-        
-        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    _walletMetadataList[idx] = updated
-                    _wallets.value = _walletMetadataList.toList()
-                }
+    suspend fun renameAccount(walletId: String, accountNumber: Int, newName: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val metadata = synchronized(walletListLock) {
+                _walletMetadataList.find { it.id == walletId }
+            } ?: return@withContext false
+
+            // Account must exist
+            if (!metadata.accounts.contains(accountNumber)) return@withContext false
+
+            // Determine if we should store the name or use default
+            val defaultName = "Account $accountNumber"
+            val trimmedName = newName.trim()
+
+            val updatedNames = if (trimmedName.isEmpty() || trimmedName == defaultName) {
+                // Remove custom name, use default
+                metadata.accountNames - accountNumber
+            } else {
+                // Store custom name
+                metadata.accountNames + (accountNumber to trimmedName)
             }
-            Log.d(TAG, "Renamed account $accountNumber to '$trimmedName' in wallet $walletId")
-            true
-        } else false
-    }
+
+            val updated = metadata.copy(accountNames = updatedNames)
+
+            if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+                synchronized(walletListLock) {
+                    val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                    if (idx >= 0) {
+                        _walletMetadataList[idx] = updated
+                        _wallets.value = _walletMetadataList.toList()
+                    }
+                }
+                Log.d(TAG, "Renamed account $accountNumber to '$trimmedName' in wallet $walletId")
+                true
+            } else false
+        }
 
     // ==================== Memory Management ====================
 
@@ -561,7 +569,10 @@ class Wallet(context: Context) {
         walletStates.clear()
         sessionSeeds.clear()  // Clear passphrase-derived seeds
         activeWalletId = null
-        Log.d(TAG, "Wiped $count wallet key(s) + $seedCount session seed(s) from memory (HomeScreen navigation)")
+        Log.d(
+            TAG,
+            "Wiped $count wallet key(s) + $seedCount session seed(s) from memory (HomeScreen navigation)"
+        )
     }
 
     /**
@@ -578,7 +589,10 @@ class Wallet(context: Context) {
             _wallets.value = emptyList()
         }
         activeWalletId = null
-        Log.d(TAG, "🔒 Full session wipe: $keyCount keys + $metadataCount metadata cleared (Lock/Logout)")
+        Log.d(
+            TAG,
+            "🔒 Full session wipe: $keyCount keys + $metadataCount metadata cleared (Lock/Logout)"
+        )
     }
 
     // ==================== Bitcoin Operations ====================
@@ -595,7 +609,11 @@ class Wallet(context: Context) {
         return bitcoinService.getPsbtDetails(psbtString)
     }
 
-    fun generateAddresses(count: Int, offset: Int = 0, isChange: Boolean = false): List<BitcoinAddress>? {
+    fun generateAddresses(
+        count: Int,
+        offset: Int = 0,
+        isChange: Boolean = false
+    ): List<BitcoinAddress>? {
         val state = getActiveWalletState() ?: return null
         val accountPublicKey = state.getAccountPublicKey() ?: return null
         val scriptType = getScriptType(state.derivationPath)
@@ -636,6 +654,47 @@ class Wallet(context: Context) {
         val state = getActiveWalletState() ?: return null
         val masterPrivateKey = state.getMasterPrivateKey() ?: return null
         return bitcoinService.getWalletDescriptors(masterPrivateKey)
+    }
+
+    /**
+     * Gets the unified output descriptor (public/watch-only) for the active wallet.
+     * Uses multipath syntax compatible with Sparrow, Bitcoin Core, etc.
+     *
+     * @return Descriptor string with checksum
+     */
+    fun getActiveUnifiedDescriptor(): String? {
+        val state = getActiveWalletState() ?: return null
+        val accountPublicKey = state.getAccountPublicKey() ?: return null
+        val fingerprint = state.fingerprint
+        val scriptType = getScriptType(state.derivationPath)
+        
+        return bitcoinService.getWalletDescriptor(
+            fingerprint = fingerprint,
+            accountPath = state.derivationPath,
+            accountPublicKey = accountPublicKey,
+            scriptType = scriptType
+        )
+    }
+
+    /**
+     * Gets the private (spending) descriptor for the active wallet.
+     * WARNING: Contains private keys - handle with extreme care!
+     * Uses multipath syntax compatible with Sparrow, Bitcoin Core, etc.
+     *
+     * @return Private descriptor string with checksum
+     */
+    fun getActivePrivateDescriptor(): String? {
+        val state = getActiveWalletState() ?: return null
+        val accountPrivateKey = state.getAccountPrivateKey() ?: return null
+        val fingerprint = state.fingerprint
+        val scriptType = getScriptType(state.derivationPath)
+        
+        return bitcoinService.getPrivateWalletDescriptor(
+            fingerprint = fingerprint,
+            accountPath = state.derivationPath,
+            accountPrivateKey = accountPrivateKey,
+            scriptType = scriptType
+        )
     }
 
     fun getMasterFingerprint() = getActiveWalletState()?.fingerprint

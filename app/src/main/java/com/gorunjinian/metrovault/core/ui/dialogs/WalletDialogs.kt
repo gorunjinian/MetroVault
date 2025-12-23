@@ -6,9 +6,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.gorunjinian.metrovault.R
@@ -25,7 +30,21 @@ fun RenameWalletDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
-    var newName by remember { mutableStateOf(currentName.take(MAX_WALLET_NAME_LENGTH)) }
+    // Use TextFieldValue to control text selection
+    var textFieldValue by remember { 
+        val initialText = currentName.take(MAX_WALLET_NAME_LENGTH)
+        mutableStateOf(TextFieldValue(initialText, TextRange(0, initialText.length)))
+    }
+    
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    
+    // Request focus and show keyboard when dialog appears
+    LaunchedEffect(Unit) {
+        delay(100) // Small delay to ensure dialog is fully composed
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -36,20 +55,22 @@ fun RenameWalletDialog(
                 horizontalAlignment = Alignment.End
             ) {
                 SecureOutlinedTextField(
-                    value = newName,
-                    onValueChange = { 
-                        if (it.length <= MAX_WALLET_NAME_LENGTH) {
-                            newName = it
+                    value = textFieldValue,
+                    onValueChange = { newValue ->
+                        if (newValue.text.length <= MAX_WALLET_NAME_LENGTH) {
+                            textFieldValue = newValue
                         }
                     },
                     label = { Text("Wallet Name") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
                 )
                 Text(
-                    text = "${newName.length}/$MAX_WALLET_NAME_LENGTH",
+                    text = "${textFieldValue.text.length}/$MAX_WALLET_NAME_LENGTH",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (newName.length >= MAX_WALLET_NAME_LENGTH) 
+                    color = if (textFieldValue.text.length >= MAX_WALLET_NAME_LENGTH) 
                         MaterialTheme.colorScheme.error 
                     else 
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -59,11 +80,11 @@ fun RenameWalletDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (newName.isNotBlank()) {
-                        onConfirm(newName.trim())
+                    if (textFieldValue.text.isNotBlank()) {
+                        onConfirm(textFieldValue.text.trim())
                     }
                 },
-                enabled = newName.isNotBlank()
+                enabled = textFieldValue.text.isNotBlank()
             ) {
                 Text("Save")
             }
@@ -76,6 +97,7 @@ fun RenameWalletDialog(
     )
 }
 
+
 private const val MAX_ACCOUNT_NAME_LENGTH = 25
 
 @Composable
@@ -84,7 +106,21 @@ fun RenameAccountDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
-    var newName by remember { mutableStateOf(currentName.take(MAX_ACCOUNT_NAME_LENGTH)) }
+    // Use TextFieldValue to control text selection
+    var textFieldValue by remember { 
+        val initialText = currentName.take(MAX_ACCOUNT_NAME_LENGTH)
+        mutableStateOf(TextFieldValue(initialText, TextRange(0, initialText.length)))
+    }
+    
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    
+    // Request focus and show keyboard when dialog appears
+    LaunchedEffect(Unit) {
+        delay(100) // Small delay to ensure dialog is fully composed
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -95,20 +131,22 @@ fun RenameAccountDialog(
                 horizontalAlignment = Alignment.End
             ) {
                 SecureOutlinedTextField(
-                    value = newName,
-                    onValueChange = { 
-                        if (it.length <= MAX_ACCOUNT_NAME_LENGTH) {
-                            newName = it
+                    value = textFieldValue,
+                    onValueChange = { newValue ->
+                        if (newValue.text.length <= MAX_ACCOUNT_NAME_LENGTH) {
+                            textFieldValue = newValue
                         }
                     },
                     label = { Text("Account Name") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
                 )
                 Text(
-                    text = "${newName.length}/$MAX_ACCOUNT_NAME_LENGTH",
+                    text = "${textFieldValue.text.length}/$MAX_ACCOUNT_NAME_LENGTH",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (newName.length >= MAX_ACCOUNT_NAME_LENGTH) 
+                    color = if (textFieldValue.text.length >= MAX_ACCOUNT_NAME_LENGTH) 
                         MaterialTheme.colorScheme.error 
                     else 
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -118,11 +156,11 @@ fun RenameAccountDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (newName.isNotBlank()) {
-                        onConfirm(newName.trim())
+                    if (textFieldValue.text.isNotBlank()) {
+                        onConfirm(textFieldValue.text.trim())
                     }
                 },
-                enabled = newName.isNotBlank()
+                enabled = textFieldValue.text.isNotBlank()
             ) {
                 Text("Save")
             }
@@ -146,6 +184,7 @@ fun RenameAccountDialog(
  * @param onDismiss Called when user cancels at any point
  * @param onDeleted Called after successful deletion (e.g., for navigation)
  */
+@Suppress("AssignedValueIsNeverRead")
 @Composable
 fun DeleteWalletDialogs(
     walletToDelete: WalletMetadata?,

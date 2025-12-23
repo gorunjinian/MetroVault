@@ -1,6 +1,18 @@
 package com.gorunjinian.metrovault.feature.auth
 
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -8,20 +20,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.unit.dp
-import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.core.crypto.BiometricAuthManager
-import com.gorunjinian.metrovault.core.util.findActivity
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gorunjinian.metrovault.R
+import com.gorunjinian.metrovault.core.crypto.BiometricAuthManager
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.core.util.findActivity
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun UnlockScreen(
@@ -37,6 +45,32 @@ fun UnlockScreen(
 
     // Collect state from ViewModel
     val uiState by viewModel.unlockState.collectAsStateWithLifecycle()
+
+    // Shake animation state for error feedback
+    var triggerShake by remember { mutableStateOf(false) }
+    val shakeOffset by animateFloatAsState(
+        targetValue = if (triggerShake) 10f else 0f,
+        animationSpec = spring(
+            dampingRatio = 0.3f,
+            stiffness = Spring.StiffnessHigh
+        ),
+        label = "shakeAnimation"
+    )
+
+    // Reset shake after animation
+    LaunchedEffect(triggerShake) {
+        if (triggerShake) {
+            delay(100)
+            triggerShake = false
+        }
+    }
+
+    // Trigger shake when error message appears
+    LaunchedEffect(uiState.errorMessage) {
+        if (uiState.errorMessage.isNotEmpty()) {
+            triggerShake = true
+        }
+    }
 
     // Handle events from ViewModel
     LaunchedEffect(Unit) {
@@ -89,21 +123,35 @@ fun UnlockScreen(
         }
     }
 
-    Scaffold { padding ->
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .padding(24.dp)
-                .padding(top = 60.dp),
+                .padding(top = 48.dp),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // App Logo
+            Icon(
+                painter = painterResource(R.drawable.ic_metrovault),
+                contentDescription = "Metro Vault Logo",
+                modifier = Modifier.size(100.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // App Title with enhanced typography
             Text(
                 text = "Metro Vault",
-                style = MaterialTheme.typography.displayMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.displayMedium.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = (-1).sp
+                ),
+                color = MaterialTheme.colorScheme.primary
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -114,92 +162,139 @@ fun UnlockScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
-            if (uiState.isAuthenticating) {
+            // Card container for the login form
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(48.dp),
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    if (uiState.isAuthenticating) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
 
-                    Text(
-                        text = "Authenticating...",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                            Text(
+                                text = "Authenticating...",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (!uiState.isAuthenticating) {
+                        // Password field with shake animation
+                        SecureOutlinedTextField(
+                            value = uiState.password,
+                            onValueChange = { viewModel.updatePassword(it) },
+                            label = { Text("Password") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .offset(x = shakeOffset.dp),
+                            singleLine = true,
+                            isPasswordField = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    keyboardController?.hide()
+                                    viewModel.unlockWithPassword()
+                                }
+                            )
+                        )
+
+                        if (uiState.errorMessage.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = uiState.errorMessage,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Enhanced unlock button
+                        Button(
+                            onClick = {
+                                keyboardController?.hide()
+                                viewModel.unlockWithPassword()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_lock),
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Unlock",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
             }
 
-            if (!uiState.isAuthenticating) {
-                SecureOutlinedTextField(
-                    value = uiState.password,
-                    onValueChange = { viewModel.updatePassword(it) },
-                    label = { Text("Password") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    isPasswordField = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = { 
-                            keyboardController?.hide()
-                            viewModel.unlockWithPassword() 
-                        }
-                    )
-                )
+            // Biometric section outside the card
+            if (!uiState.isAuthenticating &&
+                uiState.biometricsEnabled && 
+                isBiometricAvailable && 
+                uiState.hasBiometricPassword &&
+                uiState.biometricTarget != UserPreferencesRepository.BIOMETRIC_TARGET_NONE
+            ) {
+                Spacer(modifier = Modifier.height(32.dp))
 
-                if (uiState.errorMessage.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = uiState.errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = { 
-                        keyboardController?.hide()
-                        viewModel.unlockWithPassword() 
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Unlock")
-                }
-
-                if (uiState.biometricsEnabled && isBiometricAvailable && uiState.hasBiometricPassword && 
-                    uiState.biometricTarget != UserPreferencesRepository.BIOMETRIC_TARGET_NONE) {
-                    Spacer(modifier = Modifier.height(32.dp))
-
-                    IconButton(
-                        onClick = { unlockWithBiometrics() },
-                        modifier = Modifier.size(72.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_fingerprint),
-                            contentDescription = "Unlock with Fingerprint",
-                            modifier = Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                // Fingerprint button with background circle
+                IconButton(
+                    onClick = { unlockWithBiometrics() },
+                    modifier = Modifier
+                        .size(72.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                            shape = CircleShape
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Tap to unlock with fingerprint",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_fingerprint),
+                        contentDescription = "Unlock with Fingerprint",
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Tap to unlock with fingerprint",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

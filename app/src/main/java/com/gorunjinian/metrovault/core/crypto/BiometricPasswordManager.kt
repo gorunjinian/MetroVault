@@ -3,6 +3,7 @@ package com.gorunjinian.metrovault.core.crypto
 import android.content.Context
 import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -32,6 +33,50 @@ class BiometricPasswordManager(context: Context) {
         return prefs.contains(key)
     }
 
+    /**
+     * Checks if the biometric key is still valid (not invalidated by new biometric enrollment).
+     * Returns false if the key doesn't exist or has been permanently invalidated.
+     */
+    fun isKeyValid(isDecoy: Boolean): Boolean {
+        return try {
+            val keyAlias = if (isDecoy) KEY_ALIAS_DECOY else KEY_ALIAS_MAIN
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
+            keyStore.load(null)
+            
+            if (!keyStore.containsAlias(keyAlias)) return false
+            
+            val secretKey = keyStore.getKey(keyAlias, null) as? SecretKey ?: return false
+            val cipher = Cipher.getInstance("${KeyProperties.KEY_ALGORITHM_AES}/${KeyProperties.BLOCK_MODE_GCM}/${KeyProperties.ENCRYPTION_PADDING_NONE}")
+            
+            // This will throw KeyPermanentlyInvalidatedException if the key was invalidated
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+            true
+        } catch (_: KeyPermanentlyInvalidatedException) {
+            // Key was invalidated due to new biometric enrollment
+            false
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Deletes the biometric key from Android Keystore.
+     * Call this when the key is permanently invalidated.
+     */
+    fun deleteKey(isDecoy: Boolean) {
+        try {
+            val keyAlias = if (isDecoy) KEY_ALIAS_DECOY else KEY_ALIAS_MAIN
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
+            keyStore.load(null)
+            if (keyStore.containsAlias(keyAlias)) {
+                keyStore.deleteEntry(keyAlias)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun getDecryptCipher(isDecoy: Boolean): Cipher? {
         return try {
             val keyAlias = if (isDecoy) KEY_ALIAS_DECOY else KEY_ALIAS_MAIN
@@ -49,6 +94,9 @@ class BiometricPasswordManager(context: Context) {
             
             cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
             cipher
+        } catch (_: KeyPermanentlyInvalidatedException) {
+            // Key was invalidated due to new biometric enrollment
+            null
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -79,13 +127,36 @@ class BiometricPasswordManager(context: Context) {
         }
     }
 
+    /**
+     * Gets or creates a cipher for encrypting the password with biometric protection.
+     * If the existing key is permanently invalidated (e.g., new fingerprint enrolled),
+     * it deletes the old key and creates a new one.
+     */
     fun getEncryptCipher(isDecoy: Boolean): Cipher {
-        // Generate key if not exists
         val keyAlias = if (isDecoy) KEY_ALIAS_DECOY else KEY_ALIAS_MAIN
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE)
         keyStore.load(null)
         
-        if (!keyStore.containsAlias(keyAlias)) {
+        // Check if key exists and is still valid
+        var needNewKey = !keyStore.containsAlias(keyAlias)
+        
+        if (!needNewKey) {
+            // Key exists, check if it's still valid
+            try {
+                val secretKey = keyStore.getKey(keyAlias, null) as SecretKey
+                val testCipher = Cipher.getInstance("${KeyProperties.KEY_ALGORITHM_AES}/${KeyProperties.BLOCK_MODE_GCM}/${KeyProperties.ENCRYPTION_PADDING_NONE}")
+                testCipher.init(Cipher.ENCRYPT_MODE, secretKey)
+                // Key is valid, use it
+            } catch (_: KeyPermanentlyInvalidatedException) {
+                // Key was invalidated due to new biometric enrollment
+                // Delete the old key and create a new one
+                keyStore.deleteEntry(keyAlias)
+                removeBiometricData(isDecoy) // Also remove stale encrypted password
+                needNewKey = true
+            }
+        }
+        
+        if (needNewKey) {
             val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
             val keyGenParameterSpec = KeyGenParameterSpec.Builder(
                 keyAlias,

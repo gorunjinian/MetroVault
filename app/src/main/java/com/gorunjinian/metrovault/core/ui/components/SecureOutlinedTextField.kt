@@ -1,6 +1,5 @@
 package com.gorunjinian.metrovault.core.ui.components
 
-import android.os.Build
 import android.view.autofill.AutofillManager
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -16,6 +15,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PlatformImeOptions
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 
@@ -71,16 +71,14 @@ fun SecureOutlinedTextField(
     
     // Aggressively disable autofill manager
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                val autofillManager = context.getSystemService(AutofillManager::class.java)
-                // Cancel any pending autofill requests
-                autofillManager?.cancel()
-                // Notify that nothing is autofillable in this context
-                autofillManager?.notifyViewExited(view)
-            } catch (_: Exception) {
-                // Ignore - some devices may not have autofill service
-            }
+        try {
+            val autofillManager = context.getSystemService(AutofillManager::class.java)
+            // Cancel any pending autofill requests
+            autofillManager?.cancel()
+            // Notify that nothing is autofillable in this context
+            autofillManager?.notifyViewExited(view)
+        } catch (_: Exception) {
+            // Ignore - some devices may not have autofill service
         }
     }
     
@@ -106,10 +104,104 @@ fun SecureOutlinedTextField(
     // Modifier that disables autofill on any child views when they are positioned
     val secureModifier = modifier.onGloballyPositioned { coordinates ->
         // Find the underlying Android View and disable autofill on it
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // The view hierarchy has already been set up via SecurityUtils.disableAutofill
-            // This callback ensures the flag is applied after layout
+        // The view hierarchy has already been set up via SecurityUtils.disableAutofill
+        // This callback ensures the flag is applied after layout
+    }
+    
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = secureModifier,
+        label = label,
+        placeholder = placeholder,
+        leadingIcon = leadingIcon,
+        trailingIcon = trailingIcon,
+        prefix = prefix,
+        suffix = suffix,
+        supportingText = supportingText,
+        isError = isError,
+        visualTransformation = visualTransformation,
+        keyboardOptions = secureKeyboardOptions,
+        keyboardActions = keyboardActions,
+        singleLine = singleLine,
+        maxLines = maxLines,
+        minLines = minLines,
+        enabled = enabled,
+        readOnly = readOnly,
+        colors = colors
+    )
+}
+
+/**
+ * TextFieldValue overload of SecureOutlinedTextField that supports text selection control.
+ * This is useful for dialogs where you want to auto-select all text when the dialog opens.
+ * 
+ * Same security protections as the String-based version:
+ * - Autocorrect disabled
+ * - Predictive text disabled
+ * - Autofill disabled
+ * - Keyboard learning disabled
+ * 
+ * @param value TextFieldValue containing both text and selection state
+ * @param onValueChange Callback when the TextFieldValue changes (including selection)
+ */
+@Composable
+fun SecureOutlinedTextField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier,
+    label: @Composable (() -> Unit)? = null,
+    placeholder: @Composable (() -> Unit)? = null,
+    leadingIcon: @Composable (() -> Unit)? = null,
+    trailingIcon: @Composable (() -> Unit)? = null,
+    prefix: @Composable (() -> Unit)? = null,
+    suffix: @Composable (() -> Unit)? = null,
+    supportingText: @Composable (() -> Unit)? = null,
+    isError: Boolean = false,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    singleLine: Boolean = false,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    minLines: Int = 1,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    isPasswordField: Boolean = false,
+    colors: TextFieldColors = OutlinedTextFieldDefaults.colors()
+) {
+    val view = LocalView.current
+    val context = LocalContext.current
+    
+    // Disable autofill on the view hierarchy using SecurityUtils
+    SecurityUtils.disableAutofill(view)
+    
+    // Aggressively disable autofill manager
+    LaunchedEffect(Unit) {
+        try {
+            val autofillManager = context.getSystemService(AutofillManager::class.java)
+            autofillManager?.cancel()
+            autofillManager?.notifyViewExited(view)
+        } catch (_: Exception) {
+            // Ignore - some devices may not have autofill service
         }
+    }
+    
+    // Create secure keyboard options with incognito mode flags
+    val secureKeyboardOptions = keyboardOptions.copy(
+        autoCorrectEnabled = false,
+        capitalization = KeyboardCapitalization.None,
+        keyboardType = if (isPasswordField) KeyboardType.Password else keyboardOptions.keyboardType,
+        platformImeOptions = PlatformImeOptions(
+            privateImeOptions = "nm,np," +
+                    "com.google.android.inputmethod.latin.noMicrophoneKey," +
+                    "com.google.android.inputmethod.latin.noLearning," +
+                    "com.google.android.inputmethod.latin.noSuggestions," +
+                    "com.google.android.inputmethod.latin.flagNoPersonalizedLearning"
+        )
+    )
+    
+    val secureModifier = modifier.onGloballyPositioned { _ ->
+        // Autofill already disabled via SecurityUtils
     }
     
     OutlinedTextField(

@@ -272,6 +272,48 @@ class BitcoinService {
     }
 
     /**
+     * Gets a unified output descriptor for the wallet with multipath syntax.
+     * Compatible with Sparrow, Bitcoin Core, and other modern wallets.
+     * 
+     * @param fingerprint Master fingerprint as hex string
+     * @param accountPath Account derivation path (e.g., "m/84'/0'/0'")
+     * @param accountPublicKey Account-level extended public key
+     * @param scriptType Script type for the wallet
+     * @return Unified descriptor string with checksum
+     */
+    fun getWalletDescriptor(
+        fingerprint: String,
+        accountPath: String,
+        accountPublicKey: DeterministicWallet.ExtendedPublicKey,
+        scriptType: ScriptType
+    ): String {
+        val fp = fingerprint.toLongOrNull(16) ?: 0L
+        val xpub = getAccountXpub(accountPublicKey, scriptType)
+        return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpub, scriptType)
+    }
+
+    /**
+     * Gets a private (spending) unified output descriptor for the wallet.
+     * WARNING: Contains private keys - handle with extreme care!
+     * 
+     * @param fingerprint Master fingerprint as hex string
+     * @param accountPath Account derivation path (e.g., "m/84'/0'/0'")
+     * @param accountPrivateKey Account-level extended private key
+     * @param scriptType Script type for the wallet
+     * @return Private descriptor string with checksum
+     */
+    fun getPrivateWalletDescriptor(
+        fingerprint: String,
+        accountPath: String,
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        scriptType: ScriptType
+    ): String {
+        val fp = fingerprint.toLongOrNull(16) ?: 0L
+        val xpriv = getAccountXpriv(accountPrivateKey, scriptType)
+        return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpriv, scriptType)
+    }
+
+    /**
      * Signs a PSBT using BIP-174 compliant approach:
      * 1. First tries to use derivation path metadata from the PSBT (fast, reliable)
      * 2. Falls back to address scanning if no metadata available

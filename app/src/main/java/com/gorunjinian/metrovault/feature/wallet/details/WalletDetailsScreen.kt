@@ -335,7 +335,7 @@ fun WalletDetailsScreen(
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = "Derive child seed phrases",
+                                text = "Derive child seed phrases or passwords",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -398,7 +398,7 @@ fun WalletDetailsScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Export account public key or seed phrase",
+                            text = "Export keys, descriptors or seed phrase",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

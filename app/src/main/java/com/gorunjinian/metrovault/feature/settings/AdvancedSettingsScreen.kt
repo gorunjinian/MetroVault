@@ -171,7 +171,7 @@ fun AdvancedSettingsScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_key),
+                        painter = painterResource(R.drawable.ic_account_tree),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
@@ -210,7 +210,7 @@ fun AdvancedSettingsScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_account_tree),
+                        painter = painterResource(R.drawable.ic_accounts),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)

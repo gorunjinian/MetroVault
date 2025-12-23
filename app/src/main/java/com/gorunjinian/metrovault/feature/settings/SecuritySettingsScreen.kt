@@ -28,6 +28,7 @@ import com.gorunjinian.metrovault.core.ui.dialogs.ChangePasswordDialog
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 
+@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SecuritySettingsScreen(
@@ -61,6 +62,25 @@ fun SecuritySettingsScreen(
     LaunchedEffect(Unit) {
         hasDecoyPassword = withContext(kotlinx.coroutines.Dispatchers.IO) {
             secureStorage.hasDecoyPassword()
+        }
+        
+        // Check if biometric key is still valid (may have been invalidated by new fingerprint enrollment)
+        if (biometricsEnabled) {
+            val isDecoy = biometricTarget == UserPreferencesRepository.BIOMETRIC_TARGET_DECOY
+            val keyValid = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                biometricPasswordManager.isKeyValid(isDecoy)
+            }
+            
+            if (!keyValid) {
+                // Key was invalidated (e.g., new fingerprint enrolled)
+                // Automatically disable biometrics and clean up
+                withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    biometricPasswordManager.deleteKey(isDecoy)
+                    biometricPasswordManager.removeBiometricData(isDecoy)
+                }
+                userPreferencesRepository.setBiometricsEnabled(false)
+                userPreferencesRepository.setBiometricTarget(UserPreferencesRepository.BIOMETRIC_TARGET_NONE)
+            }
         }
     }
 

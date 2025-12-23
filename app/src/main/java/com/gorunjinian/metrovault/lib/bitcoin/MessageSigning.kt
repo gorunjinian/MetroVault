@@ -199,7 +199,7 @@ object MessageSigning {
             }
             
             derivedAddress == address
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
