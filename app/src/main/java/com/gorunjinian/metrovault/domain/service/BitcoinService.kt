@@ -5,6 +5,7 @@ import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.psbt.*
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
+import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.ScriptType
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -17,9 +18,23 @@ class BitcoinService {
 
     companion object {
         private const val TAG = "BitcoinService"
-        private val CHAIN_HASH = Block.LivenetGenesisBlock.hash // Mainnet
         // Increased from 100 to 500 per chain (1000 total) for better coverage
         private const val ADDRESS_SCAN_GAP = 2000
+
+        /**
+         * Gets the appropriate chain hash (genesis block hash) based on network type.
+         * Used for address generation and PSBT parsing.
+         */
+        fun getChainHash(isTestnet: Boolean): BlockHash {
+            return if (isTestnet) Block.Testnet4GenesisBlock.hash else Block.LivenetGenesisBlock.hash
+        }
+
+        /**
+         * Gets the chain hash from a derivation path by checking the coin type.
+         */
+        fun getChainHashFromPath(derivationPath: String): BlockHash {
+            return getChainHash(DerivationPaths.isTestnet(derivationPath))
+        }
     }
 
     data class WalletCreationResult(
@@ -182,9 +197,11 @@ class BitcoinService {
         accountPublicKey: DeterministicWallet.ExtendedPublicKey,
         index: Int,
         isChange: Boolean,
-        scriptType: ScriptType
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
     ): BitcoinAddress? {
         return try {
+            val chainHash = getChainHash(isTestnet)
             val changeIndex = if (isChange) 1L else 0L
             val addressKey = accountPublicKey
                 .derivePublicKey(changeIndex)
@@ -192,12 +209,12 @@ class BitcoinService {
 
             val publicKey = addressKey.publicKey
             val address = when (scriptType) {
-                ScriptType.P2PKH -> Bitcoin.computeP2PkhAddress(publicKey, CHAIN_HASH)
-                ScriptType.P2SH_P2WPKH -> Bitcoin.computeP2ShOfP2WpkhAddress(publicKey, CHAIN_HASH)
-                ScriptType.P2WPKH -> Bitcoin.computeP2WpkhAddress(publicKey, CHAIN_HASH)
+                ScriptType.P2PKH -> Bitcoin.computeP2PkhAddress(publicKey, chainHash)
+                ScriptType.P2SH_P2WPKH -> Bitcoin.computeP2ShOfP2WpkhAddress(publicKey, chainHash)
+                ScriptType.P2WPKH -> Bitcoin.computeP2WpkhAddress(publicKey, chainHash)
                 ScriptType.P2TR -> {
                     val xOnlyPubKey = XonlyPublicKey(publicKey)
-                    Bitcoin.computeBIP86Address(xOnlyPubKey, CHAIN_HASH)
+                    Bitcoin.computeBIP86Address(xOnlyPubKey, chainHash)
                 }
             }
 
@@ -222,7 +239,7 @@ class BitcoinService {
      */
     data class AddressKeyPair(
         val publicKey: String,      // Compressed public key (33 bytes hex, starts with 02 or 03)
-        val privateKeyWIF: String   // Private key in WIF format (starts with K or L for mainnet compressed)
+        val privateKeyWIF: String   // Private key in WIF format (K/L for mainnet, c for testnet)
     )
 
     /**
@@ -230,12 +247,14 @@ class BitcoinService {
      * @param accountPrivateKey The wallet's account private key
      * @param index Address index
      * @param isChange Whether this is a change address
+     * @param isTestnet Whether this is a testnet wallet (affects WIF encoding)
      * @return AddressKeyPair with public key (hex) and private key (WIF), or null on error
      */
     fun getAddressKeys(
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         index: Int,
-        isChange: Boolean
+        isChange: Boolean,
+        isTestnet: Boolean = false
     ): AddressKeyPair? {
         return try {
             val changeIndex = if (isChange) 1L else 0L
@@ -246,9 +265,12 @@ class BitcoinService {
             val privateKey = addressPrivateKey.privateKey
             val publicKey = privateKey.publicKey()
 
+            // Use testnet WIF prefix (0xEF) for testnet, mainnet prefix (0x80) for mainnet
+            val wifPrefix = if (isTestnet) Base58.Prefix.SecretKeyTestnet else Base58.Prefix.SecretKey
+
             AddressKeyPair(
                 publicKey = publicKey.toHex(),
-                privateKeyWIF = privateKey.toBase58(Base58.Prefix.SecretKey)
+                privateKeyWIF = privateKey.toBase58(wifPrefix)
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get address keys at index $index: ${e.message}")
@@ -260,11 +282,16 @@ class BitcoinService {
      * Gets the wallet descriptors using the Descriptor library.
      * FIX for Bug #1: Now properly utilizes Descriptor.kt for BIP84 descriptor generation.
      *
+     * @param isTestnet Whether to use testnet chain hash
      * @return Pair of (receive descriptor, change descriptor) with checksums, or null on failure
      */
-    fun getWalletDescriptors(masterPrivateKey: DeterministicWallet.ExtendedPrivateKey): Pair<String, String>? {
+    fun getWalletDescriptors(
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        isTestnet: Boolean = false
+    ): Pair<String, String>? {
         return try {
-            Descriptor.BIP84Descriptors(CHAIN_HASH, masterPrivateKey)
+            val chainHash = getChainHash(isTestnet)
+            Descriptor.BIP84Descriptors(chainHash, masterPrivateKey)
         } catch (_: Exception) {
             Log.e(TAG, "Failed to generate wallet descriptors")
             null
@@ -279,16 +306,18 @@ class BitcoinService {
      * @param accountPath Account derivation path (e.g., "m/84'/0'/0'")
      * @param accountPublicKey Account-level extended public key
      * @param scriptType Script type for the wallet
+     * @param isTestnet Whether to use testnet key prefixes
      * @return Unified descriptor string with checksum
      */
     fun getWalletDescriptor(
         fingerprint: String,
         accountPath: String,
         accountPublicKey: DeterministicWallet.ExtendedPublicKey,
-        scriptType: ScriptType
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
     ): String {
         val fp = fingerprint.toLongOrNull(16) ?: 0L
-        val xpub = getAccountXpub(accountPublicKey, scriptType)
+        val xpub = getAccountXpub(accountPublicKey, scriptType, isTestnet)
         return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpub, scriptType)
     }
 
@@ -300,16 +329,18 @@ class BitcoinService {
      * @param accountPath Account derivation path (e.g., "m/84'/0'/0'")
      * @param accountPrivateKey Account-level extended private key
      * @param scriptType Script type for the wallet
+     * @param isTestnet Whether to use testnet key prefixes
      * @return Private descriptor string with checksum
      */
     fun getPrivateWalletDescriptor(
         fingerprint: String,
         accountPath: String,
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
-        scriptType: ScriptType
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
     ): String {
         val fp = fingerprint.toLongOrNull(16) ?: 0L
-        val xpriv = getAccountXpriv(accountPrivateKey, scriptType)
+        val xpriv = getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
         return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpriv, scriptType)
     }
 
@@ -322,15 +353,17 @@ class BitcoinService {
      * @param masterPrivateKey Master private key for full path derivation (BIP-174)
      * @param accountPrivateKey Account-level private key for fallback address scanning
      * @param scriptType Script type for address generation in fallback
+     * @param isTestnet Whether this is a testnet wallet
      */
     fun signPsbt(
         psbtBase64: String,
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
-        scriptType: ScriptType
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
     ): String? {
         return try {
-            Log.d(TAG, "signPsbt called with scriptType: $scriptType")
+            Log.d(TAG, "signPsbt called with scriptType: $scriptType, isTestnet: $isTestnet")
             
             val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
             Log.d(TAG, "PSBT bytes decoded: ${psbtBytes.size} bytes")
@@ -421,8 +454,9 @@ class BitcoinService {
         }
     }
 
-    fun getPsbtDetails(psbtBase64: String): PsbtDetails? {
+    fun getPsbtDetails(psbtBase64: String, isTestnet: Boolean = false): PsbtDetails? {
         return try {
+            val chainHash = getChainHash(isTestnet)
             val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
             val psbt = when (val psbtResult = Psbt.read(psbtBytes)) {
                 is Either.Right -> psbtResult.value
@@ -442,7 +476,7 @@ class BitcoinService {
                 val inputAddress = input?.let { getInputScriptPubKey(it) }?.let { scriptPubKey ->
                     try {
                         val parsedScript = Script.parse(scriptPubKey)
-                        when (val result = Bitcoin.addressFromPublicKeyScript(Block.LivenetGenesisBlock.hash, parsedScript)) {
+                        when (val result = Bitcoin.addressFromPublicKeyScript(chainHash, parsedScript)) {
                             is Either.Right -> result.value
                             is Either.Left -> null
                         }
@@ -460,7 +494,7 @@ class BitcoinService {
             }
 
             val outputs = tx.txOut.map { txOut ->
-                val address = extractAddressFromOutput(txOut)
+                val address = extractAddressFromOutput(txOut, chainHash)
                 PsbtOutput(address = address, value = txOut.amount.toLong())
             }
 
@@ -475,22 +509,56 @@ class BitcoinService {
         }
     }
 
-    fun getAccountXpub(accountPublicKey: DeterministicWallet.ExtendedPublicKey, scriptType: ScriptType): String {
-        val prefix = when (scriptType) {
-            ScriptType.P2PKH -> DeterministicWallet.xpub
-            ScriptType.P2SH_P2WPKH -> DeterministicWallet.ypub
-            ScriptType.P2WPKH -> DeterministicWallet.zpub
-            ScriptType.P2TR -> DeterministicWallet.xpub
+    /**
+     * Gets the account extended public key encoded with appropriate prefix.
+     * @param isTestnet Whether to use testnet prefixes (tpub/upub/vpub)
+     */
+    fun getAccountXpub(
+        accountPublicKey: DeterministicWallet.ExtendedPublicKey,
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        val prefix = if (isTestnet) {
+            when (scriptType) {
+                ScriptType.P2PKH -> DeterministicWallet.tpub
+                ScriptType.P2SH_P2WPKH -> DeterministicWallet.upub
+                ScriptType.P2WPKH -> DeterministicWallet.vpub
+                ScriptType.P2TR -> DeterministicWallet.tpub
+            }
+        } else {
+            when (scriptType) {
+                ScriptType.P2PKH -> DeterministicWallet.xpub
+                ScriptType.P2SH_P2WPKH -> DeterministicWallet.ypub
+                ScriptType.P2WPKH -> DeterministicWallet.zpub
+                ScriptType.P2TR -> DeterministicWallet.xpub
+            }
         }
         return accountPublicKey.encode(prefix)
     }
 
-    fun getAccountXpriv(accountPrivateKey: DeterministicWallet.ExtendedPrivateKey, scriptType: ScriptType): String {
-        val prefix = when (scriptType) {
-            ScriptType.P2PKH -> DeterministicWallet.xprv
-            ScriptType.P2SH_P2WPKH -> DeterministicWallet.yprv
-            ScriptType.P2WPKH -> DeterministicWallet.zprv
-            ScriptType.P2TR -> DeterministicWallet.xprv
+    /**
+     * Gets the account extended private key encoded with appropriate prefix.
+     * @param isTestnet Whether to use testnet prefixes (tprv/uprv/vprv)
+     */
+    fun getAccountXpriv(
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        val prefix = if (isTestnet) {
+            when (scriptType) {
+                ScriptType.P2PKH -> DeterministicWallet.tprv
+                ScriptType.P2SH_P2WPKH -> DeterministicWallet.uprv
+                ScriptType.P2WPKH -> DeterministicWallet.vprv
+                ScriptType.P2TR -> DeterministicWallet.tprv
+            }
+        } else {
+            when (scriptType) {
+                ScriptType.P2PKH -> DeterministicWallet.xprv
+                ScriptType.P2SH_P2WPKH -> DeterministicWallet.yprv
+                ScriptType.P2WPKH -> DeterministicWallet.zprv
+                ScriptType.P2TR -> DeterministicWallet.xprv
+            }
         }
         return accountPrivateKey.encode(prefix)
     }
@@ -499,18 +567,19 @@ class BitcoinService {
         address: String,
         accountPublicKey: DeterministicWallet.ExtendedPublicKey,
         scriptType: ScriptType,
+        isTestnet: Boolean = false,
         scanRange: Int = ADDRESS_SCAN_GAP
     ): AddressCheckResult? {
         return try {
             for (i in 0 until scanRange) {
-                val addr = generateAddress(accountPublicKey, i, isChange = false, scriptType)
+                val addr = generateAddress(accountPublicKey, i, isChange = false, scriptType, isTestnet)
                 if (addr?.address == address) {
                     return AddressCheckResult(true, addr.derivationPath, i, false)
                 }
             }
 
             for (i in 0 until scanRange) {
-                val addr = generateAddress(accountPublicKey, i, isChange = true, scriptType)
+                val addr = generateAddress(accountPublicKey, i, isChange = true, scriptType, isTestnet)
                 if (addr?.address == address) {
                     return AddressCheckResult(true, addr.derivationPath, i, true)
                 }
@@ -826,10 +895,10 @@ class BitcoinService {
         }
     }
 
-    private fun extractAddressFromOutput(txOut: TxOut): String {
+    private fun extractAddressFromOutput(txOut: TxOut, chainHash: BlockHash): String {
         return try {
             val scriptPubKey = Script.parse(txOut.publicKeyScript)
-            when (val result = Bitcoin.addressFromPublicKeyScript(CHAIN_HASH, scriptPubKey)) {
+            when (val result = Bitcoin.addressFromPublicKeyScript(chainHash, scriptPubKey)) {
                 is Either.Right -> result.value
                 is Either.Left -> "Unknown"
             }

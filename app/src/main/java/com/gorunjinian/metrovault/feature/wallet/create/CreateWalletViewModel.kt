@@ -35,6 +35,7 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         val wordCount: Int = 12,
         val selectedDerivationPath: String = DerivationPaths.NATIVE_SEGWIT,
         val accountNumber: Int = 0,
+        val isTestnet: Boolean = false,  // Testnet wallet toggle
 
         // Step 2: Entropy
         val entropyType: String = "", // "coin" or "dice"
@@ -118,6 +119,24 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
 
     fun setAccountNumber(accountNumber: Int) {
         _uiState.update { it.copy(accountNumber = accountNumber) }
+    }
+
+    /**
+     * Toggles testnet mode and updates the derivation path accordingly.
+     * Preserves the current address type (purpose) when switching.
+     */
+    fun setTestnetMode(enabled: Boolean) {
+        _uiState.update { state ->
+            val currentPurpose = DerivationPaths.getPurpose(state.selectedDerivationPath)
+            val newPath = when (currentPurpose) {
+                86 -> if (enabled) DerivationPaths.TAPROOT_TESTNET else DerivationPaths.TAPROOT
+                84 -> if (enabled) DerivationPaths.NATIVE_SEGWIT_TESTNET else DerivationPaths.NATIVE_SEGWIT
+                49 -> if (enabled) DerivationPaths.NESTED_SEGWIT_TESTNET else DerivationPaths.NESTED_SEGWIT
+                44 -> if (enabled) DerivationPaths.LEGACY_TESTNET else DerivationPaths.LEGACY
+                else -> if (enabled) DerivationPaths.NATIVE_SEGWIT_TESTNET else DerivationPaths.NATIVE_SEGWIT
+            }
+            state.copy(isTestnet = enabled, selectedDerivationPath = newPath)
+        }
     }
 
     // ========== Step 2: Entropy ==========

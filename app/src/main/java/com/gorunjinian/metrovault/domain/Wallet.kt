@@ -597,16 +597,24 @@ class Wallet(context: Context) {
 
     // ==================== Bitcoin Operations ====================
 
+    /** Check if the active wallet is a testnet wallet */
+    fun isActiveWalletTestnet(): Boolean {
+        val path = getActiveWalletDerivationPath()
+        return DerivationPaths.isTestnet(path)
+    }
+
     fun signPsbt(psbtString: String): String? {
         val state = getActiveWalletState() ?: return null
         val masterPrivateKey = state.getMasterPrivateKey() ?: return null
         val accountPrivateKey = state.getAccountPrivateKey() ?: return null
         val scriptType = getScriptType(state.derivationPath)
-        return bitcoinService.signPsbt(psbtString, masterPrivateKey, accountPrivateKey, scriptType)
+        val isTestnet = isActiveWalletTestnet()
+        return bitcoinService.signPsbt(psbtString, masterPrivateKey, accountPrivateKey, scriptType, isTestnet)
     }
 
     fun getPsbtDetails(psbtString: String): PsbtDetails? {
-        return bitcoinService.getPsbtDetails(psbtString)
+        val isTestnet = isActiveWalletTestnet()
+        return bitcoinService.getPsbtDetails(psbtString, isTestnet)
     }
 
     fun generateAddresses(
@@ -617,8 +625,9 @@ class Wallet(context: Context) {
         val state = getActiveWalletState() ?: return null
         val accountPublicKey = state.getAccountPublicKey() ?: return null
         val scriptType = getScriptType(state.derivationPath)
+        val isTestnet = isActiveWalletTestnet()
         return (0 until count).mapNotNull { i ->
-            bitcoinService.generateAddress(accountPublicKey, offset + i, isChange, scriptType)
+            bitcoinService.generateAddress(accountPublicKey, offset + i, isChange, scriptType, isTestnet)
         }
     }
 
@@ -626,7 +635,8 @@ class Wallet(context: Context) {
         val state = getActiveWalletState() ?: return null
         val accountPublicKey = state.getAccountPublicKey() ?: return null
         val scriptType = getScriptType(state.derivationPath)
-        return bitcoinService.checkAddressBelongsToWallet(address, accountPublicKey, scriptType)
+        val isTestnet = isActiveWalletTestnet()
+        return bitcoinService.checkAddressBelongsToWallet(address, accountPublicKey, scriptType, isTestnet)
     }
 
     // ==================== Wallet Info ====================
@@ -639,21 +649,24 @@ class Wallet(context: Context) {
         val state = getActiveWalletState() ?: return null
         val accountPublicKey = state.getAccountPublicKey() ?: return null
         val scriptType = getScriptType(state.derivationPath)
-        return bitcoinService.getAccountXpub(accountPublicKey, scriptType)
+        val isTestnet = isActiveWalletTestnet()
+        return bitcoinService.getAccountXpub(accountPublicKey, scriptType, isTestnet)
     }
 
     fun getActiveXpriv(): String? {
         val state = getActiveWalletState() ?: return null
         val accountPrivateKey = state.getAccountPrivateKey() ?: return null
         val scriptType = getScriptType(state.derivationPath)
-        return bitcoinService.getAccountXpriv(accountPrivateKey, scriptType)
+        val isTestnet = isActiveWalletTestnet()
+        return bitcoinService.getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
     }
 
     @Suppress("unused")
     fun getActiveDescriptor(): Pair<String, String>? {
         val state = getActiveWalletState() ?: return null
         val masterPrivateKey = state.getMasterPrivateKey() ?: return null
-        return bitcoinService.getWalletDescriptors(masterPrivateKey)
+        val isTestnet = isActiveWalletTestnet()
+        return bitcoinService.getWalletDescriptors(masterPrivateKey, isTestnet)
     }
 
     /**
@@ -667,12 +680,14 @@ class Wallet(context: Context) {
         val accountPublicKey = state.getAccountPublicKey() ?: return null
         val fingerprint = state.fingerprint
         val scriptType = getScriptType(state.derivationPath)
+        val isTestnet = isActiveWalletTestnet()
         
         return bitcoinService.getWalletDescriptor(
             fingerprint = fingerprint,
             accountPath = state.derivationPath,
             accountPublicKey = accountPublicKey,
-            scriptType = scriptType
+            scriptType = scriptType,
+            isTestnet = isTestnet
         )
     }
 
@@ -688,12 +703,14 @@ class Wallet(context: Context) {
         val accountPrivateKey = state.getAccountPrivateKey() ?: return null
         val fingerprint = state.fingerprint
         val scriptType = getScriptType(state.derivationPath)
+        val isTestnet = isActiveWalletTestnet()
         
         return bitcoinService.getPrivateWalletDescriptor(
             fingerprint = fingerprint,
             accountPath = state.derivationPath,
             accountPrivateKey = accountPrivateKey,
-            scriptType = scriptType
+            scriptType = scriptType,
+            isTestnet = isTestnet
         )
     }
 
@@ -723,7 +740,8 @@ class Wallet(context: Context) {
     fun getAddressKeys(index: Int, isChange: Boolean): BitcoinService.AddressKeyPair? {
         val state = getActiveWalletState() ?: return null
         val accountPrivateKey = state.getAccountPrivateKey() ?: return null
-        return bitcoinService.getAddressKeys(accountPrivateKey, index, isChange)
+        val isTestnet = isActiveWalletTestnet()
+        return bitcoinService.getAddressKeys(accountPrivateKey, index, isChange, isTestnet)
     }
 
     // ==================== Session Seed Management ====================

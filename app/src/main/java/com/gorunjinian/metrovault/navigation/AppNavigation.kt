@@ -314,7 +314,6 @@ fun AppNavigation(
 
         composable(Screen.ImportWallet.route) {
             ImportWalletScreen(
-                wallet = wallet,
                 onBack = { navController.navigateUp() },
                 onWalletImported = {
                     scope.launch {

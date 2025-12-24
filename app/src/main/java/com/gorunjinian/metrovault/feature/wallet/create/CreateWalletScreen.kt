@@ -92,9 +92,11 @@ fun CreateWalletScreen(
                     wordCount = uiState.wordCount,
                     selectedDerivationPath = uiState.selectedDerivationPath,
                     accountNumber = uiState.accountNumber,
+                    isTestnet = uiState.isTestnet,
                     onWordCountChange = { viewModel.setWordCount(it) },
                     onDerivationPathChange = { viewModel.setDerivationPath(it) },
                     onAccountNumberChange = { viewModel.setAccountNumber(it) },
+                    onTestnetChange = { viewModel.setTestnetMode(it) },
                     onNext = { viewModel.goToNextStep() }
                 )
 
@@ -171,20 +173,23 @@ fun CreateWalletScreen(
 
 // ========== Step 1: Configuration ==========
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Step1Configuration(
     wordCount: Int,
     selectedDerivationPath: String,
     accountNumber: Int,
+    isTestnet: Boolean,
     onWordCountChange: (Int) -> Unit,
     onDerivationPathChange: (String) -> Unit,
     onAccountNumberChange: (Int) -> Unit,
+    onTestnetChange: (Boolean) -> Unit,
     onNext: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp)
+            .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 24.dp)
     ) {
         Column(
             modifier = Modifier
@@ -192,10 +197,32 @@ private fun Step1Configuration(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-        Text(
-            text = "Select Seed Phrase Length",
-            style = MaterialTheme.typography.headlineSmall
-        )
+        // Title row with testnet toggle
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Seed Phrase Length",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Testnet",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isTestnet) MaterialTheme.colorScheme.primary 
+                           else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Switch(
+                    checked = isTestnet,
+                    onCheckedChange = onTestnetChange
+                )
+            }
+        }
 
     Row(
         modifier = Modifier
@@ -251,48 +278,95 @@ private fun Step1Configuration(
         }
     }
 
-    Spacer(modifier = Modifier.height(4.dp))
-
     Text(
         text = "Address Type",
         style = MaterialTheme.typography.titleMedium
     )
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        val options = listOf(
-            Triple("Taproot (Bech32m)", "bc1p...", DerivationPaths.TAPROOT),
-            Triple("Native SegWit (Bech32)", "bc1q...", DerivationPaths.NATIVE_SEGWIT),
-            Triple("Nested SegWit", "3...", DerivationPaths.NESTED_SEGWIT),
-            Triple("Legacy", "1...", DerivationPaths.LEGACY)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
-
-        options.forEach { (label, example, path) ->
-            Card(
-                onClick = { onDerivationPathChange(path) },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (selectedDerivationPath == path)
-                        MaterialTheme.colorScheme.primaryContainer
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant
-                ),
-                modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Select the Bitcoin address type for this wallet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Address type dropdown
+            var addressTypeExpanded by remember { mutableStateOf(false) }
+            
+            // Dynamic options based on testnet mode
+            val options = if (isTestnet) {
+                listOf(
+                    Triple("Taproot (Bech32m)", "tb1p...", DerivationPaths.TAPROOT_TESTNET),
+                    Triple("Native SegWit (Bech32)", "tb1q...", DerivationPaths.NATIVE_SEGWIT_TESTNET),
+                    Triple("Nested SegWit", "2...", DerivationPaths.NESTED_SEGWIT_TESTNET),
+                    Triple("Legacy", "m/n...", DerivationPaths.LEGACY_TESTNET)
+                )
+            } else {
+                listOf(
+                    Triple("Taproot (Bech32m)", "bc1p...", DerivationPaths.TAPROOT),
+                    Triple("Native SegWit (Bech32)", "bc1q...", DerivationPaths.NATIVE_SEGWIT),
+                    Triple("Nested SegWit", "3...", DerivationPaths.NESTED_SEGWIT),
+                    Triple("Legacy", "1...", DerivationPaths.LEGACY)
+                )
+            }
+            
+            val currentPurpose = DerivationPaths.getPurpose(selectedDerivationPath)
+            val selectedOption = options.find { DerivationPaths.getPurpose(it.third) == currentPurpose } ?: options[1]
+            
+            ExposedDropdownMenuBox(
+                expanded = addressTypeExpanded,
+                onExpandedChange = { addressTypeExpanded = it }
             ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                OutlinedTextField(
+                    value = "${selectedOption.first} (${selectedOption.second})",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Address Format") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = addressTypeExpanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
+                )
+                ExposedDropdownMenu(
+                    expanded = addressTypeExpanded,
+                    onDismissRequest = { addressTypeExpanded = false }
                 ) {
-                    RadioButton(
-                        selected = selectedDerivationPath == path,
-                        onClick = { onDerivationPathChange(path) }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(text = label, style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            text = "Example: $example",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    options.forEachIndexed { index, (label, example, path) ->
+                        DropdownMenuItem(
+                            text = {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Text(
+                                        text = "Example: $example",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onDerivationPathChange(path)
+                                addressTypeExpanded = false
+                            },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
                         )
+                        if (index < options.size - 1) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                        }
                     }
                 }
             }
@@ -319,9 +393,9 @@ private fun Step1Configuration(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
-                value = if (accountNumber == 0) "" else accountNumber.toString(),
+                value = accountNumber.toString(),
                 onValueChange = { value ->
                     val num = value.filter { it.isDigit() }.take(2).toIntOrNull() ?: 0
                     onAccountNumberChange(num)

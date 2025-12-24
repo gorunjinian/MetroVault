@@ -3,6 +3,7 @@ package com.gorunjinian.metrovault.feature.wallet.details
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -53,6 +54,10 @@ fun WalletDetailsScreen(
     
     // Delete wallet dialog state
     var walletToDelete by remember { mutableStateOf<WalletMetadata?>(null) }
+    
+    // Calculate isTestnet early for app bar badge
+    val derivationPath = wallet.getActiveWalletDerivationPath()
+    val isTestnet = DerivationPaths.isTestnet(derivationPath)
 
     Scaffold(
         topBar = {
@@ -64,6 +69,22 @@ fun WalletDetailsScreen(
                     }
                 },
                 actions = {
+                    // Testnet badge
+                    if (isTestnet) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Testnet",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
                     IconButton(
                         onClick = {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -93,12 +114,11 @@ fun WalletDetailsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Wallet Info Card
-            val derivationPath = wallet.getActiveWalletDerivationPath()
             val walletType = when (DerivationPaths.getPurpose(derivationPath)) {
-                86 -> "Taproot (bc1p...)"
-                84 -> "Native SegWit (bc1...)"
-                49 -> "Nested SegWit (3...)"
-                44 -> "Legacy (1...)"
+                86 -> if (isTestnet) "Taproot (tb1p...)" else "Taproot (bc1p...)"
+                84 -> if (isTestnet) "Native SegWit (tb1q...)" else "Native SegWit (bc1...)"
+                49 -> if (isTestnet) "Nested SegWit (2...)" else "Nested SegWit (3...)"
+                44 -> if (isTestnet) "Legacy (m/n...)" else "Legacy (1...)"
                 else -> "Unknown"
             }
             val fingerprint = wallet.getMasterFingerprint()

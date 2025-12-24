@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
@@ -175,13 +176,16 @@ fun WalletsListContent(
                             }
                         }
                 ) {
-                    // Compute wallet type once and cache it
+                    // Compute wallet type and testnet status
+                    val isWalletTestnet = remember(walletItem.derivationPath) {
+                        DerivationPaths.isTestnet(walletItem.derivationPath)
+                    }
                     val walletType = remember(walletItem.derivationPath) {
-                        when (walletItem.derivationPath) {
-                            DerivationPaths.TAPROOT -> "Taproot"
-                            DerivationPaths.NATIVE_SEGWIT -> "Native SegWit"
-                            DerivationPaths.NESTED_SEGWIT -> "Nested SegWit"
-                            DerivationPaths.LEGACY -> "Legacy"
+                        when (DerivationPaths.getPurpose(walletItem.derivationPath)) {
+                            86 -> "Taproot"
+                            84 -> "Native SegWit"
+                            49 -> "Nested SegWit"
+                            44 -> "Legacy"
                             else -> "Unknown"
                         }
                     }
@@ -191,6 +195,7 @@ fun WalletsListContent(
                         name = walletItem.name,
                         type = walletType,
                         masterFingerprint = walletItem.masterFingerprint,
+                        isTestnet = isWalletTestnet,
                         elevation = shadow,
                         isEditMode = isEditMode,
                         isExpanded = if (isEditMode) false else expandedWalletId == walletItem.id,
@@ -396,6 +401,7 @@ fun WalletCard(
     name: String,
     type: String,
     masterFingerprint: String = "",
+    isTestnet: Boolean = false,
     elevation: androidx.compose.ui.unit.Dp = 2.dp,
     isEditMode: Boolean = false,
     isExpanded: Boolean = false,
@@ -447,13 +453,33 @@ fun WalletCard(
                     }
 
                     Column {
-                        Text(
-                            text = name,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            // In edit mode, use primary color to hint it's editable
-                            color = if (isEditMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                // In edit mode, use primary color to hint it's editable
+                                color = if (isEditMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                            // Testnet badge
+                            if (isTestnet) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Testnet",
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                         if (masterFingerprint.isNotEmpty() && !isEditMode) {
                             Text(
                                 text = masterFingerprint,
