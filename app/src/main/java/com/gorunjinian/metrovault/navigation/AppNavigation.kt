@@ -30,10 +30,13 @@ import com.gorunjinian.metrovault.feature.transaction.ScanPSBTScreen
 import com.gorunjinian.metrovault.feature.wallet.create.CompleteMnemonicScreen
 import com.gorunjinian.metrovault.feature.wallet.create.CreateWalletScreen
 import com.gorunjinian.metrovault.feature.wallet.create.ImportWalletScreen
+import com.gorunjinian.metrovault.feature.wallet.details.AccountKeysScreen
 import com.gorunjinian.metrovault.feature.wallet.details.AddressDetailScreen
 import com.gorunjinian.metrovault.feature.wallet.details.AddressesScreen
 import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
+import com.gorunjinian.metrovault.feature.wallet.details.DescriptorsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
+import com.gorunjinian.metrovault.feature.wallet.details.SeedPhraseScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SignMessageScreen
 import com.gorunjinian.metrovault.feature.wallet.details.WalletDetailsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.DifferentAccountsScreen
@@ -77,6 +80,9 @@ sealed class Screen(val route: String) {
     object SettingsSecurity : Screen("settings_security")
     object SettingsAdvanced : Screen("settings_advanced")
     object DifferentAccounts : Screen("different_accounts")
+    object AccountKeys : Screen("account_keys")
+    object Descriptors : Screen("descriptors")
+    object SeedPhrase : Screen("seed_phrase")
 }
 
 @Suppress("AssignedValueIsNeverRead")
@@ -409,6 +415,44 @@ fun AppNavigation(
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)
+                    }
+                },
+                onViewAccountKeys = { navController.navigate(Screen.AccountKeys.route) },
+                onViewDescriptors = { navController.navigate(Screen.Descriptors.route) },
+                onViewSeedPhrase = { navController.navigate(Screen.SeedPhrase.route) }
+            )
+        }
+
+        composable(Screen.AccountKeys.route) {
+            AccountKeysScreen(
+                wallet = wallet,
+                secureStorage = secureStorage,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.ExportOptions.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.Descriptors.route) {
+            DescriptorsScreen(
+                wallet = wallet,
+                secureStorage = secureStorage,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.ExportOptions.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.SeedPhrase.route) {
+            SeedPhraseScreen(
+                wallet = wallet,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.ExportOptions.route)
                     }
                 }
             )
