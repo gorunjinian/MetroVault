@@ -26,7 +26,7 @@
 
 **MetroVault** is a secure, offline Android signing device application designed to turn your Android phone into a cold storage hardware wallet. Built with modern Android technologies and a custom Kotlin Bitcoin library, it prioritizes security, simplicity, and user experience.
 
-## 🎯 Why MetroVault?
+## Why MetroVault?
 
 The primary goal of MetroVault is to provide a completely **offline** environment for managing Bitcoin private keys. It acts as a signer for your watch-only wallets (like BlueWallet, Sparrow, or Electrum) running on online devices. By keeping your keys on a device that never connects to the internet (air-gapped), you significantly reduce the attack surface for theft and malware.
 
@@ -50,8 +50,8 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 
 ### 💼 Wallet Management
 - **Multi-Type Support**: Native SegWit (`bc1q...`), Taproot (`bc1p...`), Nested SegWit (`3...`), Legacy (`1...`)
-- **BIP-39 Mnemonics**: Standard 12 or 24-word seed phrases
 - **Passphrase Support**: Optional BIP-39 passphrase with choice to save locally or keep in session memory only
+- **Testnet4 Support**: Import or create Testnet wallet for testing and development
 - **Custom Entropy**: Add your own randomness via dice rolls or coin flips
 - **Mnemonic Tools**: Built-in checksum calculator and validator
 - **BIP-85 Derivation**: Generate child seeds (12/24 words) and secure passwords from your master seed
