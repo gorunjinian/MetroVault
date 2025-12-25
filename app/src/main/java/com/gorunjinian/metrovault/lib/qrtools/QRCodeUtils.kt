@@ -60,6 +60,51 @@ object QRCodeUtils {
     }
     
     /**
+     * Generates QR code bitmap from binary data (byte array).
+     * Uses ISO_8859_1 charset for true binary encoding, as required by CompactSeedQR.
+     * Uses "L" (Low) error correction for smallest possible QR code.
+     * 
+     * @param bytes Binary data to encode (e.g., 16 or 32 bytes for CompactSeedQR)
+     * @param size QR code size in pixels
+     * @return Bitmap of the QR code, or null on error
+     */
+    fun generateBinaryQRCode(
+        bytes: ByteArray,
+        size: Int = 512,
+        foregroundColor: Int = Color.BLACK,
+        backgroundColor: Int = Color.WHITE
+    ): Bitmap? {
+        return try {
+            // Convert bytes to ISO-8859-1 string (1:1 byte mapping)
+            val content = String(bytes, Charsets.ISO_8859_1)
+            
+            val hints = hashMapOf<EncodeHintType, Any>().apply {
+                // Use "L" (Low) error correction as specified in SeedQR spec for smallest QR
+                put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.L)
+                put(EncodeHintType.MARGIN, 0)
+                // ISO-8859-1 is essential for binary data - maps bytes 0-255 to chars 1:1
+                put(EncodeHintType.CHARACTER_SET, "ISO-8859-1")
+            }
+
+            val writer = QRCodeWriter()
+            val bitMatrix = writer.encode(content, BarcodeFormat.QR_CODE, size, size, hints)
+
+            val bitmap = createBitmap(size, size, Bitmap.Config.RGB_565)
+            for (x in 0 until size) {
+                for (y in 0 until size) {
+                    bitmap[x, y] = if (bitMatrix[x, y]) foregroundColor else backgroundColor
+                }
+            }
+
+            cropQRWhiteMargins(bitmap, backgroundColor)
+        } catch (e: Exception) {
+            android.util.Log.e("QRCodeUtils", "generateBinaryQRCode failed: ${e.message}")
+            e.printStackTrace()
+            null
+        }
+    }
+    
+    /**
      * Crops white margins from a QR code bitmap to make the QR pattern fill the image,
      * then adds a consistent border for reliable scanning.
      */

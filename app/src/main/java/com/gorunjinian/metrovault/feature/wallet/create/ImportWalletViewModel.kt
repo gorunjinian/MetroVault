@@ -91,7 +91,19 @@ class ImportWalletViewModel(application: Application) : AndroidViewModel(applica
     fun goToPreviousStep() {
         val currentStep = _uiState.value.currentStep
         if (currentStep > 1) {
-            _uiState.update { it.copy(currentStep = currentStep - 1) }
+            _uiState.update { state ->
+                // Clear mnemonic when going back from step 2 to step 1
+                // (but keep it when going from step 3 to step 2)
+                if (currentStep == 2) {
+                    state.copy(
+                        currentStep = currentStep - 1,
+                        mnemonicWords = emptyList(),
+                        currentWord = ""
+                    )
+                } else {
+                    state.copy(currentStep = currentStep - 1)
+                }
+            }
         } else {
             viewModelScope.launch {
                 _events.emit(ImportWalletEvent.NavigateBack)

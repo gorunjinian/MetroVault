@@ -16,7 +16,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 3
-        versionName = "3.2.1"
+        versionName = "3.2.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -156,7 +156,7 @@ dependencies {
 
     //bitcoin libraries
     implementation(kotlin("stdlib"))
-    implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.21.0")
+    implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.22.0")
 
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
     implementation("androidx.window:window:1.5.1")

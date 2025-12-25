@@ -10,8 +10,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,9 +19,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 
 /**
@@ -177,7 +177,7 @@ fun SignedPSBTDisplay(
                     )
                 ) {
                     Icon(
-                        imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                        painter = painterResource(if (isPaused) R.drawable.ic_play_arrow else R.drawable.ic_pause),
                         contentDescription = if (isPaused) "Play" else "Pause",
                         modifier = Modifier.size(32.dp),
                         tint = if (isPaused) MaterialTheme.colorScheme.onPrimary
@@ -233,7 +233,7 @@ fun SignedPSBTDisplay(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Button(
+        OutlinedButton(
             onClick = onScanAnother,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -242,7 +242,7 @@ fun SignedPSBTDisplay(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        OutlinedButton(
+        Button(
             onClick = onDone,
             modifier = Modifier.fillMaxWidth()
         ) {

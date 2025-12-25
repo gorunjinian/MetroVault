@@ -153,7 +153,7 @@ fun ExportOptionsScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Show your recovery seed phrase",
+                            text = "Show your recovery seed phrase or SeedQR",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )

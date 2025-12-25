@@ -37,6 +37,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.DescriptorsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SeedPhraseScreen
+import com.gorunjinian.metrovault.feature.wallet.details.SeedQRScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SignMessageScreen
 import com.gorunjinian.metrovault.feature.wallet.details.WalletDetailsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.DifferentAccountsScreen
@@ -83,6 +84,7 @@ sealed class Screen(val route: String) {
     object AccountKeys : Screen("account_keys")
     object Descriptors : Screen("descriptors")
     object SeedPhrase : Screen("seed_phrase")
+    object SeedQR : Screen("seed_qr")
 }
 
 @Suppress("AssignedValueIsNeverRead")
@@ -452,6 +454,23 @@ fun AppNavigation(
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.ExportOptions.route)
+                    }
+                },
+                onShowSeedQR = {
+                    navController.navigate(Screen.SeedQR.route)
+                }
+            )
+        }
+
+        composable(Screen.SeedQR.route) {
+            val mnemonic = wallet.getActiveMnemonic() ?: emptyList()
+            SeedQRScreen(
+                mnemonic = mnemonic,
+                onBack = {
+                    // Navigate directly to ExportOptionsScreen for security
+                    // (skipping SeedPhraseScreen since user already viewed it)
+                    navController.navigate(Screen.ExportOptions.route) {
+                        popUpTo(Screen.ExportOptions.route) { inclusive = true }
                     }
                 }
             )

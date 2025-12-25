@@ -591,7 +591,7 @@ class Wallet(context: Context) {
         activeWalletId = null
         Log.d(
             TAG,
-            "🔒 Full session wipe: $keyCount keys + $metadataCount metadata cleared (Lock/Logout)"
+            "Full session wipe: $keyCount keys + $metadataCount metadata cleared"
         )
     }
 

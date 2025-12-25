@@ -1,5 +1,8 @@
 package com.gorunjinian.metrovault.feature.wallet.create
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,18 +24,26 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.metrovault.lib.qrtools.SeedQRUtils
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
 import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.delay
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 
@@ -399,8 +410,56 @@ private fun Step2SeedPhrase(
     onNext: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    
     val isMnemonicValid = mnemonicWords.size == expectedWordCount && validateMnemonic(mnemonicWords)
     var validationError by remember { mutableStateOf("") }
+    
+    // SeedQR Scanner state
+    var isScanning by remember { mutableStateOf(false) }
+    var hasCameraPermission by remember { mutableStateOf(false) }
+    var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
+    
+    // Camera permission launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission = isGranted
+        if (isGranted) {
+            isScanning = true
+        }
+    }
+    
+    // Lifecycle observer for scanner
+    DisposableEffect(lifecycleOwner, isScanning) {
+        val observer = LifecycleEventObserver { _, event ->
+            val scanner = barcodeView
+            if (isScanning && scanner != null) {
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> {
+                        try { scanner.resume() } catch (e: Exception) { }
+                    }
+                    Lifecycle.Event.ON_PAUSE -> {
+                        try { scanner.pause() } catch (e: Exception) { }
+                    }
+                    else -> {}
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            try { barcodeView?.pause() } catch (e: Exception) { }
+        }
+    }
+    
+    // Pause scanner when isScanning becomes false
+    LaunchedEffect(isScanning) {
+        if (!isScanning) {
+            try { barcodeView?.pause() } catch (e: Exception) { }
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize()
@@ -452,10 +511,68 @@ private fun Step2SeedPhrase(
                     onCurrentWordChange("")
                 }
             )
+            
+            // QR Scanner view (when scanning)
+            if (isScanning) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AndroidView(
+                            factory = { ctx ->
+                                CompoundBarcodeView(ctx).apply {
+                                    barcodeView = this
+                                    setStatusText("")
+                                    decodeContinuous { result ->
+                                        result.text?.let { scannedText ->
+                                            // Get raw bytes for CompactSeedQR (binary data gets corrupted in text)
+                                            val rawBytes = result.rawBytes
+                                            
+                                            // Try to decode as SeedQR (passing raw bytes for CompactSeedQR)
+                                            val decodedWords = SeedQRUtils.decodeSeedQR(scannedText, rawBytes, ctx)
+                                            
+                                            if (decodedWords != null) {
+                                                // Check word count matches expected
+                                                if (decodedWords.size != expectedWordCount) {
+                                                    validationError = "Scanned SeedQR contains ${decodedWords.size} words, but $expectedWordCount words expected"
+                                                } else {
+                                                    // Success: populate mnemonic words
+                                                    validationError = ""
+                                                    onMnemonicWordsChange(decodedWords)
+                                                    onCurrentWordChange("")
+                                                }
+                                                isScanning = false
+                                                pause()
+                                            }
+                                        }
+                                    }
+                                    resume()
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        
+                        // Cancel button overlay
+                        Button(
+                            onClick = {
+                                isScanning = false
+                                barcodeView?.pause()
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(16.dp)
+                        ) {
+                            Text("Cancel Scan")
+                        }
+                    }
+                }
+            }
 
         }
 
-        // Pin button to bottom of content area (above keyboard)
+        // Pin buttons to bottom of content area (above keyboard)
         Column(
             modifier = Modifier
                 .padding(horizontal = 24.dp)
@@ -476,6 +593,26 @@ private fun Step2SeedPhrase(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
             }
+            
+            // Scan SeedQR button
+            OutlinedButton(
+                onClick = {
+                    validationError = ""
+                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isScanning && mnemonicWords.size < expectedWordCount
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_qr_code_scanner),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Scan SeedQR")
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
 
             Button(
                 onClick = {
@@ -500,7 +637,7 @@ private fun Step2SeedPhrase(
         }
 
         // Secure keyboard at the bottom (visible when toggled on and not complete)
-        if (isKeyboardVisible && mnemonicWords.size < expectedWordCount) {
+        if (isKeyboardVisible && mnemonicWords.size < expectedWordCount && !isScanning) {
             SecureMnemonicKeyboard(
                 currentWord = currentWord,
                 onKeyPress = { char ->
