@@ -253,6 +253,11 @@ fun AboutScreen(
                             title = "BIP85 Derivation",
                             description = "Derive child mnemonics from a master seed"
                         )
+                        FeatureItem(
+                            icon = R.drawable.ic_qr_code_scanner,
+                            title = "SeedQR Support",
+                            description = "Import & export seeds via Standard & Compact SeedQR"
+                        )
                     }
                 }
             }
@@ -300,6 +305,11 @@ fun AboutScreen(
                             prefix = "1...",
                             name = "Legacy",
                             bip = "BIP44"
+                        )
+                        AddressTypeItem(
+                            prefix = "Tnet",
+                            name = "Full Testnet4 support",
+                            bip = "BIP94"
                         )
                     }
                 }
