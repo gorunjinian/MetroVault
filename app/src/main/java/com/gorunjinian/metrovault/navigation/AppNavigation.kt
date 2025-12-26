@@ -267,6 +267,7 @@ fun AppNavigation(
 
         composable(Screen.Unlock.route) {
             UnlockScreen(
+                userPreferencesRepository = userPreferencesRepository,
                 onUnlockSuccess = { autoOpenRequested ->
                     // Set state at AppNavigation level to trigger the LaunchedEffect
                     pendingAutoOpen = autoOpenRequested

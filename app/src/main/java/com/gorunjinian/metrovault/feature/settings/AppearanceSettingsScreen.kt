@@ -130,7 +130,38 @@ fun AppearanceSettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            // Custom Unlock Title Toggle
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Unlock Screen Title",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                
+                val customUnlockTitle by userPreferencesRepository.customUnlockTitle.collectAsState()
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Don't Trust, Verify",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            "Show custom title on unlock screen",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = customUnlockTitle,
+                        onCheckedChange = { userPreferencesRepository.setCustomUnlockTitle(it) }
+                    )
+                }
+            }
 
             // Info Card after content
             SettingsInfoCard(

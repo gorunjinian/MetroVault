@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun UnlockScreen(
     viewModel: AuthViewModel = viewModel(),
+    userPreferencesRepository: UserPreferencesRepository,
     onUnlockSuccess: (autoOpenRequested: Boolean) -> Unit,
     onDataWiped: () -> Unit = {}
 ) {
@@ -42,6 +43,7 @@ fun UnlockScreen(
     val biometricManager = remember { BiometricAuthManager(context) }
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
+    val customUnlockTitle by userPreferencesRepository.customUnlockTitle.collectAsState()
 
     // Collect state from ViewModel
     val uiState by viewModel.unlockState.collectAsStateWithLifecycle()
@@ -146,9 +148,9 @@ fun UnlockScreen(
 
             // App Title with enhanced typography
             Text(
-                text = "Metro Vault",
+                text = if (customUnlockTitle) "Don't Trust, Verify" else "Metro Vault",
                 style = MaterialTheme.typography.displayMedium.copy(
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = if (customUnlockTitle) FontWeight.Bold else FontWeight.ExtraBold,
                     letterSpacing = (-1).sp
                 ),
                 color = MaterialTheme.colorScheme.primary

@@ -48,6 +48,9 @@ fun PSBTScannerView(
     var pendingScanComplete by remember { mutableStateOf(false) }
     var barcodeViewRef by remember { mutableStateOf<CompoundBarcodeView?>(null) }
     
+    // State for pending progress updates (ensures UI recomposition from camera thread)
+    var pendingProgress by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
+    
     // Flash effect when frame is captured
     val scannerBackgroundColor by animateColorAsState(
         targetValue = if (frameJustCaptured) 
@@ -82,6 +85,14 @@ fun PSBTScannerView(
         }
     }
     
+    // Process pending progress updates on main thread (ensures UI recomposition)
+    LaunchedEffect(pendingProgress) {
+        pendingProgress?.let { (progress, isAnimated) ->
+            onScanProgress(progress, isAnimated)
+            pendingProgress = null
+        }
+    }
+    
     if (hasCameraPermission) {
         Column(modifier = modifier) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -103,9 +114,12 @@ fun PSBTScannerView(
                                     if (progress != null) {
                                         frameJustCaptured = true
                                         
-                                        // Check if this is an animated scan
-                                        val isAnimated = QRCodeUtils.parseAnimatedFrame(text) != null
-                                        onScanProgress(progress, isAnimated)
+                                        // Check if this is an animated scan based on detected format
+                                        // AnimatedQRScanner detects: "ur-psbt", "ur", "bbqr", "simple", "single"
+                                        val detectedFormat = animatedScanner.getDetectedFormat()
+                                        val isAnimated = detectedFormat != null && detectedFormat != "single"
+                                        // Use pending state to trigger main thread update via LaunchedEffect
+                                        pendingProgress = Pair(progress, isAnimated)
                                         
                                         // Check if scan is complete - trigger async processing
                                         if (animatedScanner.isComplete()) {
@@ -121,54 +135,55 @@ fun PSBTScannerView(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Viewfinder overlay with progress
+                // Viewfinder overlay - scanning frame indicator (centered)
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Card(
+                        modifier = Modifier.size(250.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = scannerBackgroundColor
+                        )
+                    ) {}
+                }
+                
+                // Floating progress indicator at top of viewfinder
+                if (isAnimatedScan && scanProgress > 0 && scanProgress < 100) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.TopCenter
                     ) {
-                        // Scanning frame indicator
                         Card(
-                            modifier = Modifier.size(250.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = scannerBackgroundColor
-                            )
-                        ) {}
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Progress indicator for animated QR
-                        if (isAnimatedScan && scanProgress > 0 && scanProgress < 100) {
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
-                                )
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = "Scanning Animated QR",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    LinearProgressIndicator(
-                                        progress = { scanProgress / 100f },
-                                        modifier = Modifier
-                                            .width(200.dp)
-                                            .height(8.dp)
-                                            .clip(RoundedCornerShape(4.dp)),
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = animatedScanner.getProgressString(),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
+                                Text(
+                                    text = "Scanning Animated QR",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LinearProgressIndicator(
+                                    progress = { scanProgress / 100f },
+                                    modifier = Modifier
+                                        .width(200.dp)
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = animatedScanner.getProgressString(),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                         }
                     }

@@ -276,15 +276,15 @@ private fun Step1Configuration(
             // Dynamic options based on testnet mode
             val options = if (isTestnet) {
                 listOf(
-                    Triple("Taproot (Bech32m)", "tb1p...", DerivationPaths.TAPROOT_TESTNET),
-                    Triple("Native SegWit (Bech32)", "tb1q...", DerivationPaths.NATIVE_SEGWIT_TESTNET),
+                    Triple("Taproot", "tb1p...", DerivationPaths.TAPROOT_TESTNET),
+                    Triple("Native SegWit", "tb1q...", DerivationPaths.NATIVE_SEGWIT_TESTNET),
                     Triple("Nested SegWit", "2...", DerivationPaths.NESTED_SEGWIT_TESTNET),
                     Triple("Legacy", "m/n...", DerivationPaths.LEGACY_TESTNET)
                 )
             } else {
                 listOf(
-                    Triple("Taproot (Bech32m)", "bc1p...", DerivationPaths.TAPROOT),
-                    Triple("Native SegWit (Bech32)", "bc1q...", DerivationPaths.NATIVE_SEGWIT),
+                    Triple("Taproot", "bc1p...", DerivationPaths.TAPROOT),
+                    Triple("Native SegWit", "bc1q...", DerivationPaths.NATIVE_SEGWIT),
                     Triple("Nested SegWit", "3...", DerivationPaths.NESTED_SEGWIT),
                     Triple("Legacy", "1...", DerivationPaths.LEGACY)
                 )
@@ -292,17 +292,34 @@ private fun Step1Configuration(
             
             val currentPurpose = DerivationPaths.getPurpose(selectedDerivationPath)
             val selectedOption = options.find { DerivationPaths.getPurpose(it.third) == currentPurpose } ?: options[1]
+            val isDefaultAddressType = currentPurpose == 84 // Native SegWit is the default
             
             ExposedDropdownMenuBox(
                 expanded = addressTypeExpanded,
                 onExpandedChange = { addressTypeExpanded = it }
             ) {
                 OutlinedTextField(
-                    value = "${selectedOption.first} (${selectedOption.second})",
+                    value = selectedOption.first,
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Address Type") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = addressTypeExpanded) },
+                    suffix = if (isDefaultAddressType) {
+                        {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "Default",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    } else null,
                     modifier = Modifier
                         .fillMaxWidth()
                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
@@ -397,6 +414,7 @@ private fun Step1Configuration(
 
 // ========== Step 2: Seed Phrase Input ==========
 
+@Suppress("AssignedValueIsNeverRead")
 @Composable
 private fun Step2SeedPhrase(
     mnemonicWords: List<String>,
@@ -438,10 +456,10 @@ private fun Step2SeedPhrase(
             if (isScanning && scanner != null) {
                 when (event) {
                     Lifecycle.Event.ON_RESUME -> {
-                        try { scanner.resume() } catch (e: Exception) { }
+                        try { scanner.resume() } catch (_: Exception) { }
                     }
                     Lifecycle.Event.ON_PAUSE -> {
-                        try { scanner.pause() } catch (e: Exception) { }
+                        try { scanner.pause() } catch (_: Exception) { }
                     }
                     else -> {}
                 }
@@ -450,14 +468,14 @@ private fun Step2SeedPhrase(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            try { barcodeView?.pause() } catch (e: Exception) { }
+            try { barcodeView?.pause() } catch (_: Exception) { }
         }
     }
     
     // Pause scanner when isScanning becomes false
     LaunchedEffect(isScanning) {
         if (!isScanning) {
-            try { barcodeView?.pause() } catch (e: Exception) { }
+            try { barcodeView?.pause() } catch (_: Exception) { }
         }
     }
 

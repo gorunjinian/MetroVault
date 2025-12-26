@@ -46,123 +46,131 @@ fun TransactionConfirmation(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp)
+            .padding(horizontal = 24.dp, vertical = 16.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Header with title and unit toggle
+        // Centered title
+        Text(
+            text = "Transaction Details",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Toggles row - both side by side with equal width
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Transaction Details",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            
-            // Settings toggles column
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            // Address/UTXO toggle
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Address/UTXO toggle
-                Row(
+                // Address option
+                Box(
                     modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(8.dp)
+                            if (showAddresses) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
                         )
-                        .padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clickable { showAddresses = true }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Address option
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (showAddresses) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { showAddresses = true }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "Addr",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (showAddresses) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    
-                    // UTXO option
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (!showAddresses) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { showAddresses = false }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "UTXO",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (!showAddresses) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = "Addr",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (showAddresses) MaterialTheme.colorScheme.onPrimary
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 
-                // Sats/BTC toggle
-                Row(
+                // UTXO option
+                Box(
                     modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(8.dp)
+                            if (!showAddresses) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
                         )
-                        .padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clickable { showAddresses = false }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Sats option
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (showInSats) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { showInSats = true }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "sats",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (showInSats) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                    Text(
+                        text = "UTXO",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (!showAddresses) MaterialTheme.colorScheme.onPrimary
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            // Sats/BTC toggle
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Sats option
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (showInSats) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
                         )
-                    }
-                    
-                    // BTC option
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (!showInSats) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { showInSats = false }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "BTC",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (!showInSats) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        .clickable { showInSats = true }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "sats",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (showInSats) MaterialTheme.colorScheme.onPrimary
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // BTC option
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (!showInSats) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
                         )
-                    }
+                        .clickable { showInSats = false }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "BTC",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (!showInSats) MaterialTheme.colorScheme.onPrimary
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

@@ -270,8 +270,6 @@ fun SecuritySettingsScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
             // Info Card after content
             SettingsInfoCard(
                 icon = R.drawable.ic_shield_lock,

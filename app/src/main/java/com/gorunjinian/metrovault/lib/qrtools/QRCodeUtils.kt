@@ -283,9 +283,9 @@ object QRCodeUtils {
      * Output format options for signed PSBT QR codes
      */
     enum class OutputFormat(val displayName: String) {
-        UR_PSBT("BC-UR"),     // Modern ur:psbt/ format - best interoperability
-        BBQR("BBQr"),          // Coinkite BBQr format - best for Coldcard
-        BASE64("Base64")       // Raw Base64 - fallback for basic wallets
+        UR_LEGACY("BC-UR v1"),  // Legacy ur:crypto-psbt/ format - BlueWallet, Sparrow compatibility
+        BBQR("BBQr"),           // Coinkite BBQr format - best for Coldcard
+        UR_MODERN("BC-UR v2")   // Modern ur:psbt/ format - UR 2.0 standard
     }
     
 
@@ -298,7 +298,7 @@ object QRCodeUtils {
         val totalParts: Int,
         val isAnimated: Boolean,
         val recommendedFrameDelayMs: Long = 500,
-        val format: OutputFormat = OutputFormat.UR_PSBT
+        val format: OutputFormat = OutputFormat.UR_LEGACY
     )
 
     /**
@@ -312,29 +312,39 @@ object QRCodeUtils {
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
         backgroundColor: Int = Color.WHITE,
-        format: OutputFormat = OutputFormat.UR_PSBT
+        format: OutputFormat = OutputFormat.UR_LEGACY
     ): AnimatedQRResult? {
         return when (format) {
-            OutputFormat.UR_PSBT -> {
-                // Try BC-UR first, fall back to BBQr if it fails
-                val result = generateURPsbtQR(psbt, size, foregroundColor, backgroundColor)
+            OutputFormat.UR_LEGACY -> {
+                // Try BC-UR v1 (crypto-psbt) first, fall back to BBQr if it fails
+                val result = generateURPsbtQRv1(psbt, size, foregroundColor, backgroundColor)
                 if (result != null) {
                     result
                 } else {
-                    android.util.Log.w("QRCodeUtils", "BC-UR returned null, falling back to BBQr")
+                    android.util.Log.w("QRCodeUtils", "BC-UR v1 returned null, falling back to BBQr")
                     generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
                 }
             }
             OutputFormat.BBQR -> generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
-            OutputFormat.BASE64 -> generateSmartPSBTQRRaw(psbt, size, foregroundColor, backgroundColor)
+            OutputFormat.UR_MODERN -> {
+                // Try BC-UR v2 (psbt) first, fall back to BBQr if it fails
+                val result = generateURPsbtQRv2(psbt, size, foregroundColor, backgroundColor)
+                if (result != null) {
+                    result
+                } else {
+                    android.util.Log.w("QRCodeUtils", "BC-UR v2 returned null, falling back to BBQr")
+                    generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
+                }
+            }
         }
     }
     
     /**
-     * Generate QR code(s) in modern BC-UR format (ur:psbt/) using Hummingbird library.
+     * Generate QR code(s) in BC-UR v1 format (ur:crypto-psbt/) using URTools library.
      * Uses proper fountain codes for multi-frame encoding.
+     * This is the legacy format for wider compatibility with BlueWallet, Sparrow, etc.
      */
-    private fun generateURPsbtQR(
+    private fun generateURPsbtQRv1(
         psbt: String,
         size: Int = 512,
         foregroundColor: Int = Color.BLACK,
@@ -344,8 +354,7 @@ object QRCodeUtils {
             // Decode Base64 PSBT to bytes
             val psbtBytes = android.util.Base64.decode(psbt, android.util.Base64.NO_WRAP)
             
-            // Create UR using "crypto-psbt" type for wider compatibility
-            // (BlueWallet and some wallets prefer legacy type over modern "psbt")
+            // Create UR using "crypto-psbt" type (BC-UR v1) for legacy wallet compatibility
             val ur = UR.fromBytes(RegistryType.CRYPTO_PSBT.toString(), psbtBytes)
             
             // Use optimal fragment length for easy scanning (smaller = more frames but easier to scan)
@@ -358,24 +367,24 @@ object QRCodeUtils {
             if (encoder.isSinglePart) {
                 // Single frame - simple case
                 val urString = encoder.nextPart()
-                android.util.Log.d("QRCodeUtils", "BC-UR single part: ${urString.length} chars")
+                android.util.Log.d("QRCodeUtils", "BC-UR v1 single part: ${urString.length} chars")
                 val bitmap = generateQRCode(urString.uppercase(), size, foregroundColor, backgroundColor)
                 if (bitmap != null) {
-                    android.util.Log.d("QRCodeUtils", "BC-UR single part: bitmap generated successfully")
+                    android.util.Log.d("QRCodeUtils", "BC-UR v1 single part: bitmap generated successfully")
                     AnimatedQRResult(
                         frames = listOf(bitmap),
                         totalParts = 1,
                         isAnimated = false,
-                        format = OutputFormat.UR_PSBT
+                        format = OutputFormat.UR_LEGACY
                     )
                 } else {
-                    android.util.Log.e("QRCodeUtils", "BC-UR single part: bitmap generation failed!")
+                    android.util.Log.e("QRCodeUtils", "BC-UR v1 single part: bitmap generation failed!")
                     null
                 }
             } else {
                 // Multi-frame with fountain codes
                 val seqLen = encoder.seqLen
-                android.util.Log.d("QRCodeUtils", "BC-UR multi-part: seqLen=$seqLen")
+                android.util.Log.d("QRCodeUtils", "BC-UR v1 multi-part: seqLen=$seqLen")
                 // Generate exactly seqLen frames - fountain codes provide redundancy naturally
                 // when looping through the animation
                 val totalFrames = seqLen
@@ -388,24 +397,101 @@ object QRCodeUtils {
                 // Generate QR codes for all frames
                 val bitmaps = generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
                 if (bitmaps != null && bitmaps.isNotEmpty()) {
-                    android.util.Log.d("QRCodeUtils", "BC-UR: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)")
+                    android.util.Log.d("QRCodeUtils", "BC-UR v1: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)")
                     AnimatedQRResult(
                         frames = bitmaps,
                         totalParts = bitmaps.size,
                         isAnimated = true,
                         recommendedFrameDelayMs = if (bitmaps.size > 5) 600 else 500,
-                        format = OutputFormat.UR_PSBT
+                        format = OutputFormat.UR_LEGACY
                     )
                 } else {
-                    android.util.Log.e("QRCodeUtils", "BC-UR multi-part: bitmap generation failed!")
+                    android.util.Log.e("QRCodeUtils", "BC-UR v1 multi-part: bitmap generation failed!")
                     null
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("QRCodeUtils", "BC-UR encoding failed: ${e.message}")
+            android.util.Log.e("QRCodeUtils", "BC-UR v1 encoding failed: ${e.message}")
             e.printStackTrace()
-            // Fall back to BBQr on error
-            generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor)
+            null  // Don't fall back here, let the caller handle fallback
+        }
+    }
+    
+    /**
+     * Generate QR code(s) in BC-UR v2 format (ur:psbt/) using URTools library.
+     * Uses proper fountain codes for multi-frame encoding.
+     * This is the modern UR 2.0 standard format.
+     */
+    private fun generateURPsbtQRv2(
+        psbt: String,
+        size: Int = 512,
+        foregroundColor: Int = Color.BLACK,
+        backgroundColor: Int = Color.WHITE
+    ): AnimatedQRResult? {
+        return try {
+            // Decode Base64 PSBT to bytes
+            val psbtBytes = android.util.Base64.decode(psbt, android.util.Base64.NO_WRAP)
+            
+            // Create UR using "psbt" type (BC-UR v2) for modern UR 2.0 standard
+            val ur = UR.fromBytes(RegistryType.PSBT.toString(), psbtBytes)
+            
+            // Use optimal fragment length for easy scanning (smaller = more frames but easier to scan)
+            val maxFragmentLen = 250
+            val minFragmentLen = 50
+            
+            // Create encoder with fountain code support
+            val encoder = UREncoder(ur, maxFragmentLen, minFragmentLen, 0)
+            
+            if (encoder.isSinglePart) {
+                // Single frame - simple case
+                val urString = encoder.nextPart()
+                android.util.Log.d("QRCodeUtils", "BC-UR v2 single part: ${urString.length} chars")
+                val bitmap = generateQRCode(urString.uppercase(), size, foregroundColor, backgroundColor)
+                if (bitmap != null) {
+                    android.util.Log.d("QRCodeUtils", "BC-UR v2 single part: bitmap generated successfully")
+                    AnimatedQRResult(
+                        frames = listOf(bitmap),
+                        totalParts = 1,
+                        isAnimated = false,
+                        format = OutputFormat.UR_MODERN
+                    )
+                } else {
+                    android.util.Log.e("QRCodeUtils", "BC-UR v2 single part: bitmap generation failed!")
+                    null
+                }
+            } else {
+                // Multi-frame with fountain codes
+                val seqLen = encoder.seqLen
+                android.util.Log.d("QRCodeUtils", "BC-UR v2 multi-part: seqLen=$seqLen")
+                // Generate exactly seqLen frames - fountain codes provide redundancy naturally
+                // when looping through the animation
+                val totalFrames = seqLen
+                
+                val frameStrings = mutableListOf<String>()
+                repeat(totalFrames) {
+                    frameStrings.add(encoder.nextPart().uppercase())
+                }
+                
+                // Generate QR codes for all frames
+                val bitmaps = generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
+                if (bitmaps != null && bitmaps.isNotEmpty()) {
+                    android.util.Log.d("QRCodeUtils", "BC-UR v2: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)")
+                    AnimatedQRResult(
+                        frames = bitmaps,
+                        totalParts = bitmaps.size,
+                        isAnimated = true,
+                        recommendedFrameDelayMs = if (bitmaps.size > 5) 600 else 500,
+                        format = OutputFormat.UR_MODERN
+                    )
+                } else {
+                    android.util.Log.e("QRCodeUtils", "BC-UR v2 multi-part: bitmap generation failed!")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("QRCodeUtils", "BC-UR v2 encoding failed: ${e.message}")
+            e.printStackTrace()
+            null  // Don't fall back here, let the caller handle fallback
         }
     }
     
@@ -477,7 +563,7 @@ object QRCodeUtils {
                         frames = listOf(bitmap),
                         totalParts = 1,
                         isAnimated = false,
-                        format = OutputFormat.BASE64
+                        format = OutputFormat.UR_LEGACY
                     )
                 } else null
             } else {
@@ -488,7 +574,7 @@ object QRCodeUtils {
                         totalParts = frames.size,
                         isAnimated = true,
                         recommendedFrameDelayMs = if (frames.size > 5) 600 else 500,
-                        format = OutputFormat.BASE64
+                        format = OutputFormat.UR_LEGACY
                     )
                 } else null
             }

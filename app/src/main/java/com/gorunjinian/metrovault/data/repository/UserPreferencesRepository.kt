@@ -66,6 +66,9 @@ class UserPreferencesRepository(context: Context) {
     private val _bip85Enabled = MutableStateFlow(prefs.getBoolean(KEY_BIP85_ENABLED, true))
     val bip85Enabled: StateFlow<Boolean> = _bip85Enabled.asStateFlow()
 
+    private val _customUnlockTitle = MutableStateFlow(prefs.getBoolean(KEY_CUSTOM_UNLOCK_TITLE, false))
+    val customUnlockTitle: StateFlow<Boolean> = _customUnlockTitle.asStateFlow()
+
     fun setThemeMode(mode: String) {
         if (mode in listOf(THEME_LIGHT, THEME_DARK, THEME_SYSTEM)) {
             prefs.edit { putString(KEY_THEME_MODE, mode) }
@@ -146,6 +149,11 @@ class UserPreferencesRepository(context: Context) {
         }
     }
 
+    fun setCustomUnlockTitle(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_CUSTOM_UNLOCK_TITLE, enabled) }
+        _customUnlockTitle.value = enabled
+    }
+
     companion object {
         private const val PREFS_NAME = "metrovault_settings"
         private const val KEY_THEME_MODE = "theme_mode"
@@ -158,6 +166,7 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_QUICK_SHORTCUTS = "quick_shortcuts"
         private const val KEY_DIFFERENT_ACCOUNTS_ENABLED = "different_accounts_enabled"
         private const val KEY_BIP85_ENABLED = "bip85_enabled"
+        private const val KEY_CUSTOM_UNLOCK_TITLE = "custom_unlock_title"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
         const val THEME_SYSTEM = "system"

@@ -61,7 +61,7 @@ fun ScanPSBTScreen(
     
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
-    var selectedOutputFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.UR_PSBT) }
+    var selectedOutputFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.UR_LEGACY) }
     var isQRPaused by remember { mutableStateOf(false) }
     var isRegeneratingQR by remember { mutableStateOf(false) }
     

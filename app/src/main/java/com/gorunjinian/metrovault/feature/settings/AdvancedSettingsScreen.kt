@@ -248,8 +248,6 @@ fun AdvancedSettingsScreen(
                 iconTint = MaterialTheme.colorScheme.error
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
-
             // Info Card after content
             SettingsInfoCard(
                 icon = R.drawable.ic_tune,
