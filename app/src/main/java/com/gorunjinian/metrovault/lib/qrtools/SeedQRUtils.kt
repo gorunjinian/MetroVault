@@ -232,7 +232,11 @@ object SeedQRUtils {
      * @return List of mnemonic words or null if not a valid SeedQR
      */
     fun decodeSeedQR(content: String, rawBytes: ByteArray?, context: Context): List<String>? {
-        // Try Standard SeedQR first (digit string)
+        // Try Generic seed format first (space-separated words)
+        val genericResult = parseGenericSeedQR(content, context)
+        if (genericResult != null) return genericResult
+        
+        // Try Standard SeedQR (digit string)
         if (content.all { it.isDigit() } && (content.length == 48 || content.length == 96)) {
             val result = standardSeedQRToMnemonic(content, context)
             if (result != null) return result
@@ -267,6 +271,37 @@ object SeedQRUtils {
         }
         
         return null
+    }
+    
+    /**
+     * Parses a generic seed QR containing space-separated BIP39 words.
+     * 
+     * Unlike Standard SeedQR (digit pairs) or CompactSeedQR (binary), Generic
+     * format contains the actual seed words separated by spaces.
+     * 
+     * @param content Text content from QR (e.g., "abandon ability able about...")
+     * @param context Android context for loading wordlist
+     * @return List of mnemonic words or null if not a valid seed phrase
+     */
+    fun parseGenericSeedQR(content: String, context: Context): List<String>? {
+        // Split by whitespace (handles multiple spaces, newlines, etc.)
+        val words = content.trim().lowercase().split("\\s+".toRegex())
+        
+        // Must be exactly 12 or 24 words
+        if (words.size != 12 && words.size != 24) return null
+        
+        // Validate all words exist in BIP39 English wordlist
+        val wordlist = BIP39Wordlist.getEnglishWordlist(context)
+        if (wordlist.isEmpty()) return null
+        if (!words.all { it in wordlist }) return null
+        
+        // Validate BIP39 checksum
+        return try {
+            MnemonicCode.validate(words)
+            words
+        } catch (_: Exception) {
+            null
+        }
     }
     
     /**

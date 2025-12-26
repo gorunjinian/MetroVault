@@ -60,12 +60,22 @@ fun BIP85DeriveScreen(
     var errorMessage by remember { mutableStateOf("") }
     // Track the current index for quick navigation
     var currentIndex by remember { mutableIntStateOf(0) }
+    // State to show derived seed QR screen
+    var showDerivedSeedQR by remember { mutableStateOf(false) }
     
     // Clipboard and haptic feedback for password copy
     val clipboard = LocalClipboard.current
     val hapticFeedback = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    
+    // Clear derived seeds or passwords from memory when leaving the screen
+    DisposableEffect(Unit) {
+        onDispose {
+            derivedSeed = null
+            derivedPassword = null
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -87,8 +97,9 @@ fun BIP85DeriveScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (derivedSeed == null && derivedPassword == null) {
@@ -617,6 +628,16 @@ fun BIP85DeriveScreen(
 
                 Spacer(modifier = Modifier.weight(1f))
 
+                // Show SeedQR button
+                OutlinedButton(
+                    onClick = { showDerivedSeedQR = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Show SeedQR")
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Button(
                     onClick = { derivedSeed = null },
                     modifier = Modifier.fillMaxWidth()
@@ -624,6 +645,20 @@ fun BIP85DeriveScreen(
                     Text("Derive Another Seed")
                 }
             }
+        }
+    }
+    
+    // Derived Seed QR Screen - rendered as a full-screen overlay
+    if (showDerivedSeedQR && derivedSeed != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            DerivedSeedQRScreen(
+                derivedMnemonic = derivedSeed!!,
+                onBack = { showDerivedSeedQR = false }
+            )
         }
     }
 }

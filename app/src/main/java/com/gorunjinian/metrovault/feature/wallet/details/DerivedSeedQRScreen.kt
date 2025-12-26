@@ -25,17 +25,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * SeedQRScreen - Displays the wallet's seed phrase as a SeedQR code.
+ * DerivedSeedQRScreen - Displays a BIP85-derived seed phrase as a SeedQR code.
  * 
  * Supports Standard SeedQR, CompactSeedQR, and Generic (plain text) formats.
- * Standard SeedQR is the default format.
+ * Same design as SeedQRScreen but for derived seeds.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SeedQRScreen(
-    mnemonic: List<String>,
-    onBack: () -> Unit,
-    onBackToExportOptions: () -> Unit
+fun DerivedSeedQRScreen(
+    derivedMnemonic: List<String>,
+    onBack: () -> Unit
 ) {
     val context = LocalContext.current
     
@@ -46,19 +45,19 @@ fun SeedQRScreen(
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     
     // Generate QR code when format changes
-    LaunchedEffect(mnemonic, selectedFormat) {
+    LaunchedEffect(derivedMnemonic, selectedFormat) {
         qrBitmap = null // Show loading immediately
         qrBitmap = withContext(Dispatchers.IO) {
             when (selectedFormat) {
                 1 -> { // Compact SeedQR: binary data
-                    val bytes = SeedQRUtils.mnemonicToCompactSeedQR(mnemonic, context)
+                    val bytes = SeedQRUtils.mnemonicToCompactSeedQR(derivedMnemonic, context)
                     bytes?.let { QRCodeUtils.generateBinaryQRCode(it, size = 512) }
                 }
                 2 -> { // Generic: plain space-separated words
-                    QRCodeUtils.generateQRCode(mnemonic.joinToString(" "), size = 512)
+                    QRCodeUtils.generateQRCode(derivedMnemonic.joinToString(" "), size = 512)
                 }
                 else -> { // Standard SeedQR: digit string
-                    val digitString = SeedQRUtils.mnemonicToStandardSeedQR(mnemonic, context)
+                    val digitString = SeedQRUtils.mnemonicToStandardSeedQR(derivedMnemonic, context)
                     digitString?.let { QRCodeUtils.generateQRCode(it, size = 512) }
                 }
             }
@@ -68,7 +67,7 @@ fun SeedQRScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SeedQR") },
+                title = { Text("Derived SeedQR") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -174,7 +173,7 @@ fun SeedQRScreen(
                 )
             ) {
                 Text(
-                    text = "This QR contains your seed phrase.\nAnyone who scans it can steal your funds.",
+                    text = "This QR contains a derived seed phrase.\nAnyone who scans it can access its funds.",
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
@@ -197,7 +196,7 @@ fun SeedQRScreen(
                     ) {
                         Image(
                             bitmap = qrBitmap!!.asImageBitmap(),
-                            contentDescription = "SeedQR Code",
+                            contentDescription = "Derived SeedQR Code",
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -224,12 +223,12 @@ fun SeedQRScreen(
                 )
             }
             
-            // Back button - goes directly to Export Options (skips SeedPhraseScreen)
+            // Back button
             Button(
-                onClick = onBackToExportOptions,
+                onClick = onBack,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Back to Export Options")
+                Text("Back to Derived Seed")
             }
         }
     }

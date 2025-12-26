@@ -638,22 +638,6 @@ class Wallet(context: Context) {
 
     fun getActiveWalletDerivationPath() = getActiveWalletState()?.derivationPath ?: ""
 
-    fun getActiveXpub(): String? {
-        val state = getActiveWalletState() ?: return null
-        val accountPublicKey = state.getAccountPublicKey() ?: return null
-        val scriptType = getScriptType(state.derivationPath)
-        val isTestnet = isActiveWalletTestnet()
-        return bitcoinService.getAccountXpub(accountPublicKey, scriptType, isTestnet)
-    }
-
-    fun getActiveXpriv(): String? {
-        val state = getActiveWalletState() ?: return null
-        val accountPrivateKey = state.getAccountPrivateKey() ?: return null
-        val scriptType = getScriptType(state.derivationPath)
-        val isTestnet = isActiveWalletTestnet()
-        return bitcoinService.getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
-    }
-
     /**
      * Gets the extended public key (xpub/ypub/zpub) for a specific account number.
      *
@@ -672,7 +656,7 @@ class Wallet(context: Context) {
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
             val accountPublicKey = accountPrivateKey.extendedPublicKey
             bitcoinService.getAccountXpub(accountPublicKey, scriptType, isTestnet)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ""
         }
     }
@@ -695,7 +679,7 @@ class Wallet(context: Context) {
         return try {
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
             bitcoinService.getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ""
         }
     }
@@ -706,51 +690,6 @@ class Wallet(context: Context) {
         val masterPrivateKey = state.getMasterPrivateKey() ?: return null
         val isTestnet = isActiveWalletTestnet()
         return bitcoinService.getWalletDescriptors(masterPrivateKey, isTestnet)
-    }
-
-    /**
-     * Gets the unified output descriptor (public/watch-only) for the active wallet.
-     * Uses multipath syntax compatible with Sparrow, Bitcoin Core, etc.
-     *
-     * @return Descriptor string with checksum
-     */
-    fun getActiveUnifiedDescriptor(): String? {
-        val state = getActiveWalletState() ?: return null
-        val accountPublicKey = state.getAccountPublicKey() ?: return null
-        val fingerprint = state.fingerprint
-        val scriptType = getScriptType(state.derivationPath)
-        val isTestnet = isActiveWalletTestnet()
-        
-        return bitcoinService.getWalletDescriptor(
-            fingerprint = fingerprint,
-            accountPath = state.derivationPath,
-            accountPublicKey = accountPublicKey,
-            scriptType = scriptType,
-            isTestnet = isTestnet
-        )
-    }
-
-    /**
-     * Gets the private (spending) descriptor for the active wallet.
-     * WARNING: Contains private keys - handle with extreme care!
-     * Uses multipath syntax compatible with Sparrow, Bitcoin Core, etc.
-     *
-     * @return Private descriptor string with checksum
-     */
-    fun getActivePrivateDescriptor(): String? {
-        val state = getActiveWalletState() ?: return null
-        val accountPrivateKey = state.getAccountPrivateKey() ?: return null
-        val fingerprint = state.fingerprint
-        val scriptType = getScriptType(state.derivationPath)
-        val isTestnet = isActiveWalletTestnet()
-        
-        return bitcoinService.getPrivateWalletDescriptor(
-            fingerprint = fingerprint,
-            accountPath = state.derivationPath,
-            accountPrivateKey = accountPrivateKey,
-            scriptType = scriptType,
-            isTestnet = isTestnet
-        )
     }
 
     /**
@@ -780,7 +719,7 @@ class Wallet(context: Context) {
                 scriptType = scriptType,
                 isTestnet = isTestnet
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ""
         }
     }
@@ -811,7 +750,7 @@ class Wallet(context: Context) {
                 scriptType = scriptType,
                 isTestnet = isTestnet
             )
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ""
         }
     }
