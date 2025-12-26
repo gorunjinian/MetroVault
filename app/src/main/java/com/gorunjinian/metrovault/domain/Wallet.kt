@@ -493,13 +493,6 @@ class Wallet(context: Context) {
             } else false
         }
 
-    /** Get accounts list for active wallet */
-    fun getActiveWalletAccounts(): List<Int> {
-        val walletId = activeWalletId ?: return listOf(0)
-        return synchronized(walletListLock) {
-            _walletMetadataList.find { it.id == walletId }?.accounts ?: listOf(0)
-        }
-    }
 
     /** Get active account number for active wallet */
     fun getActiveAccountNumber(): Int {
@@ -756,14 +749,6 @@ class Wallet(context: Context) {
     }
 
     /**
-     * Gets the original master fingerprint stored in metadata for a wallet.
-     * Used to compare against session fingerprint for mismatch detection.
-     */
-    fun getOriginalFingerprint(walletId: String): String? {
-        return _walletMetadataList.find { it.id == walletId }?.masterFingerprint
-    }
-
-    /**
      * Sets the session seed for a wallet by computing it from the entered passphrase.
      * Used when user re-enters passphrase after app restart.
      * 
@@ -790,13 +775,6 @@ class Wallet(context: Context) {
     }
 
     /**
-     * Checks if a session seed exists for a wallet.
-     */
-    fun hasSessionSeed(walletId: String): Boolean {
-        return sessionSeeds.containsKey(walletId)
-    }
-
-    /**
      * Calculates master fingerprint from mnemonic and passphrase.
      * Used for real-time fingerprint preview in passphrase dialogs.
      */
@@ -820,13 +798,5 @@ class Wallet(context: Context) {
 
     // ==================== Helpers ====================
 
-    private fun getScriptType(path: String): ScriptType {
-        return when {
-            path.startsWith("m/86'") -> ScriptType.P2TR
-            path.startsWith("m/84'") -> ScriptType.P2WPKH
-            path.startsWith("m/49'") -> ScriptType.P2SH_P2WPKH
-            path.startsWith("m/44'") -> ScriptType.P2PKH
-            else -> ScriptType.P2WPKH
-        }
-    }
+    private fun getScriptType(path: String): ScriptType = DerivationPaths.getScriptType(path)
 }

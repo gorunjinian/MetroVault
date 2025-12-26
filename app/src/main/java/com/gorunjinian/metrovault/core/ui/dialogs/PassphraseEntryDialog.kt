@@ -70,10 +70,7 @@ fun PassphraseEntryDialog(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (fingerprintMismatch) 
-                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                        else 
-                            MaterialTheme.colorScheme.secondaryContainer
+                        MaterialTheme.colorScheme.secondaryContainer
                     )
                 ) {
                     Row(

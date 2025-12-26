@@ -119,4 +119,15 @@ object DerivationPaths {
             else -> nativeSegwit(account, testnet)
         }
     }
+
+    /** Get the script type for a derivation path based on its purpose number */
+    fun getScriptType(path: String): ScriptType {
+        return when (getPurpose(path)) {
+            86 -> ScriptType.P2TR
+            84 -> ScriptType.P2WPKH
+            49 -> ScriptType.P2SH_P2WPKH
+            44 -> ScriptType.P2PKH
+            else -> ScriptType.P2WPKH  // Default to native segwit
+        }
+    }
 }

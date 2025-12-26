@@ -153,7 +153,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 val wipeEnabled = userPreferencesRepository.wipeOnFailedAttempts.value
                 val failedAttempts = secureStorage.getFailedAttemptCount()
                 
-                if (wipeEnabled && failedAttempts >= 3) {
+                if (wipeEnabled && failedAttempts >= 4) {
                     // Wipe all data and navigate to setup
                     withContext(Dispatchers.IO) {
                         secureStorage.wipeAllData()

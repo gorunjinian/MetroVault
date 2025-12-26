@@ -832,7 +832,7 @@ private fun Step3Passphrase(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "You will need to re-enter this passphrase every time you open the app.",
+                            text = "You will need to re-enter this passphrase every time you open this wallet.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
