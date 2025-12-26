@@ -23,11 +23,13 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 import com.gorunjinian.metrovault.core.util.SecurityUtils
+import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 
 /**
  * DescriptorsScreen - Displays wallet output descriptors with QR codes.
  * Supports public/private toggle with password confirmation for private descriptors.
+ * Includes account selector to export descriptors for any account.
  */
 @Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,12 +49,38 @@ fun DescriptorsScreen(
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf("") }
     
-    // Wallet data
-    val publicDescriptor = remember(wallet) { wallet.getActiveUnifiedDescriptor() ?: "" }
-    val privateDescriptor = remember(wallet) { wallet.getActivePrivateDescriptor() ?: "" }
+    // Account selection state
+    val walletsList by wallet.wallets.collectAsState()
+    val walletId = wallet.getActiveWalletId()
+    val activeWalletMetadata = remember(walletsList, walletId) {
+        walletsList.find { it.id == walletId }
+    }
+    val accounts = activeWalletMetadata?.accounts?.sorted() ?: listOf(0)
+    val currentActiveAccount = activeWalletMetadata?.activeAccountNumber ?: 0
+    var selectedAccountNumber by remember { mutableIntStateOf(currentActiveAccount) }
+    var accountDropdownExpanded by remember { mutableStateOf(false) }
+    
+    // Base derivation path for descriptor generation
+    val baseDerivationPath = activeWalletMetadata?.derivationPath ?: ""
+    
+    // Compute descriptors for selected account using Wallet's public methods
+    val publicDescriptor = remember(selectedAccountNumber, baseDerivationPath) {
+        if (baseDerivationPath.isNotEmpty()) {
+            wallet.getUnifiedDescriptorForAccount(baseDerivationPath, selectedAccountNumber)
+        } else ""
+    }
+    val privateDescriptor = remember(selectedAccountNumber, baseDerivationPath) {
+        if (baseDerivationPath.isNotEmpty()) {
+            wallet.getPrivateDescriptorForAccount(baseDerivationPath, selectedAccountNumber)
+        } else ""
+    }
     
     val displayDescriptor = if (showPrivate) privateDescriptor else publicDescriptor
     val descriptorType = if (showPrivate) "Spending" else "Watch-Only"
+    
+    // Display name for selected account
+    val selectedAccountName = activeWalletMetadata?.getAccountDisplayName(selectedAccountNumber)
+        ?: "Account $selectedAccountNumber"
     
     // Generate QR code when display data changes
     LaunchedEffect(displayDescriptor) {
@@ -91,6 +119,59 @@ fun DescriptorsScreen(
         ) {
             Spacer(modifier = Modifier.height(0.dp))
             
+            // Account Selector Dropdown
+            ExposedDropdownMenuBox(
+                expanded = accountDropdownExpanded,
+                onExpandedChange = { accountDropdownExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = selectedAccountName,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("$descriptorType Descriptor") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountDropdownExpanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
+                )
+                ExposedDropdownMenu(
+                    expanded = accountDropdownExpanded,
+                    onDismissRequest = { accountDropdownExpanded = false }
+                ) {
+                    accounts.forEach { accountNum ->
+                        val accountName = activeWalletMetadata?.getAccountDisplayName(accountNum)
+                            ?: "Account $accountNum"
+                        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
+                        DropdownMenuItem(
+                            text = {
+                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Text(
+                                        text = accountName,
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Text(
+                                        text = accountPath,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                selectedAccountNumber = accountNum
+                                accountDropdownExpanded = false
+                            },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                        )
+                        if (accountNum != accounts.last()) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+            }
+
             // Public/Private Toggle
             PublicPrivateToggle(
                 showPrivate = showPrivate,
@@ -99,14 +180,6 @@ fun DescriptorsScreen(
                     passwordError = ""
                     showPasswordDialog = true
                 }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Title
-            Text(
-                text = "$descriptorType Descriptor",
-                style = MaterialTheme.typography.titleMedium
             )
 
             // Info/Warning card

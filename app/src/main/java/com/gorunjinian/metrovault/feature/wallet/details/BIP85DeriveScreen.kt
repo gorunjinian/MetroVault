@@ -54,6 +54,7 @@ fun BIP85DeriveScreen(
 ) {
     var indexInput by remember { mutableStateOf("") }
     var wordCount by remember { mutableIntStateOf(12) }
+    var passwordLength by remember { mutableIntStateOf(24) }
     var derivedSeed by remember { mutableStateOf<List<String>?>(null) }
     var derivedPassword by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf("") }
@@ -181,6 +182,46 @@ fun BIP85DeriveScreen(
                     }
                 }
 
+                Text(
+                    text = "Password Length",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                // Password length toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                        )
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf(10, 21, 24, 30).forEach { length ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                .background(
+                                    if (passwordLength == length) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
+                                )
+                                .clickable { passwordLength = length }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "$length",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (passwordLength == length) MaterialTheme.colorScheme.onPrimary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
                 if (errorMessage.isNotEmpty()) {
                     Card(
                         colors = CardDefaults.cardColors(
@@ -222,7 +263,7 @@ fun BIP85DeriveScreen(
                             val path = listOf(
                                 com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968), // bip85
                                 com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(707764),   // pwd
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(24),       // length
+                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(passwordLength.toLong()),
                                 com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
                             )
 
@@ -237,13 +278,8 @@ fun BIP85DeriveScreen(
                             val passwordBytes = hmac.sliceArray(0..31)
                             val base64Password = Base64.encodeToString(passwordBytes, Base64.NO_WRAP)
                             
-                            // Truncate to 24 characters
-                            var password = base64Password.take(24)
-                            
-                            // If no symbols (+, /) present, append "!"
-                            if (!password.contains('+') && !password.contains('/')) {
-                                password += "!"
-                            }
+                            // Truncate to selected password length
+                            val password = base64Password.take(passwordLength)
 
                             derivedPassword = password
                             errorMessage = ""
@@ -353,7 +389,7 @@ fun BIP85DeriveScreen(
                                         currentIndex--
                                         indexInput = currentIndex.toString()
                                         // Re-derive with new index
-                                        derivePassword(wallet, currentIndex)?.let { 
+                                        derivePassword(wallet, currentIndex, passwordLength)?.let { 
                                             derivedPassword = it 
                                         }
                                     }
@@ -376,7 +412,7 @@ fun BIP85DeriveScreen(
                                     currentIndex++
                                     indexInput = currentIndex.toString()
                                     // Re-derive with new index
-                                    derivePassword(wallet, currentIndex)?.let { 
+                                    derivePassword(wallet, currentIndex, passwordLength)?.let { 
                                         derivedPassword = it 
                                     }
                                 }
@@ -629,10 +665,10 @@ private fun deriveSeed(wallet: Wallet, index: Int, wordCount: Int): List<String>
 
 /**
  * Helper function to derive a password at a specific index using BIP85 Protocol A.
- * Path: m/83696968'/707764'/24'/index'
+ * Path: m/83696968'/707764'/length'/index'
  * Returns null if derivation fails.
  */
-private fun derivePassword(wallet: Wallet, index: Int): String? {
+private fun derivePassword(wallet: Wallet, index: Int, length: Int): String? {
     return try {
         val walletState = wallet.getActiveWalletState() ?: return null
         val masterPrivateKey = walletState.getMasterPrivateKey() ?: return null
@@ -640,7 +676,7 @@ private fun derivePassword(wallet: Wallet, index: Int): String? {
         val path = listOf(
             com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968), // bip85
             com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(707764),   // pwd
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(24),       // length
+            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(length.toLong()),
             com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
         )
 
@@ -654,15 +690,8 @@ private fun derivePassword(wallet: Wallet, index: Int): String? {
         val passwordBytes = hmac.sliceArray(0..31)
         val base64Password = Base64.encodeToString(passwordBytes, Base64.NO_WRAP)
         
-        // Truncate to 24 characters
-        var password = base64Password.take(24)
-        
-        // If no symbols (+, /) present, append "!"
-        if (!password.contains('+') && !password.contains('/')) {
-            password = "$password!"
-        }
-
-        password
+        // Truncate to selected length
+        base64Password.take(length)
     } catch (_: Exception) {
         null
     }

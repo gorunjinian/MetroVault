@@ -654,6 +654,52 @@ class Wallet(context: Context) {
         return bitcoinService.getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
     }
 
+    /**
+     * Gets the extended public key (xpub/ypub/zpub) for a specific account number.
+     *
+     * @param baseDerivationPath Base derivation path for the wallet
+     * @param accountNumber Account number to derive key for
+     * @return Extended public key string, or empty string on error
+     */
+    fun getXpubForAccount(baseDerivationPath: String, accountNumber: Int): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
+        val scriptType = getScriptType(accountPath)
+        val isTestnet = isActiveWalletTestnet()
+        
+        return try {
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
+            val accountPublicKey = accountPrivateKey.extendedPublicKey
+            bitcoinService.getAccountXpub(accountPublicKey, scriptType, isTestnet)
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /**
+     * Gets the extended private key (xprv/yprv/zprv) for a specific account number.
+     * WARNING: Contains private keys - handle with extreme care!
+     *
+     * @param baseDerivationPath Base derivation path for the wallet
+     * @param accountNumber Account number to derive key for
+     * @return Extended private key string, or empty string on error
+     */
+    fun getXprivForAccount(baseDerivationPath: String, accountNumber: Int): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
+        val scriptType = getScriptType(accountPath)
+        val isTestnet = isActiveWalletTestnet()
+        
+        return try {
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
+            bitcoinService.getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     @Suppress("unused")
     fun getActiveDescriptor(): Pair<String, String>? {
         val state = getActiveWalletState() ?: return null
@@ -705,6 +751,69 @@ class Wallet(context: Context) {
             scriptType = scriptType,
             isTestnet = isTestnet
         )
+    }
+
+    /**
+     * Gets the unified output descriptor (public/watch-only) for a specific account number.
+     * Uses multipath syntax compatible with Sparrow, Bitcoin Core, etc.
+     *
+     * @param baseDerivationPath Base derivation path for the wallet
+     * @param accountNumber Account number to derive descriptor for
+     * @return Descriptor string with checksum, or empty string on error
+     */
+    fun getUnifiedDescriptorForAccount(baseDerivationPath: String, accountNumber: Int): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val fingerprint = state.fingerprint
+        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
+        val scriptType = getScriptType(accountPath)
+        val isTestnet = isActiveWalletTestnet()
+        
+        return try {
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
+            val accountPublicKey = accountPrivateKey.extendedPublicKey
+            
+            bitcoinService.getWalletDescriptor(
+                fingerprint = fingerprint,
+                accountPath = accountPath,
+                accountPublicKey = accountPublicKey,
+                scriptType = scriptType,
+                isTestnet = isTestnet
+            )
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /**
+     * Gets the private (spending) descriptor for a specific account number.
+     * WARNING: Contains private keys - handle with extreme care!
+     *
+     * @param baseDerivationPath Base derivation path for the wallet
+     * @param accountNumber Account number to derive descriptor for
+     * @return Private descriptor string with checksum, or empty string on error
+     */
+    fun getPrivateDescriptorForAccount(baseDerivationPath: String, accountNumber: Int): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val fingerprint = state.fingerprint
+        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
+        val scriptType = getScriptType(accountPath)
+        val isTestnet = isActiveWalletTestnet()
+        
+        return try {
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
+            
+            bitcoinService.getPrivateWalletDescriptor(
+                fingerprint = fingerprint,
+                accountPath = accountPath,
+                accountPrivateKey = accountPrivateKey,
+                scriptType = scriptType,
+                isTestnet = isTestnet
+            )
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     fun getMasterFingerprint() = getActiveWalletState()?.fingerprint
