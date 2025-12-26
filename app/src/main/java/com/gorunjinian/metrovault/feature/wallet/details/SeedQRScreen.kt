@@ -1,7 +1,6 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.graphics.Bitmap
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,12 +34,10 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SeedQRScreen(
     mnemonic: List<String>,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onBackToExportOptions: () -> Unit
 ) {
     val context = LocalContext.current
-    
-    // Handle system back gesture to go to Export Options (same as top bar back)
-    BackHandler { onBack() }
     
     // Toggle state: false = Standard (default), true = Compact
     var isCompactFormat by remember { mutableStateOf(false) }
@@ -208,9 +205,9 @@ fun SeedQRScreen(
                 )
             }
             
-            // Back button
+            // Back button - goes directly to Export Options (skips SeedPhraseScreen)
             Button(
-                onClick = onBack,
+                onClick = onBackToExportOptions,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Back to Export Options")

@@ -22,10 +22,16 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddressesScreen(
     wallet: Wallet,
+    initialTabIndex: Int = 0,
     onBack: () -> Unit,
     onAddressSelected: (address: String, index: Int, isChange: Boolean) -> Unit
 ) {
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var selectedTabIndex by remember { mutableIntStateOf(initialTabIndex) }
+    
+    // Sync selectedTabIndex when initialTabIndex changes (e.g., returning from back stack)
+    LaunchedEffect(initialTabIndex) {
+        selectedTabIndex = initialTabIndex
+    }
 
     // Separate lists for receive and change addresses
     var receiveAddresses by remember { mutableStateOf<List<BitcoinAddress>>(emptyList()) }

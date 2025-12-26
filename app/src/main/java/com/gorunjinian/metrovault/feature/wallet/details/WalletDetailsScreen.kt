@@ -216,7 +216,7 @@ fun WalletDetailsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_qr_code_2),
+                        painter = painterResource(R.drawable.ic_addresses),
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
                         tint = MaterialTheme.colorScheme.primary
@@ -313,7 +313,7 @@ fun WalletDetailsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_edit),
+                        painter = painterResource(R.drawable.ic_signature),
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
                         tint = MaterialTheme.colorScheme.primary

@@ -97,7 +97,7 @@ fun HomeScreen(
             scope.launch {
                 val loaded = wallet.openWallet(walletId)
                 if (loaded) {
-                    navController.navigate(Screen.Addresses.route)
+                    navController.navigate(Screen.Addresses.createRoute())
                 }
             }
         }

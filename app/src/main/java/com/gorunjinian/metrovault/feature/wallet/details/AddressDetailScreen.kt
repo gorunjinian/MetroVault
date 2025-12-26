@@ -32,7 +32,6 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.BitcoinService
 import com.gorunjinian.metrovault.core.storage.SecureStorage
-import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 
 @Suppress("AssignedValueIsNeverRead")

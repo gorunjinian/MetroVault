@@ -56,7 +56,11 @@ sealed class Screen(val route: String) {
     object CreateWallet : Screen("create_wallet")
     object ImportWallet : Screen("import_wallet")
     object WalletDetails : Screen("wallet_details")
-    object Addresses : Screen("addresses")
+    object Addresses : Screen("addresses?startTab={startTab}") {
+        fun createRoute(startTab: Int = 0): String {
+            return "addresses?startTab=$startTab"
+        }
+    }
     object AddressDetail : Screen("address_detail?address={address}&index={index}&isChange={isChange}") {
         fun createRoute(address: String, index: Int, isChange: Boolean): String {
             return "address_detail?address=${java.net.URLEncoder.encode(address, "UTF-8")}&index=$index&isChange=$isChange"
@@ -334,7 +338,7 @@ fun AppNavigation(
                 wallet = wallet,
                 secureStorage = secureStorage,
                 userPreferencesRepository = userPreferencesRepository,
-                onViewAddresses = { navController.navigate(Screen.Addresses.route) },
+                onViewAddresses = { navController.navigate(Screen.Addresses.createRoute()) },
                 onScanPSBT = { navController.navigate(Screen.ScanPSBT.route) },
                 onExport = { navController.navigate(Screen.ExportOptions.route) },
                 onBIP85 = { navController.navigate(Screen.BIP85Derive.route) },
@@ -358,15 +362,30 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.Addresses.route) {
+        composable(
+            route = Screen.Addresses.route,
+            arguments = listOf(
+                navArgument("startTab") { 
+                    type = NavType.IntType 
+                    defaultValue = 0
+                }
+            )
+        ) { backStackEntry ->
+            val startTab = backStackEntry.arguments?.getInt("startTab") ?: 0
+            // Observe returnTab as state so it properly reacts when coming back from AddressDetail
+            val returnTab by backStackEntry.savedStateHandle.getStateFlow("returnTab", startTab).collectAsState()
+            
             AddressesScreen(
                 wallet = wallet,
+                initialTabIndex = returnTab,
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)
                     }
                 },
                 onAddressSelected = { address, index, isChange ->
+                    // Set the return tab BEFORE navigating so predictive back animation works
+                    backStackEntry.savedStateHandle["returnTab"] = if (isChange) 1 else 0
                     navController.navigate(Screen.AddressDetail.createRoute(address, index, isChange))
                 }
             )
@@ -468,11 +487,12 @@ fun AppNavigation(
             SeedQRScreen(
                 mnemonic = mnemonic,
                 onBack = {
-                    // Navigate directly to ExportOptionsScreen for security
-                    // (skipping SeedPhraseScreen since user already viewed it)
-                    navController.navigate(Screen.ExportOptions.route) {
-                        popUpTo(Screen.ExportOptions.route) { inclusive = true }
-                    }
+                    // Normal back navigation to SeedPhraseScreen (preserves predictive animation)
+                    navController.popBackStack()
+                },
+                onBackToExportOptions = {
+                    // Button: skip SeedPhraseScreen and go directly to ExportOptions
+                    navController.popBackStack(Screen.ExportOptions.route, inclusive = false)
                 }
             )
         }
