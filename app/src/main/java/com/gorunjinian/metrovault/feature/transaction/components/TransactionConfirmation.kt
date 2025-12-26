@@ -22,8 +22,9 @@ import com.gorunjinian.metrovault.domain.service.PsbtDetails
  * Transaction confirmation component for reviewing PSBT details before signing.
  * 
  * Displays:
- * - Inputs with addresses/UTXOs
+ * - Inputs with addresses/UTXOs and amounts
  * - Outputs with change detection
+ * - Transaction Summary (net amount sent, tx size, fee rate, structure)
  * - Network fee
  * - Total amount
  * - Sign and Cancel buttons
@@ -308,6 +309,105 @@ fun TransactionConfirmation(
                     if (index < outputsWithType.size - 1) {
                         HorizontalDivider()
                     }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // ==================== TRANSACTION SUMMARY ====================
+        // Calculate values for the summary
+        val netSent = outputsWithType.filter { it.isChangeAddress != true }.sumOf { it.output.value }
+        val feeRate = if (psbtDetails.fee != null && psbtDetails.virtualSize > 0) {
+            psbtDetails.fee.toDouble() / psbtDetails.virtualSize
+        } else null
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Transaction Summary",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                
+                // Net Amount Sent (excluding change)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Sending:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = formatAmount(netSent, showInSats),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                
+                // Transaction Size
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Transaction Size:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${psbtDetails.virtualSize} vBytes",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                
+                // Fee Rate
+                feeRate?.let { rate ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Fee Rate:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "%.2f sats/vB".format(rate),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                
+                // Input/Output count
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Structure:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${psbtDetails.inputs.size} input${if (psbtDetails.inputs.size != 1) "s" else ""} → ${psbtDetails.outputs.size} output${if (psbtDetails.outputs.size != 1) "s" else ""}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

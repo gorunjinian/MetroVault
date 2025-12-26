@@ -363,28 +363,18 @@ class BitcoinService {
         isTestnet: Boolean = false
     ): String? {
         return try {
-            Log.d(TAG, "signPsbt called with scriptType: $scriptType, isTestnet: $isTestnet")
-            
             val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
-            Log.d(TAG, "PSBT bytes decoded: ${psbtBytes.size} bytes")
 
             val psbt = when (val psbtResult = Psbt.read(psbtBytes)) {
                 is Either.Right -> psbtResult.value
-                is Either.Left -> {
-                    Log.e(TAG, "Failed to parse PSBT: ${psbtResult.value}")
-                    return null
-                }
+                is Either.Left -> return null
             }
             
-            Log.d(TAG, "PSBT parsed successfully. Inputs: ${psbt.inputs.size}, Outputs: ${psbt.global.tx.txOut.size}")
-
             // Compute wallet fingerprint for BIP-174 matching
             val walletFingerprint = computeWalletFingerprint(masterPrivateKey)
-            Log.d(TAG, "Wallet fingerprint: ${walletFingerprint.toString(16).padStart(8, '0')}")
 
             // Build address lookup for fallback (lazy - only used if BIP-174 fails)
             val addressToKeyInfo by lazy {
-                Log.d(TAG, "Building address lookup for fallback (scanning $ADDRESS_SCAN_GAP addresses per chain)")
                 buildAddressLookup(accountPrivateKey, scriptType)
             }
 
@@ -412,17 +402,12 @@ class BitcoinService {
             }
 
             if (signedCount == 0) {
-                Log.w(TAG, "No inputs were signed - none matched wallet")
-                Log.w(TAG, "Checked: BIP-174 derivation paths and ${ADDRESS_SCAN_GAP * 2} addresses")
                 return null
             }
 
-            Log.d(TAG, "Signed $signedCount inputs: $bip174Count via BIP-174, $fallbackCount via address lookup")
-
             val signedBytes = Psbt.write(signedPsbt).toByteArray()
             android.util.Base64.encodeToString(signedBytes, android.util.Base64.NO_WRAP)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to sign PSBT: ${e.message}", e)
+        } catch (_: Exception) {
             null
         }
     }
@@ -461,7 +446,7 @@ class BitcoinService {
             val psbt = when (val psbtResult = Psbt.read(psbtBytes)) {
                 is Either.Right -> psbtResult.value
                 is Either.Left -> {
-                    Log.e(TAG, "Failed to parse PSBT: ${psbtResult.value}")
+                    Log.e(TAG, "Failed to parse PSBT")
                     return null
                 }
             }
@@ -501,10 +486,69 @@ class BitcoinService {
             val totalInput = inputs.sumOf { it.value }
             val totalOutput = outputs.sumOf { it.value }
             val fee = if (totalInput > 0) totalInput - totalOutput else null
+            
+            // Calculate virtual size based on actual input/output types
+            var hasSegwit = false
+            var inputVBytes = 0.0
+            
+            psbt.inputs.forEach { input ->
+                val scriptPubKey = getInputScriptPubKey(input)
+                if (scriptPubKey != null) {
+                    try {
+                        val parsedScript = Script.parse(scriptPubKey)
+                        inputVBytes += when {
+                            Script.isPay2pkh(parsedScript) -> 148.0     // P2PKH: 36 + 1 + 107 + 4
+                            Script.isPay2sh(parsedScript) -> {
+                                hasSegwit = true
+                                91.0  // P2SH-P2WPKH: nested segwit estimate
+                            }
+                            Script.isPay2wpkh(parsedScript) -> {
+                                hasSegwit = true
+                                68.0  // P2WPKH: 36 + 1 + 4 + (1 + 107)/4
+                            }
+                            Script.isPay2wsh(parsedScript) -> {
+                                hasSegwit = true
+                                104.0  // P2WSH 2-of-3 estimate
+                            }
+                            Script.isPay2tr(parsedScript) -> {
+                                hasSegwit = true
+                                58.0   // P2TR: 36 + 1 + 4 + (1 + 65)/4
+                            }
+                            else -> 68.0  // Default to P2WPKH
+                        }
+                    } catch (_: Exception) {
+                        inputVBytes += 68.0
+                    }
+                } else {
+                    inputVBytes += 68.0
+                }
+            }
+            
+            // Calculate output vBytes: nValue(8) + scriptPubKey length(1) + scriptPubKey
+            var outputVBytes = 0.0
+            tx.txOut.forEach { txOut ->
+                try {
+                    val parsedScript = Script.parse(txOut.publicKeyScript)
+                    val scriptLen = when {
+                        Script.isPay2pkh(parsedScript) -> 25   // P2PKH output
+                        Script.isPay2sh(parsedScript) -> 23    // P2SH output
+                        Script.isPay2wpkh(parsedScript) -> 22  // P2WPKH output
+                        Script.isPay2wsh(parsedScript) -> 34   // P2WSH output
+                        Script.isPay2tr(parsedScript) -> 34    // P2TR output
+                        else -> 22  // Default to P2WPKH
+                    }
+                    outputVBytes += 8 + 1 + scriptLen
+                } catch (_: Exception) {
+                    outputVBytes += 31.0
+                }
+            }
+            
+            // Overhead: version(4) + inputCount(1) + outputCount(1) + locktime(4) + segwit marker(0.5 if segwit)
+            val overheadVBytes = if (hasSegwit) 10.5 else 10.0
+            val virtualSize = (overheadVBytes + inputVBytes + outputVBytes).toInt()
 
-            PsbtDetails(inputs = inputs, outputs = outputs, fee = fee)
+            PsbtDetails(inputs = inputs, outputs = outputs, fee = fee, virtualSize = virtualSize)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to parse PSBT details")
             null
         }
     }
@@ -656,7 +700,6 @@ class BitcoinService {
             // Check regular derivation paths (for non-taproot)
             for ((publicKey, keyPathWithMaster) in input.derivationPaths) {
                 if (keyPathWithMaster.masterKeyFingerprint == walletFingerprint) {
-                    Log.d(TAG, "Input $inputIndex: Found matching BIP-174 derivation path: ${keyPathWithMaster.keyPath}")
                     
                     // Derive key using the full path from master
                     val signingPrivateKey = masterPrivateKey
@@ -665,7 +708,6 @@ class BitcoinService {
                     
                     // Verify derived public key matches
                     if (signingPrivateKey.publicKey() != publicKey) {
-                        Log.w(TAG, "Input $inputIndex: Derived public key doesn't match PSBT public key")
                         continue
                     }
                     
@@ -676,7 +718,6 @@ class BitcoinService {
             // Check taproot derivation paths
             for ((xOnlyPublicKey, taprootPath) in input.taprootDerivationPaths) {
                 if (taprootPath.masterKeyFingerprint == walletFingerprint) {
-                    Log.d(TAG, "Input $inputIndex: Found matching Taproot BIP-174 derivation path: ${taprootPath.keyPath}")
                     
                     // Derive key using the full path from master
                     val signingPrivateKey = masterPrivateKey
@@ -686,7 +727,6 @@ class BitcoinService {
                     // Verify derived x-only public key matches
                     val derivedXOnly = XonlyPublicKey(signingPrivateKey.publicKey())
                     if (derivedXOnly != xOnlyPublicKey) {
-                        Log.w(TAG, "Input $inputIndex: Derived x-only public key doesn't match PSBT")
                         continue
                     }
                     
@@ -694,15 +734,8 @@ class BitcoinService {
                 }
             }
 
-            // No matching derivation path found
-            if (input.derivationPaths.isEmpty() && input.taprootDerivationPaths.isEmpty()) {
-                Log.d(TAG, "Input $inputIndex: No BIP-174 derivation paths in PSBT")
-            } else {
-                Log.d(TAG, "Input $inputIndex: BIP-174 paths present but fingerprint doesn't match wallet")
-            }
             null
-        } catch (e: Exception) {
-            Log.w(TAG, "Input $inputIndex: BIP-174 signing failed: ${e.message}")
+        } catch (_: Exception) {
             null
         }
     }
@@ -719,19 +752,9 @@ class BitcoinService {
         addressLookup: Map<ByteVector, AddressKeyInfo>
     ): Psbt? {
         return try {
-            val scriptPubKey = getInputScriptPubKey(input)
-            if (scriptPubKey == null) {
-                Log.d(TAG, "Input $inputIndex: No scriptPubKey available for fallback")
-                return null
-            }
+            val scriptPubKey = getInputScriptPubKey(input) ?: return null
 
-            val keyInfo = addressLookup[scriptPubKey]
-            if (keyInfo == null) {
-                Log.d(TAG, "Input $inputIndex: Address not found in wallet (scanned ${addressLookup.size} addresses)")
-                return null
-            }
-
-            Log.d(TAG, "Input $inputIndex: Found via address lookup at change=${keyInfo.changeIndex}, index=${keyInfo.addressIndex}")
+            val keyInfo = addressLookup[scriptPubKey] ?: return null
 
             val signingPrivateKey = accountPrivateKey
                 .derivePrivateKey(keyInfo.changeIndex)
@@ -739,8 +762,7 @@ class BitcoinService {
                 .privateKey
 
             signInput(psbt, inputIndex, input, signingPrivateKey, keyInfo.publicKey)
-        } catch (e: Exception) {
-            Log.e(TAG, "Input $inputIndex: Address lookup signing failed: ${e.message}")
+        } catch (_: Exception) {
             null
         }
     }
@@ -768,7 +790,6 @@ class BitcoinService {
             
             if (pubkeyScript != null && Script.isPay2wpkh(pubkeyScript)) {
                 val witnessScript = Script.pay2pkh(signingPublicKey)
-                Log.d(TAG, "Input $inputIndex: Adding temporary witnessScript for P2WPKH signing")
                 
                 val updatedInput = input.copy(witnessScript = witnessScript)
                 val updatedInputs = psbt.inputs.toMutableList()
@@ -780,22 +801,17 @@ class BitcoinService {
 
         return when (val signResult = psbtToSign.sign(signingPrivateKey, inputIndex)) {
             is Either.Right -> {
-                Log.d(TAG, "Input $inputIndex: Signed successfully")
                 var signedPsbt = signResult.value.psbt
                 
                 // Remove the temporary witnessScript for P2WPKH - it should NOT be in the final PSBT
                 // as it causes some finalizers (like BlueWallet) to incorrectly add it to the witness
                 if (addedWitnessScriptForP2wpkh) {
                     signedPsbt = removeWitnessScriptFromInput(signedPsbt, inputIndex)
-                    Log.d(TAG, "Input $inputIndex: Removed temporary witnessScript from P2WPKH input")
                 }
                 
                 signedPsbt
             }
-            is Either.Left -> {
-                Log.w(TAG, "Input $inputIndex: Sign failed: ${signResult.value}")
-                null
-            }
+            is Either.Left -> null
         }
     }
 
@@ -837,13 +853,12 @@ class BitcoinService {
                     if (scriptPubKey != null) {
                         lookup[scriptPubKey] = AddressKeyInfo(changeIndex, i.toLong(), publicKey)
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to derive address at index $i: ${e.message}")
+                } catch (_: Exception) {
+                    // Skip addresses that fail to derive
                 }
             }
         }
 
-        Log.d(TAG, "Built address lookup with ${lookup.size} entries")
         return lookup
     }
 
@@ -861,8 +876,7 @@ class BitcoinService {
                     Script.write(Script.pay2tr(xOnlyKey)).byteVector()
                 }
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to create scriptPubKey: ${e.message}")
+        } catch (_: Exception) {
             null
         }
     }
@@ -924,7 +938,8 @@ data class AddressCheckResult(
 data class PsbtDetails(
     val inputs: List<PsbtInput>,
     val outputs: List<PsbtOutput>,
-    val fee: Long?
+    val fee: Long?,
+    val virtualSize: Int  // Transaction size in virtual bytes (vBytes)
 )
 
 data class PsbtInput(
