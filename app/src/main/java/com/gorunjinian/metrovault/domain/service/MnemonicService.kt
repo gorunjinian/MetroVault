@@ -95,13 +95,17 @@ class MnemonicService {
      * @return 8-character hex fingerprint or null on error
      */
     fun calculateFingerprint(mnemonicWords: List<String>, passphrase: String): String? {
+        var seed: ByteArray? = null
         return try {
-            val seed = MnemonicCode.toSeed(mnemonicWords, passphrase)
+            seed = MnemonicCode.toSeed(mnemonicWords, passphrase)
             val masterPrivateKey = DeterministicWallet.generate(seed.byteVector())
             BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
         } catch (_: Exception) {
             Log.w(TAG, "Failed to calculate fingerprint")
             null
+        } finally {
+            // Securely wipe seed from memory
+            seed?.fill(0)
         }
     }
 }

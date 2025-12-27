@@ -46,6 +46,7 @@ private fun hmacSha512(key: ByteArray, data: ByteArray): ByteArray {
     return mac.doFinal(data)
 }
 
+@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BIP85DeriveScreen(
@@ -262,6 +263,9 @@ fun BIP85DeriveScreen(
                             return@OutlinedButton
                         }
 
+                        var entropy: ByteArray? = null
+                        var hmac: ByteArray? = null
+                        var passwordBytes: ByteArray? = null
                         try {
                             // BIP-85 Protocol A: Direct password derivation
                             // Path: m/83696968'/707764'/24'/index'
@@ -279,14 +283,14 @@ fun BIP85DeriveScreen(
                             )
 
                             val derivedKey = masterPrivateKey.derivePrivateKey(path)
-                            val entropy = derivedKey.secretkeybytes.toByteArray()
+                            entropy = derivedKey.secretkeybytes.toByteArray()
 
                             // BIP-85 entropy derivation using HMAC-SHA512
                             val hmacKey = "bip-entropy-from-k".toByteArray()
-                            val hmac = hmacSha512(hmacKey, entropy)
+                            hmac = hmacSha512(hmacKey, entropy)
 
                             // Take first 32 bytes and encode to Base64
-                            val passwordBytes = hmac.sliceArray(0..31)
+                            passwordBytes = hmac.sliceArray(0..31)
                             val base64Password = Base64.encodeToString(passwordBytes, Base64.NO_WRAP)
                             
                             // Truncate to selected password length
@@ -296,6 +300,11 @@ fun BIP85DeriveScreen(
                             errorMessage = ""
                         } catch (e: Exception) {
                             errorMessage = "Failed to derive password: ${e.message}"
+                        } finally {
+                            // Securely wipe sensitive byte arrays
+                            entropy?.fill(0)
+                            hmac?.fill(0)
+                            passwordBytes?.fill(0)
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -321,6 +330,9 @@ fun BIP85DeriveScreen(
                             return@Button
                         }
 
+                        var entropy: ByteArray? = null
+                        var hmac: ByteArray? = null
+                        var finalEntropy: ByteArray? = null
                         try {
                             // BIP-85: Derive child key from master private key
                             // Path: m/83696968'/39'/0'/wordCount'/index'
@@ -339,14 +351,14 @@ fun BIP85DeriveScreen(
                             )
 
                             val derivedKey = masterPrivateKey.derivePrivateKey(path)
-                            val entropy = derivedKey.secretkeybytes.toByteArray()
+                            entropy = derivedKey.secretkeybytes.toByteArray()
 
                             // BIP-85 entropy derivation using HMAC-SHA512
                             val hmacKey = "bip-entropy-from-k".toByteArray()
-                            val hmac = hmacSha512(hmacKey, entropy)
+                            hmac = hmacSha512(hmacKey, entropy)
 
                             // Extract the appropriate entropy size
-                            val finalEntropy = if (wordCount == 12) {
+                            finalEntropy = if (wordCount == 12) {
                                 hmac.sliceArray(0..15)  // 16 bytes for 12 words
                             } else {
                                 hmac.sliceArray(0..31)  // 32 bytes for 24 words
@@ -357,6 +369,11 @@ fun BIP85DeriveScreen(
                             errorMessage = ""
                         } catch (e: Exception) {
                             errorMessage = "Failed to derive key: ${e.message}"
+                        } finally {
+                            // Securely wipe sensitive byte arrays
+                            entropy?.fill(0)
+                            hmac?.fill(0)
+                            finalEntropy?.fill(0)
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -668,6 +685,9 @@ fun BIP85DeriveScreen(
  * Returns null if derivation fails.
  */
 private fun deriveSeed(wallet: Wallet, index: Int, wordCount: Int): List<String>? {
+    var entropy: ByteArray? = null
+    var hmac: ByteArray? = null
+    var finalEntropy: ByteArray? = null
     return try {
         val walletState = wallet.getActiveWalletState() ?: return null
         val masterPrivateKey = walletState.getMasterPrivateKey() ?: return null
@@ -681,12 +701,12 @@ private fun deriveSeed(wallet: Wallet, index: Int, wordCount: Int): List<String>
         )
 
         val derivedKey = masterPrivateKey.derivePrivateKey(path)
-        val entropy = derivedKey.secretkeybytes.toByteArray()
+        entropy = derivedKey.secretkeybytes.toByteArray()
 
         val hmacKey = "bip-entropy-from-k".toByteArray()
-        val hmac = hmacSha512(hmacKey, entropy)
+        hmac = hmacSha512(hmacKey, entropy)
 
-        val finalEntropy = if (wordCount == 12) {
+        finalEntropy = if (wordCount == 12) {
             hmac.sliceArray(0..15)
         } else {
             hmac.sliceArray(0..31)
@@ -695,6 +715,11 @@ private fun deriveSeed(wallet: Wallet, index: Int, wordCount: Int): List<String>
         MnemonicCode.toMnemonics(finalEntropy)
     } catch (_: Exception) {
         null
+    } finally {
+        // Securely wipe sensitive byte arrays
+        entropy?.fill(0)
+        hmac?.fill(0)
+        finalEntropy?.fill(0)
     }
 }
 
@@ -704,6 +729,9 @@ private fun deriveSeed(wallet: Wallet, index: Int, wordCount: Int): List<String>
  * Returns null if derivation fails.
  */
 private fun derivePassword(wallet: Wallet, index: Int, length: Int): String? {
+    var entropy: ByteArray? = null
+    var hmac: ByteArray? = null
+    var passwordBytes: ByteArray? = null
     return try {
         val walletState = wallet.getActiveWalletState() ?: return null
         val masterPrivateKey = walletState.getMasterPrivateKey() ?: return null
@@ -716,18 +744,23 @@ private fun derivePassword(wallet: Wallet, index: Int, length: Int): String? {
         )
 
         val derivedKey = masterPrivateKey.derivePrivateKey(path)
-        val entropy = derivedKey.secretkeybytes.toByteArray()
+        entropy = derivedKey.secretkeybytes.toByteArray()
 
         val hmacKey = "bip-entropy-from-k".toByteArray()
-        val hmac = hmacSha512(hmacKey, entropy)
+        hmac = hmacSha512(hmacKey, entropy)
 
         // Take first 32 bytes and encode to Base64
-        val passwordBytes = hmac.sliceArray(0..31)
+        passwordBytes = hmac.sliceArray(0..31)
         val base64Password = Base64.encodeToString(passwordBytes, Base64.NO_WRAP)
         
         // Truncate to selected length
         base64Password.take(length)
     } catch (_: Exception) {
         null
+    } finally {
+        // Securely wipe sensitive byte arrays
+        entropy?.fill(0)
+        hmac?.fill(0)
+        passwordBytes?.fill(0)
     }
 }

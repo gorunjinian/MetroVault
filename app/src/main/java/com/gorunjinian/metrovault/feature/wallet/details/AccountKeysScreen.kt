@@ -48,6 +48,16 @@ fun AccountKeysScreen(
     // QR code bitmap
     var currentQR by remember { mutableStateOf<Bitmap?>(null) }
     
+    // Security: Clear sensitive data when leaving the screen
+    DisposableEffect(Unit) {
+        onDispose {
+            currentQR?.recycle()
+            currentQR = null
+            showPrivate = false
+            System.gc() // Hint to garbage collector
+        }
+    }
+    
     // Password confirmation state
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf("") }

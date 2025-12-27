@@ -210,50 +210,56 @@ class Wallet(context: Context) {
             // If savePassphraseLocally=true: store seed WITH passphrase (wallet ready to use)
             // If savePassphraseLocally=false: store seed WITHOUT passphrase (base seed, requires passphrase on open)
             val seedPassphrase = if (savePassphraseLocally) passphrase else ""
-            val seedBytes =
-                com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode.toSeed(mnemonic, seedPassphrase)
-            val seedHex = seedBytes.joinToString("") { "%02x".format(it) }
+            var seedBytes: ByteArray? = null
+            try {
+                seedBytes =
+                    com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode.toSeed(mnemonic, seedPassphrase)
+                val seedHex = seedBytes.joinToString("") { "%02x".format(it) }
 
-            // hasPassphrase = true only if passphrase used AND not saved locally
-            // This triggers passphrase dialog on wallet open
-            val requiresPassphraseEntry = passphrase.isNotEmpty() && !savePassphraseLocally
+                // hasPassphrase = true only if passphrase used AND not saved locally
+                // This triggers passphrase dialog on wallet open
+                val requiresPassphraseEntry = passphrase.isNotEmpty() && !savePassphraseLocally
 
-            val metadata = WalletMetadata(
-                id = walletId,
-                name = name,
-                derivationPath = fullPath,
-                masterFingerprint = walletResult.fingerprint,  // Always the fingerprint WITH passphrase
-                hasPassphrase = requiresPassphraseEntry,
-                createdAt = System.currentTimeMillis(),
-                accounts = listOf(accountNumber),
-                activeAccountNumber = accountNumber
-            )
+                val metadata = WalletMetadata(
+                    id = walletId,
+                    name = name,
+                    derivationPath = fullPath,
+                    masterFingerprint = walletResult.fingerprint,  // Always the fingerprint WITH passphrase
+                    hasPassphrase = requiresPassphraseEntry,
+                    createdAt = System.currentTimeMillis(),
+                    accounts = listOf(accountNumber),
+                    activeAccountNumber = accountNumber
+                )
 
-            val secrets = WalletSecrets(
-                mnemonic = mnemonicString,
-                bip39Seed = seedHex
-            )
+                val secrets = WalletSecrets(
+                    mnemonic = mnemonicString,
+                    bip39Seed = seedHex
+                )
 
-            // Save to storage
-            if (!secureStorage.saveWalletMetadata(metadata, isDecoyMode)) {
-                return@withContext WalletCreationResult.Error(WalletCreationError.STORAGE_FAILED)
+                // Save to storage
+                if (!secureStorage.saveWalletMetadata(metadata, isDecoyMode)) {
+                    return@withContext WalletCreationResult.Error(WalletCreationError.STORAGE_FAILED)
+                }
+                if (!secureStorage.saveWalletSecrets(walletId, secrets, isDecoyMode)) {
+                    return@withContext WalletCreationResult.Error(WalletCreationError.STORAGE_FAILED)
+                }
+
+                // Update wallet order
+                val currentOrder =
+                    secureStorage.loadWalletOrder(isDecoyMode)?.toMutableList() ?: mutableListOf()
+                currentOrder.add(walletId)
+                secureStorage.saveWalletOrder(currentOrder, isDecoyMode)
+
+                // Update in-memory list
+                synchronized(walletListLock) {
+                    _walletMetadataList.add(metadata)
+                    _wallets.value = _walletMetadataList.toList()
+                }
+                WalletCreationResult.Success(metadata)
+            } finally {
+                // Securely wipe seed bytes from memory
+                seedBytes?.fill(0)
             }
-            if (!secureStorage.saveWalletSecrets(walletId, secrets, isDecoyMode)) {
-                return@withContext WalletCreationResult.Error(WalletCreationError.STORAGE_FAILED)
-            }
-
-            // Update wallet order
-            val currentOrder =
-                secureStorage.loadWalletOrder(isDecoyMode)?.toMutableList() ?: mutableListOf()
-            currentOrder.add(walletId)
-            secureStorage.saveWalletOrder(currentOrder, isDecoyMode)
-
-            // Update in-memory list
-            synchronized(walletListLock) {
-                _walletMetadataList.add(metadata)
-                _wallets.value = _walletMetadataList.toList()
-            }
-            WalletCreationResult.Success(metadata)
         } catch (e: Exception) {
             Log.e(TAG, "Create wallet failed: ${e.message}", e)
             WalletCreationResult.Error(WalletCreationError.UNKNOWN_ERROR)
@@ -750,6 +756,24 @@ class Wallet(context: Context) {
                 scriptType = scriptType,
                 isTestnet = isTestnet
             )
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    /**
+     * Gets the BIP32 root key (master private key at depth 0).
+     * WARNING: This is the root of all derived keys - handle with extreme care!
+     *
+     * @return Master private key as xprv (mainnet) or tprv (testnet), or empty string on error
+     */
+    fun getBIP32RootKey(): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val isTestnet = isActiveWalletTestnet()
+        
+        return try {
+            masterPrivateKey.encode(isTestnet)
         } catch (_: Exception) {
             ""
         }

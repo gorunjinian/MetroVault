@@ -44,6 +44,15 @@ fun DerivedSeedQRScreen(
     // QR code bitmap state (null = loading)
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     
+    // Security: Clear sensitive QR data when leaving the screen
+    DisposableEffect(Unit) {
+        onDispose {
+            qrBitmap?.recycle()
+            qrBitmap = null
+            System.gc() // Hint to garbage collector
+        }
+    }
+    
     // Generate QR code when format changes
     LaunchedEffect(derivedMnemonic, selectedFormat) {
         qrBitmap = null // Show loading immediately

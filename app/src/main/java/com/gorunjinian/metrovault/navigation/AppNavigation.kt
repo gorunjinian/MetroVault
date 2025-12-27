@@ -37,6 +37,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.DescriptorsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SeedPhraseScreen
+import com.gorunjinian.metrovault.feature.wallet.details.RootKeyScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SeedQRScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SignMessageScreen
 import com.gorunjinian.metrovault.feature.wallet.details.WalletDetailsScreen
@@ -89,6 +90,7 @@ sealed class Screen(val route: String) {
     object Descriptors : Screen("descriptors")
     object SeedPhrase : Screen("seed_phrase")
     object SeedQR : Screen("seed_qr")
+    object RootKey : Screen("root_key")
 }
 
 @Suppress("AssignedValueIsNeverRead")
@@ -440,6 +442,7 @@ fun AppNavigation(
                 },
                 onViewAccountKeys = { navController.navigate(Screen.AccountKeys.route) },
                 onViewDescriptors = { navController.navigate(Screen.Descriptors.route) },
+                onViewRootKey = { navController.navigate(Screen.RootKey.route) },
                 onViewSeedPhrase = { navController.navigate(Screen.SeedPhrase.route) }
             )
         }
@@ -492,6 +495,20 @@ fun AppNavigation(
                 },
                 onBackToExportOptions = {
                     // Button: skip SeedPhraseScreen and go directly to ExportOptions
+                    navController.popBackStack(Screen.ExportOptions.route, inclusive = false)
+                }
+            )
+        }
+
+        composable(Screen.RootKey.route) {
+            RootKeyScreen(
+                wallet = wallet,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.ExportOptions.route)
+                    }
+                },
+                onBackToExportOptions = {
                     navController.popBackStack(Screen.ExportOptions.route, inclusive = false)
                 }
             )

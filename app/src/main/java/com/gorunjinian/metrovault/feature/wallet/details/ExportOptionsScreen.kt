@@ -18,10 +18,20 @@ import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 
 /**
- * ExportOptionsScreen - Navigation hub with 3 export options:
+ * Enum to track which sensitive view flow is active.
+ * Used to determine where to navigate after password confirmation.
+ */
+private enum class SensitiveViewTarget {
+    SEED_PHRASE,
+    ROOT_KEY
+}
+
+/**
+ * ExportOptionsScreen - Navigation hub with 4 export options:
  * 1. View Account Keys - Navigates to AccountKeysScreen
  * 2. View Descriptors - Navigates to DescriptorsScreen
- * 3. View Seed Phrase - Requires password confirmation, then navigates to SeedPhraseScreen
+ * 3. View BIP32 Root Key - Requires password confirmation, then navigates to RootKeyScreen
+ * 4. View Seed Phrase - Requires password confirmation, then navigates to SeedPhraseScreen
  */
 @Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,14 +42,19 @@ fun ExportOptionsScreen(
     onBack: () -> Unit,
     onViewAccountKeys: () -> Unit,
     onViewDescriptors: () -> Unit,
+    onViewRootKey: () -> Unit,
     onViewSeedPhrase: () -> Unit
 ) {
-    // Password confirmation state for seed phrase
+    // Password confirmation state
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf("") }
     
-    // Warning dialog for seed phrase
+    // Track which sensitive view is being accessed
+    var pendingTarget by remember { mutableStateOf<SensitiveViewTarget?>(null) }
+    
+    // Warning dialog for seed phrase and BIP32 key
     var showSeedWarningDialog by remember { mutableStateOf(false) }
+    var showRootKeyWarningDialog by remember { mutableStateOf(false) }
     
     Scaffold(
         topBar = {
@@ -89,7 +104,7 @@ fun ExportOptionsScreen(
                     )
                     Column {
                         Text(
-                            text = "View Account Keys",
+                            text = "View Account Extended Keys",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
@@ -131,7 +146,37 @@ fun ExportOptionsScreen(
                 }
             }
 
-            // Card 3: View Seed Phrase
+            // Card 3: View Root Key
+            ElevatedCard(
+                onClick = { showRootKeyWarningDialog = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_root),
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Column {
+                        Text(
+                            text = "View BIP32 Root Key",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Show your wallet's main BIP32 root key",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
+            // Card 4: View Seed Phrase
             ElevatedCard(
                 onClick = { showSeedWarningDialog = true },
                 modifier = Modifier.fillMaxWidth()
@@ -164,7 +209,40 @@ fun ExportOptionsScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
-    
+
+    // Root key warning dialog
+    if (showRootKeyWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showRootKeyWarningDialog = false },
+            title = { Text("Security Warning") },
+            text = {
+                Text("Your BIP32 root key is the master key to your funds. Never share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRootKeyWarningDialog = false
+                        pendingTarget = SensitiveViewTarget.ROOT_KEY
+                        passwordError = ""
+                        showPasswordDialog = true
+                    }
+                ) {
+                    Text("I Understand")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRootKeyWarningDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            icon = {
+                Icon(painter = painterResource(R.drawable.ic_warning),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error)
+            }
+        )
+    }
+
     // Seed phrase warning dialog
     if (showSeedWarningDialog) {
         AlertDialog(
@@ -177,6 +255,7 @@ fun ExportOptionsScreen(
                 TextButton(
                     onClick = {
                         showSeedWarningDialog = false
+                        pendingTarget = SensitiveViewTarget.SEED_PHRASE
                         passwordError = ""
                         showPasswordDialog = true
                     }
@@ -197,12 +276,13 @@ fun ExportOptionsScreen(
         )
     }
     
-    // Password confirmation dialog for seed phrase
+    // Password confirmation dialog for sensitive views
     if (showPasswordDialog) {
         ConfirmPasswordDialog(
             onDismiss = {
                 showPasswordDialog = false
                 passwordError = ""
+                pendingTarget = null
             },
             onConfirm = { password ->
                 val isDecoy = wallet.isDecoyMode
@@ -215,7 +295,12 @@ fun ExportOptionsScreen(
                 if (isValid) {
                     showPasswordDialog = false
                     passwordError = ""
-                    onViewSeedPhrase()
+                    when (pendingTarget) {
+                        SensitiveViewTarget.SEED_PHRASE -> onViewSeedPhrase()
+                        SensitiveViewTarget.ROOT_KEY -> onViewRootKey()
+                        null -> { /* shouldn't happen */ }
+                    }
+                    pendingTarget = null
                 } else {
                     passwordError = "Incorrect password"
                 }

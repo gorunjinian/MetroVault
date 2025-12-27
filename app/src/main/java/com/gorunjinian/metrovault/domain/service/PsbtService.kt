@@ -14,6 +14,7 @@ class PsbtService {
 
     companion object {
         private const val TAG = "PsbtService"
+
         // Gap limit for address scanning fallback
         private const val ADDRESS_SCAN_GAP = 2000
     }
@@ -31,7 +32,8 @@ class PsbtService {
      * @param scriptType Script type for address generation in fallback
      * @param isTestnet Whether this is a testnet wallet
      */
-    fun signPsbt(
+    @Suppress("UNUSED_PARAMETER")
+fun signPsbt(
         psbtBase64: String,
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
