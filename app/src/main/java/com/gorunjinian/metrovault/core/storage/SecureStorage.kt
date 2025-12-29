@@ -87,6 +87,7 @@ data class PasswordHash(
  * 
  * TODO: Migrate to DataStore + Tink when Google provides clearer guidance.
  */
+
 @Stable
 @Suppress("DEPRECATION")
 class SecureStorage(private val context: Context) {
@@ -336,19 +337,11 @@ class SecureStorage(private val context: Context) {
         val prefs = if (isDecoy) decoyPrefs else mainPrefs
         val passwordKey = if (isDecoy) KEY_DECOY_PASSWORD_HASH else KEY_PASSWORD_HASH
 
-        // PHASE 1: Load all secrets with current (old) session key
+        // PHASE 1: Load all WalletKeys with current (old) session key
         // Session is already initialized from verify*Password call
-        val walletIds = getWalletIds(isDecoy)
-        val secretsMap = mutableMapOf<String, WalletSecrets>()
-
-        for (walletId in walletIds) {
-            val secrets = loadWalletSecrets(walletId, isDecoy)
-            if (secrets != null) {
-                secretsMap[walletId] = secrets
-            } else {
-                Log.e(TAG, "Failed to load wallet $walletId during password change - aborting")
-                return false
-            }
+        val walletKeys = loadAllWalletKeys(isDecoy)
+        if (walletKeys.isEmpty()) {
+            Log.d(TAG, "No wallet keys to re-encrypt during password change")
         }
 
         // PHASE 2: Generate new credentials
@@ -356,23 +349,23 @@ class SecureStorage(private val context: Context) {
         val newHash = derivePasswordHash(newPassword, newSalt)
         val newPasswordHash = PasswordHash(newHash, newSalt)
 
-        // PHASE 3: Pre-encrypt all secrets with NEW key (in memory only)
+        // PHASE 3: Pre-encrypt all keys with NEW key (in memory only)
         // This validates we can encrypt everything before committing
-        val newEncryptedSecrets = mutableMapOf<String, String>()
+        val newEncryptedKeys = mutableMapOf<String, String>()
 
         // Temporarily switch to new session for encryption
         sessionKeyManager.initializeSession(newPassword, newSalt)
 
         try {
-            for ((walletId, secrets) in secretsMap) {
-                val plaintext = secrets.toJson().toByteArray()
+            for (walletKey in walletKeys) {
+                val plaintext = walletKey.toJson().toByteArray()
                 val encrypted = sessionKeyManager.encrypt(plaintext)
                 val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
-                newEncryptedSecrets[walletId] = encoded
+                newEncryptedKeys[walletKey.keyId] = encoded
             }
         } catch (e: Exception) {
             // Encryption failed - restore old session and abort
-            Log.e(TAG, "Failed to pre-encrypt secrets: ${e.message}")
+            Log.e(TAG, "Failed to pre-encrypt keys: ${e.message}")
             val oldHashStr = prefs.getString(passwordKey, null)
             if (oldHashStr != null) {
                 val oldHash = PasswordHash.fromStorageString(oldHashStr)
@@ -386,14 +379,14 @@ class SecureStorage(private val context: Context) {
         val success = prefs.edit()
             .putString(passwordKey, newPasswordHash.toStorageString())
             .apply {
-                newEncryptedSecrets.forEach { (walletId, encrypted) ->
-                    putString("wallet_secrets_$walletId", encrypted)
+                newEncryptedKeys.forEach { (keyId, encrypted) ->
+                    putString("wallet_key_$keyId", encrypted)
                 }
             }
             .commit()  // commit() returns boolean and is synchronous
 
         if (success) {
-            Log.d(TAG, "${if (isDecoy) "Decoy" else "Main"} password changed successfully (${secretsMap.size} wallets re-encrypted)")
+            Log.d(TAG, "${if (isDecoy) "Decoy" else "Main"} password changed successfully (${walletKeys.size} keys re-encrypted)")
         } else {
             Log.e(TAG, "SharedPreferences commit failed during password change")
             // Restore old session since commit failed
@@ -488,12 +481,15 @@ class SecureStorage(private val context: Context) {
     }
 
     // ============================================================================
-    // WALLET SECRETS (Encrypted with Session Key)
+    // WALLET SECRETS (DEPRECATED - Only for migration from old versions)
+    // All new code should use WalletKey instead.
+    // These methods are kept only for the one-time migration (migrateWalletSecretsToKeys).
     // ============================================================================
 
     /**
-     * Saves wallet secrets encrypted with the session key.
+     * @deprecated Use WalletKey instead. This is only for migration support.
      */
+    @Deprecated("Use WalletKey instead - kept for migration only")
     fun saveWalletSecrets(walletId: String, secrets: WalletSecrets, isDecoy: Boolean): Boolean {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
@@ -514,7 +510,11 @@ class SecureStorage(private val context: Context) {
     /**
      * Loads wallet secrets, decrypting with the session key.
      * Automatically migrates old format (passphrase) to new format (bip39Seed) and persists.
+     *
+     * @deprecated Use WalletKey instead. This is only for migration support.
      */
+    @Suppress("DEPRECATION")
+    @Deprecated("Use WalletKey instead - kept for migration only")
     fun loadWalletSecrets(walletId: String, isDecoy: Boolean): WalletSecrets? {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
@@ -538,6 +538,16 @@ class SecureStorage(private val context: Context) {
             Log.e(TAG, "Failed to load secrets: ${e.message}", e)
             null
         }
+    }
+
+    /**
+     * Deletes wallet secrets from storage.
+     * Called after successful migration to WalletKey to remove redundant data.
+     */
+    private fun deleteWalletSecrets(walletId: String, isDecoy: Boolean) {
+        val prefs = if (isDecoy) decoyPrefs else mainPrefs
+        prefs.edit { remove("wallet_secrets_$walletId") }
+        Log.d(TAG, "Deleted old wallet secrets for: $walletId")
     }
 
     // ============================================================================
@@ -786,51 +796,81 @@ class SecureStorage(private val context: Context) {
 
     /**
      * Migrates WalletSecrets to WalletKey format.
-     * 
+     *
+     * SAFETY GUARANTEES:
+     * - WalletSecrets is NEVER deleted until WalletKey is verified readable
+     * - Each step is verified before proceeding
+     * - Partial migrations are cleaned up on subsequent runs
+     * - Idempotent: safe to run multiple times
+     *
      * For each wallet with WalletSecrets:
      * 1. Check if a WalletKey with same fingerprint already exists (deduplication)
      * 2. If not, create a new WalletKey with auto-generated label
-     * 3. Update WalletMetadata with keyIds reference
+     * 3. VERIFY WalletKey can be loaded back (critical safety check)
+     * 4. Update WalletMetadata with keyIds reference
+     * 5. VERIFY metadata has keyIds
+     * 6. Only then delete old WalletSecrets
      */
+    @Suppress("DEPRECATION")
     private fun migrateWalletSecretsToKeys(isDecoy: Boolean) {
+        val prefs = if (isDecoy) decoyPrefs else mainPrefs
         val walletIds = getWalletIds(isDecoy)
         val fingerprintToKeyId = mutableMapOf<String, String>()
         var keyCounter = 1
-        
+        var migratedCount = 0
+        var cleanedUpCount = 0
+
         Log.d(TAG, "Migrating ${walletIds.size} wallets from WalletSecrets to WalletKey")
-        
+
         for (walletId in walletIds) {
             try {
                 val metadata = loadWalletMetadata(walletId, isDecoy) ?: continue
-                
-                // Skip if already has keyIds (already migrated)
-                if (metadata.keyIds.isNotEmpty()) {
-                    Log.d(TAG, "Wallet $walletId already migrated, skipping")
-                    continue
-                }
-                
+
                 // Skip multisig wallets (they don't have WalletSecrets)
                 if (metadata.isMultisig) {
                     Log.d(TAG, "Wallet $walletId is multisig, skipping secrets migration")
                     continue
                 }
-                
+
+                // Check if already migrated (has keyIds)
+                if (metadata.keyIds.isNotEmpty()) {
+                    // Already migrated - but check if old secrets still exist (from crashed migration)
+                    if (prefs.contains("wallet_secrets_$walletId")) {
+                        // Verify the WalletKey exists and is readable before deleting secrets
+                        val keyId = metadata.keyIds.first()
+                        val verifyKey = loadWalletKey(keyId, isDecoy)
+                        if (verifyKey != null) {
+                            deleteWalletSecrets(walletId, isDecoy)
+                            cleanedUpCount++
+                            Log.d(TAG, "Cleaned up leftover secrets for already-migrated wallet $walletId")
+                        } else {
+                            Log.w(TAG, "Wallet $walletId has keyIds but key $keyId not found - keeping secrets as backup")
+                        }
+                    }
+                    continue
+                }
+
                 // Load old WalletSecrets
                 val secrets = loadWalletSecrets(walletId, isDecoy)
                 if (secrets == null) {
                     Log.w(TAG, "No secrets found for wallet $walletId, skipping")
                     continue
                 }
-                
-                // Use metadata fingerprint if available
+
+                // Use metadata fingerprint
                 val fingerprint = metadata.masterFingerprint.lowercase()
-                
-                // Check if we already have a key with this fingerprint
+
+                // Check if we already have a key with this fingerprint (deduplication)
                 val existingKeyId = fingerprintToKeyId[fingerprint]
                 val keyId: String
-                
+
                 if (existingKeyId != null) {
-                    // Reuse existing key
+                    // Reuse existing key - but verify it exists
+                    val verifyKey = loadWalletKey(existingKeyId, isDecoy)
+                    if (verifyKey == null) {
+                        Log.e(TAG, "Cached keyId $existingKeyId not found, skipping wallet $walletId")
+                        continue
+                    }
                     keyId = existingKeyId
                     Log.d(TAG, "Reusing existing key $keyId for wallet $walletId")
                 } else {
@@ -838,7 +878,7 @@ class SecureStorage(private val context: Context) {
                     keyId = java.util.UUID.randomUUID().toString()
                     val label = "Key $keyCounter"
                     keyCounter++
-                    
+
                     val walletKey = WalletKey(
                         keyId = keyId,
                         mnemonic = secrets.mnemonic,
@@ -846,31 +886,54 @@ class SecureStorage(private val context: Context) {
                         fingerprint = fingerprint,
                         label = label
                     )
-                    
+
+                    // Step 1: Save the new WalletKey
                     if (!saveWalletKey(walletKey, isDecoy)) {
-                        Log.e(TAG, "Failed to save wallet key for wallet $walletId")
+                        Log.e(TAG, "Failed to save wallet key for wallet $walletId - secrets preserved")
                         continue
                     }
-                    
+
+                    // Step 2: CRITICAL - Verify we can read it back before proceeding
+                    val verifyKey = loadWalletKey(keyId, isDecoy)
+                    if (verifyKey == null) {
+                        Log.e(TAG, "CRITICAL: Saved key $keyId but cannot load it back - secrets preserved")
+                        continue
+                    }
+                    if (verifyKey.mnemonic != secrets.mnemonic || verifyKey.bip39Seed != secrets.bip39Seed) {
+                        Log.e(TAG, "CRITICAL: Key $keyId data mismatch after save - secrets preserved")
+                        continue
+                    }
+
                     fingerprintToKeyId[fingerprint] = keyId
-                    Log.d(TAG, "Created new key $keyId ($label) for wallet $walletId")
+                    Log.d(TAG, "Created and verified new key $keyId ($label) for wallet $walletId")
                 }
-                
-                // Update metadata with keyIds
+
+                // Step 3: Update metadata with keyIds
                 val updatedMetadata = metadata.copy(keyIds = listOf(keyId))
                 if (!saveWalletMetadata(updatedMetadata, isDecoy)) {
-                    Log.e(TAG, "Failed to update metadata for wallet $walletId")
+                    Log.e(TAG, "Failed to update metadata for wallet $walletId - secrets preserved")
                     continue
                 }
-                
-                Log.d(TAG, "Migrated wallet $walletId -> keyId=$keyId")
-                
+
+                // Step 4: Verify metadata was updated correctly
+                val verifyMetadata = loadWalletMetadata(walletId, isDecoy)
+                if (verifyMetadata?.keyIds?.firstOrNull() != keyId) {
+                    Log.e(TAG, "Metadata verification failed for wallet $walletId - secrets preserved")
+                    continue
+                }
+
+                // Step 5: ALL VERIFIED - Safe to delete old WalletSecrets
+                deleteWalletSecrets(walletId, isDecoy)
+                migratedCount++
+                Log.d(TAG, "Successfully migrated wallet $walletId -> keyId=$keyId")
+
             } catch (e: Exception) {
-                Log.e(TAG, "Error migrating wallet $walletId: ${e.message}", e)
+                // Any exception = keep secrets, skip this wallet
+                Log.e(TAG, "Error migrating wallet $walletId (secrets preserved): ${e.message}", e)
             }
         }
-        
-        Log.d(TAG, "Migration complete: ${fingerprintToKeyId.size} unique keys created")
+
+        Log.d(TAG, "Migration complete: $migratedCount wallets migrated, ${fingerprintToKeyId.size} unique keys, $cleanedUpCount leftover secrets cleaned")
     }
 
     // ============================================================================

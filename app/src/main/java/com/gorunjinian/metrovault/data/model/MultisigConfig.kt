@@ -67,8 +67,8 @@ data class MultisigConfig(
             }
             
             val fingerprintsArray = json.getJSONArray("localKeyFingerprints")
-            val fingerprints = (0 until fingerprintsArray.length()).map { 
-                fingerprintsArray.getString(it) 
+            val fingerprints = (0 until fingerprintsArray.length()).map {
+                fingerprintsArray.getString(it).lowercase()  // Normalize to lowercase
             }
             
             return MultisigConfig(
@@ -111,7 +111,7 @@ data class CosignerInfo(
     companion object {
         fun fromJson(json: JSONObject): CosignerInfo = CosignerInfo(
             xpub = json.getString("xpub"),
-            fingerprint = json.getString("fingerprint"),
+            fingerprint = json.getString("fingerprint").lowercase(),  // Normalize to lowercase
             derivationPath = json.getString("derivationPath"),
             isLocal = json.optBoolean("isLocal", false),
             keyId = json.optString("keyId", null).takeIf { !it.isNullOrEmpty() }

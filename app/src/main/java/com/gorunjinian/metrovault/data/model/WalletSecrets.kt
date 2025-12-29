@@ -6,20 +6,26 @@ import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
  * Wallet secrets - sensitive data (mnemonic, BIP39 seed).
  * Stored as plaintext JSON, encrypted by SessionKeyManager before storage.
  *
+ * @deprecated This class is deprecated. Use [WalletKey] instead.
+ * This class is kept only for one-time migration from older app versions.
+ * All new code should use WalletKey which provides centralized key management.
+ *
  * Security: Single encryption layer via session key (derived from password via PBKDF2+HKDF)
  * stored within EncryptedSharedPreferences (Android Keystore backed).
- * 
+ *
  * STORAGE MODEL:
  * - bip39Seed: 512-bit hex-encoded seed derived from mnemonic + passphrase
  * - Passphrase is NEVER stored; only the derived seed is saved
  * - This is secure because PBKDF2 is one-way (cannot recover passphrase from seed)
- * 
+ *
  * MIGRATION (from v1.x format):
  * - Old format stored: mnemonic + passphrase (plaintext string)
  * - New format stores: mnemonic + bip39Seed (hex string)
  * - Migration computes: bip39Seed = PBKDF2(mnemonic, passphrase)
  * - Migration happens transparently on first load after app update
  */
+@Suppress("DEPRECATION")
+@Deprecated("Use WalletKey instead - this class is kept only for migration from older versions")
 data class WalletSecrets(
     val mnemonic: String,
     val bip39Seed: String = ""  // Hex-encoded 64-byte (512-bit) BIP39 seed

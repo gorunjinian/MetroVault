@@ -47,7 +47,7 @@ data class WalletKey(
                 keyId = obj.getString("keyId"),
                 mnemonic = obj.getString("mnemonic"),
                 bip39Seed = obj.getString("bip39Seed"),
-                fingerprint = obj.getString("fingerprint"),
+                fingerprint = obj.getString("fingerprint").lowercase(),  // Normalize to lowercase
                 label = obj.optString("label", "")
             )
         }

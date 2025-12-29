@@ -5,19 +5,19 @@ import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.psbt.*
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.data.model.PsbtDetails
+import com.gorunjinian.metrovault.data.model.PsbtInput
+import com.gorunjinian.metrovault.data.model.PsbtOutput
+import com.gorunjinian.metrovault.data.model.SigningResult
 
 /**
  * Service responsible for PSBT (Partially Signed Bitcoin Transaction) operations.
  * Handles PSBT parsing, signing, and details extraction.
  */
-@Suppress("KDocUnresolvedReference")
 class PsbtService {
 
     companion object {
         private const val TAG = "PsbtService"
-
-        // Gap limit for address scanning fallback
-        private const val ADDRESS_SCAN_GAP = 2000
         
         // Standard derivation path purposes to try when fingerprint matches but pubkey doesn't
         // This handles cases where coordinator wallets (e.g., Sparrow) convert paths
@@ -27,17 +27,6 @@ class PsbtService {
 
     private val addressService = AddressService()
 
-    /**
-     * Signs a PSBT using BIP-174 compliant approach:
-     * 1. First tries to use derivation path metadata from the PSBT (fast, reliable)
-     * 2. Falls back to address scanning if no metadata available
-     *
-     * @param psbtBase64 Base64 encoded PSBT
-     * @param masterPrivateKey Master private key for full path derivation (BIP-174)
-     * @param accountPrivateKey Account-level private key for fallback address scanning
-     * @param scriptType Script type for address generation in fallback
-     * @param isTestnet Whether this is a testnet wallet
-     */
     /**
      * Signs a PSBT using BIP-174 compliant approach with path-agnostic fallback:
      * 1. First tries to use derivation path metadata from the PSBT (fast, reliable)
@@ -360,8 +349,8 @@ class PsbtService {
             }
             
             // Find OP_m at start and OP_n before OP_CHECKMULTISIG
-            val m = opNumToInt(script.firstOrNull())
-            val n = opNumToInt(script.getOrNull(script.size - 2))
+            val m = ScriptUtils.opNumToInt(script.firstOrNull())
+            val n = ScriptUtils.opNumToInt(script.getOrNull(script.size - 2))
             
             if (m != null && n != null && m in 1..16 && n in 1..16 && m <= n) {
                 Triple(true, m, n)
@@ -370,32 +359,6 @@ class PsbtService {
             }
         } catch (_: Exception) {
             Triple(false, 1, 1)
-        }
-    }
-    
-    /**
-     * Converts OP_n script element to integer.
-     */
-    private fun opNumToInt(op: ScriptElt?): Int? {
-        return when (op) {
-            OP_0 -> 0
-            OP_1 -> 1
-            OP_2 -> 2
-            OP_3 -> 3
-            OP_4 -> 4
-            OP_5 -> 5
-            OP_6 -> 6
-            OP_7 -> 7
-            OP_8 -> 8
-            OP_9 -> 9
-            OP_10 -> 10
-            OP_11 -> 11
-            OP_12 -> 12
-            OP_13 -> 13
-            OP_14 -> 14
-            OP_15 -> 15
-            OP_16 -> 16
-            else -> null
         }
     }
 
@@ -746,7 +709,7 @@ class PsbtService {
         for (isChange in listOf(false, true)) {
             val changeIndex = if (isChange) 1L else 0L
 
-            for (i in 0 until ADDRESS_SCAN_GAP) {
+            for (i in 0 until WalletConstants.SINGLE_SIG_ADDRESS_GAP) {
                 try {
                     val addressKey = accountPublicKey
                         .derivePublicKey(changeIndex)
@@ -959,50 +922,5 @@ private data class InputSignatureInfo(
     val requiredSignatures: Int,
     val totalSigners: Int,
     val currentSignatures: Int
-)
-
-/**
- * Details extracted from a PSBT for display purposes.
- */
-data class PsbtDetails(
-    val inputs: List<PsbtInput>,
-    val outputs: List<PsbtOutput>,
-    val fee: Long?,
-    val virtualSize: Int,  // Transaction size in virtual bytes (vBytes)
-    val isMultisig: Boolean = false,  // Whether this is a multisig transaction
-    val requiredSignatures: Int = 1,  // m in m-of-n multisig (or 1 for single-sig)
-    val totalSigners: Int = 1,        // n in m-of-n multisig (or 1 for single-sig)  
-    val currentSignatures: Int = 0,   // Current number of signatures across all inputs
-    val isReadyToBroadcast: Boolean = false  // True if all inputs have sufficient signatures
-)
-
-/**
- * PSBT input details.
- */
-data class PsbtInput(
-    val address: String,
-    val prevTxHash: String,
-    val prevTxIndex: Int,
-    val value: Long,
-    val signatureCount: Int = 0,  // Number of signatures for this input
-    val isMultisig: Boolean = false  // Whether this input is multisig
-)
-
-/**
- * PSBT output details.
- */
-data class PsbtOutput(
-    val address: String,
-    val value: Long
-)
-
-/**
- * Result of PSBT signing operation.
- * Contains the signed PSBT and information about any alternative paths used.
- */
-data class SigningResult(
-    val signedPsbt: String,
-    val usedAlternativePath: Boolean,
-    val alternativePathsUsed: List<String> = emptyList()
 )
 

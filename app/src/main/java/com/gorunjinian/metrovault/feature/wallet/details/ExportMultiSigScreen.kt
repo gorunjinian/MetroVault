@@ -426,23 +426,27 @@ private fun generateDescriptorURv1(content: String): QRCodeUtils.AnimatedQRResul
 
 /**
  * Generate BBQr encoded descriptor QR
- * BBQr format: B$[encoding][type][seq][total][data]
+ * BBQr format: B$[encoding][type][total:2 base36][part:2 base36][data]
  * - encoding: H=hex, 2=zlib+base32, Z=zlib+base32 (legacy), U=uncompressed UTF-8
  * - type: U=Unicode/UTF-8 text, P=PSBT, T=Transaction, J=JSON, C=CBOR
+ * - total/part: 2-char base36 encoded (0-indexed for part)
  * For descriptors, we use "UU" = Uncompressed UTF-8 text
  */
 @Suppress("KDocUnresolvedReference")
 private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRResult? {
     return try {
         val maxQrChars = 500
-        // BBQr header overhead: "B$UU" + 2 digit seq + 2 digit total = 8 chars
+        // BBQr header overhead: "B$UU" + 2 char total + 2 char part = 8 chars
         val headerOverhead = 8
         val maxPayload = maxQrChars - headerOverhead
         
         if (descriptor.length <= maxPayload) {
-            // Single frame BBQr - still needs header!
-            // Format: B$UU0101[descriptor]
-            val bbqrContent = $$"B$UU0101$$descriptor"
+            // Single frame BBQr
+            // Format: B$UU[total:2 base36][part:2 base36][descriptor]
+            // total=1, part=0 (0-indexed)
+            val totalBase36 = 1.toString(36).padStart(2, '0').uppercase()
+            val partBase36 = 0.toString(36).padStart(2, '0').uppercase()
+            val bbqrContent = $$"B$UU$${totalBase36}$${partBase36}$$descriptor"
             val bitmap = QRCodeUtils.generateQRCode(bbqrContent, size = 512)
             bitmap?.let {
                 QRCodeUtils.AnimatedQRResult(
@@ -458,10 +462,11 @@ private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRRe
             val total = chunks.size
             
             val frameContents = chunks.mapIndexed { index, chunk ->
-                // BBQr header format: B$UU[seq][total][data]
-                val seq = (index + 1).toString().padStart(2, '0')
-                val totalStr = total.toString().padStart(2, '0')
-                $$"B$UU$$seq$$totalStr$$chunk"
+                // BBQr header format: B$UU[total:2 base36][part:2 base36][data]
+                // Part is 0-indexed per BBQr spec
+                val totalBase36 = total.toString(36).padStart(2, '0').uppercase()
+                val partBase36 = index.toString(36).padStart(2, '0').uppercase()
+                $$"B$UU$${totalBase36}$${partBase36}$$chunk"
             }
             
             val bitmaps = QRCodeUtils.generateConsistentQRCodes(frameContents, size = 512)

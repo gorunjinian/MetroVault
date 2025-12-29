@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.gorunjinian.metrovault.domain.service.PsbtDetails
+import com.gorunjinian.metrovault.data.model.PsbtDetails
 
 /**
  * Transaction confirmation component for reviewing PSBT details before signing.

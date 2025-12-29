@@ -226,7 +226,7 @@ private fun InitialScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "• Plain text descriptor (wsh(sortedmulti(...))\n• UR-encoded descriptor (ur:output-descriptor/...)",
+                    text = "• Plain text descriptor\n• UR-encoded descriptor\n• BSMS QR code",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

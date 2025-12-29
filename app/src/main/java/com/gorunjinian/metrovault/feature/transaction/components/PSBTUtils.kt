@@ -1,7 +1,7 @@
 package com.gorunjinian.metrovault.feature.transaction.components
 
 import android.annotation.SuppressLint
-import com.gorunjinian.metrovault.domain.service.PsbtOutput
+import com.gorunjinian.metrovault.data.model.PsbtOutput
 
 /**
  * Format satoshis to the specified unit with comma separators for thousands

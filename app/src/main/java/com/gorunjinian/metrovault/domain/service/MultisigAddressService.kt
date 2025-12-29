@@ -19,7 +19,6 @@ class MultisigAddressService {
 
     companion object {
         private const val TAG = "MultisigAddressService"
-        private const val ADDRESS_SCAN_GAP = 500
     }
 
     /**
@@ -50,13 +49,20 @@ class MultisigAddressService {
             val changeIndex = if (isChange) 1L else 0L
             
             // Derive child public keys from each cosigner's xpub
-            val childPubKeys = config.cosigners.mapNotNull { cosigner ->
+            // Track failures for better error reporting
+            val failedCosigners = mutableListOf<String>()
+            val childPubKeys = config.cosigners.mapIndexedNotNull { i, cosigner ->
                 deriveChildPublicKey(cosigner.xpub, changeIndex, index.toLong(), isTestnet)
+                    ?: run {
+                        failedCosigners.add("cosigner ${i + 1} (fingerprint: ${cosigner.fingerprint})")
+                        null
+                    }
             }
             
             if (childPubKeys.size != config.n) {
+                val failedList = failedCosigners.joinToString(", ")
                 return MultisigAddressResult.Error(
-                    "Failed to derive keys from all cosigners (got ${childPubKeys.size}/${config.n})"
+                    "Failed to derive keys from $failedList (got ${childPubKeys.size}/${config.n} keys)"
                 )
             }
             
@@ -115,7 +121,7 @@ class MultisigAddressService {
         address: String,
         config: MultisigConfig,
         isTestnet: Boolean,
-        scanRange: Int = ADDRESS_SCAN_GAP
+        scanRange: Int = WalletConstants.MULTISIG_ADDRESS_GAP
     ): AddressCheckResult {
         // Check receive addresses
         for (i in 0 until scanRange) {
@@ -289,42 +295,16 @@ class MultisigAddressService {
     }
 
     /**
-     * Maps an integer (1-16) to the corresponding OP_N script element.
-     */
-    private fun opPushNum(n: Int): ScriptElt {
-        return when (n) {
-            0 -> OP_0
-            1 -> OP_1
-            2 -> OP_2
-            3 -> OP_3
-            4 -> OP_4
-            5 -> OP_5
-            6 -> OP_6
-            7 -> OP_7
-            8 -> OP_8
-            9 -> OP_9
-            10 -> OP_10
-            11 -> OP_11
-            12 -> OP_12
-            13 -> OP_13
-            14 -> OP_14
-            15 -> OP_15
-            16 -> OP_16
-            else -> throw IllegalArgumentException("opPushNum only supports 0-16, got $n")
-        }
-    }
-
-    /**
      * Builds a multisig script: OP_m <pubkey1> <pubkey2> ... OP_n OP_CHECKMULTISIG
      */
     private fun buildMultisigScript(m: Int, sortedPubKeys: List<PublicKey>): List<ScriptElt> {
         val n = sortedPubKeys.size
         return buildList {
-            add(opPushNum(m))
+            add(ScriptUtils.intToOpNum(m))
             sortedPubKeys.forEach { pubKey ->
                 add(OP_PUSHDATA(pubKey.value))
             }
-            add(opPushNum(n))
+            add(ScriptUtils.intToOpNum(n))
             add(OP_CHECKMULTISIG)
         }
     }

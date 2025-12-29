@@ -155,7 +155,7 @@ data class WalletMetadata(
                 id = obj.getString("id"),
                 name = obj.getString("name"),
                 derivationPath = obj.getString("derivationPath"),
-                masterFingerprint = obj.optString("masterFingerprint", ""),
+                masterFingerprint = obj.optString("masterFingerprint", "").lowercase(),  // Normalize to lowercase
                 hasPassphrase = hasPassphrase,
                 createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                 accounts = accounts,

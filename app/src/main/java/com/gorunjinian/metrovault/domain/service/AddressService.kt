@@ -13,8 +13,6 @@ class AddressService {
 
     companion object {
         private const val TAG = "AddressService"
-        // Gap limit for address scanning (used in checkAddressBelongsToWallet)
-        private const val ADDRESS_SCAN_GAP = 2000
     }
 
     /**
@@ -113,7 +111,7 @@ class AddressService {
         accountPublicKey: DeterministicWallet.ExtendedPublicKey,
         scriptType: ScriptType,
         isTestnet: Boolean = false,
-        scanRange: Int = ADDRESS_SCAN_GAP
+        scanRange: Int = WalletConstants.SINGLE_SIG_ADDRESS_GAP
     ): AddressCheckResult? {
         return try {
             // Check receive addresses

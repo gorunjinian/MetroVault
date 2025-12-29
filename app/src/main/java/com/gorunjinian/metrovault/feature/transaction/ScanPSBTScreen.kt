@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.domain.service.PsbtDetails
+import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.feature.transaction.components.OutputWithType
 import com.gorunjinian.metrovault.feature.transaction.components.PSBTScannerView
 import com.gorunjinian.metrovault.feature.transaction.components.SignedPSBTDisplay
@@ -240,26 +240,29 @@ fun ScanPSBTScreen(
                                         wallet.signPsbt(scannedPSBT!!)
                                     }
 
-                                    if (signingResult != null) {
-                                        val signed = signingResult.signedPsbt
-                                        
-                                        // Track alternative paths used
-                                        alternativePathsUsed = signingResult.alternativePathsUsed
-                                        
-                                        // Use smart QR generation for animated support
-                                        val qrResult = withContext(Dispatchers.Default) {
-                                            QRCodeUtils.generateSmartPSBTQR(signed)
-                                        }
+                                    when (signingResult) {
+                                        is Wallet.PsbtSigningResult.Success -> {
+                                            val signed = signingResult.signedPsbt
 
-                                        signedPSBT = signed
-                                        signedQRResult = qrResult
-                                        currentDisplayFrame = 0
+                                            // Track alternative paths used
+                                            alternativePathsUsed = signingResult.alternativePathsUsed
 
-                                        if (qrResult == null) {
-                                            errorMessage = "Failed to generate QR code"
+                                            // Use smart QR generation for animated support
+                                            val qrResult = withContext(Dispatchers.Default) {
+                                                QRCodeUtils.generateSmartPSBTQR(signed)
+                                            }
+
+                                            signedPSBT = signed
+                                            signedQRResult = qrResult
+                                            currentDisplayFrame = 0
+
+                                            if (qrResult == null) {
+                                                errorMessage = "Failed to generate QR code"
+                                            }
                                         }
-                                    } else {
-                                        errorMessage = "Failed to sign PSBT. Ensure wallet is loaded and keys are available."
+                                        is Wallet.PsbtSigningResult.Failure -> {
+                                            errorMessage = signingResult.message
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     errorMessage = "Signing error: ${e.message}"

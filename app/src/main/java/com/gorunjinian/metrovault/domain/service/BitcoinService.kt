@@ -4,7 +4,9 @@ import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.DerivationPaths
+import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.data.model.SigningResult
 
 /**
  * Facade service for all Bitcoin-related operations.
