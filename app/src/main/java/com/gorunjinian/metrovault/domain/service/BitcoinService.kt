@@ -3,6 +3,7 @@ package com.gorunjinian.metrovault.domain.service
 import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
+import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.ScriptType
 
 /**
@@ -97,13 +98,18 @@ class BitcoinService {
         derivationPath: String
     ): WalletCreationResult? {
         return try {
+            Log.d(TAG, "createWalletFromSeed: path=$derivationPath, seedLen=${seedHex.length}")
             val seedBytes = seedHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            Log.d(TAG, "Seed bytes length: ${seedBytes.size}")
             val masterPrivateKey = DeterministicWallet.generate(seedBytes.byteVector())
+            Log.d(TAG, "Master key generated")
             val path = BitcoinUtils.parseDerivationPath(derivationPath)
+            Log.d(TAG, "Parsed path: $path")
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(path)
             val accountPublicKey = accountPrivateKey.extendedPublicKey
 
             val fingerprint = BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
+            Log.d(TAG, "Wallet created, fingerprint: $fingerprint")
 
             WalletCreationResult(
                 masterPrivateKey = masterPrivateKey,
@@ -111,8 +117,8 @@ class BitcoinService {
                 accountPublicKey = accountPublicKey,
                 fingerprint = fingerprint
             )
-        } catch (_: Exception) {
-            Log.e(TAG, "Failed to create wallet from seed")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create wallet from seed: ${e.message}", e)
             null
         }
     }
@@ -188,6 +194,20 @@ class BitcoinService {
         isTestnet: Boolean = false
     ): String = keyEncodingService.getPrivateWalletDescriptor(fingerprint, accountPath, accountPrivateKey, scriptType, isTestnet)
 
+    // ==================== BIP48 Multisig Key Encoding ====================
+
+    fun getBip48Xpub(
+        accountPublicKey: DeterministicWallet.ExtendedPublicKey,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType,
+        isTestnet: Boolean = false
+    ): String = keyEncodingService.getBip48Xpub(accountPublicKey, bip48ScriptType, isTestnet)
+
+    fun getBip48Xpriv(
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType,
+        isTestnet: Boolean = false
+    ): String = keyEncodingService.getBip48Xpriv(accountPrivateKey, bip48ScriptType, isTestnet)
+
     // ==================== PSBT Operations (delegated to PsbtService) ====================
 
     fun signPsbt(
@@ -196,7 +216,7 @@ class BitcoinService {
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         scriptType: ScriptType,
         isTestnet: Boolean = false
-    ): String? = psbtService.signPsbt(psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet)
+    ): SigningResult? = psbtService.signPsbt(psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet)
 
     @Suppress("unused") // Public API for future use/testing
     fun isPsbtFullySigned(psbtBase64: String): Boolean = psbtService.isPsbtFullySigned(psbtBase64)

@@ -4,6 +4,7 @@ import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.Descriptor
 import com.gorunjinian.metrovault.lib.bitcoin.DescriptorExtensions
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.ScriptType
 
 /**
@@ -105,6 +106,70 @@ class KeyEncodingService {
         val fp = fingerprint.toLongOrNull(16) ?: 0L
         val xpriv = getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
         return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpriv, scriptType)
+    }
+
+    // ==================== BIP48 Multisig Key Encoding ====================
+
+    /**
+     * Gets the BIP48 extended public key encoded with Zpub/Vpub/Ypub/Upub prefix.
+     *
+     * @param accountPublicKey Extended public key at BIP48 path (m/48'/coin'/account'/script_type')
+     * @param bip48ScriptType BIP48 script type (P2WSH or P2SH-P2WSH)
+     * @param isTestnet Whether to use testnet prefixes
+     * @return Zpub/Vpub (P2WSH) or Ypub/Upub (P2SH-P2WSH) encoded string
+     */
+    fun getBip48Xpub(
+        accountPublicKey: DeterministicWallet.ExtendedPublicKey,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        val prefix = getBip48PublicKeyPrefix(bip48ScriptType, isTestnet)
+        return accountPublicKey.encode(prefix)
+    }
+
+    /**
+     * Gets the BIP48 extended private key encoded with Zprv/Vprv/Yprv/Uprv prefix.
+     *
+     * @param accountPrivateKey Extended private key at BIP48 path
+     * @param bip48ScriptType BIP48 script type (P2WSH or P2SH-P2WSH)
+     * @param isTestnet Whether to use testnet prefixes
+     * @return Zprv/Vprv (P2WSH) or Yprv/Uprv (P2SH-P2WSH) encoded string
+     */
+    fun getBip48Xpriv(
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        val prefix = getBip48PrivateKeyPrefix(bip48ScriptType, isTestnet)
+        return accountPrivateKey.encode(prefix)
+    }
+
+    /**
+     * Get BIP48 public key prefix based on script type and network.
+     */
+    private fun getBip48PublicKeyPrefix(bip48ScriptType: DerivationPaths.Bip48ScriptType, isTestnet: Boolean): Int {
+        return when (bip48ScriptType) {
+            DerivationPaths.Bip48ScriptType.P2WSH -> {
+                if (isTestnet) Bip48MultisigPrefixes.Vpub else Bip48MultisigPrefixes.Zpub
+            }
+            DerivationPaths.Bip48ScriptType.P2SH_P2WSH -> {
+                if (isTestnet) Bip48MultisigPrefixes.Upub else Bip48MultisigPrefixes.Ypub
+            }
+        }
+    }
+
+    /**
+     * Get BIP48 private key prefix based on script type and network.
+     */
+    private fun getBip48PrivateKeyPrefix(bip48ScriptType: DerivationPaths.Bip48ScriptType, isTestnet: Boolean): Int {
+        return when (bip48ScriptType) {
+            DerivationPaths.Bip48ScriptType.P2WSH -> {
+                if (isTestnet) Bip48MultisigPrefixes.Vprv else Bip48MultisigPrefixes.Zprv
+            }
+            DerivationPaths.Bip48ScriptType.P2SH_P2WSH -> {
+                if (isTestnet) Bip48MultisigPrefixes.Uprv else Bip48MultisigPrefixes.Yprv
+            }
+        }
     }
 
     // ==================== Private Helpers ====================

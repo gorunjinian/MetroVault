@@ -52,6 +52,7 @@ fun ScanPSBTScreen(
     var errorMessage by remember { mutableStateOf("") }
     var hasCameraPermission by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
+    var alternativePathsUsed by remember { mutableStateOf<List<String>>(emptyList()) }  // Track alternative paths
     
     // Animated QR scanning state
     val animatedScanner = remember { QRCodeUtils.AnimatedQRScanner() }
@@ -118,6 +119,7 @@ fun ScanPSBTScreen(
         signedPSBT = null
         signedQRResult = null
         errorMessage = ""
+        alternativePathsUsed = emptyList()
         animatedScanner.reset()
         scanProgress = 0
         isAnimatedScan = false
@@ -182,6 +184,7 @@ fun ScanPSBTScreen(
                         selectedFormat = selectedOutputFormat,
                         isPaused = isQRPaused,
                         isLoading = isRegeneratingQR,
+                        alternativePathsUsed = alternativePathsUsed,
                         onPauseToggle = { isQRPaused = it },
                         onPreviousFrame = {
                             val totalFrames = signedQRResult!!.frames.size
@@ -233,11 +236,16 @@ fun ScanPSBTScreen(
                                 errorMessage = ""
 
                                 try {
-                                    val signed = withContext(Dispatchers.Default) {
+                                    val signingResult = withContext(Dispatchers.Default) {
                                         wallet.signPsbt(scannedPSBT!!)
                                     }
 
-                                    if (signed != null) {
+                                    if (signingResult != null) {
+                                        val signed = signingResult.signedPsbt
+                                        
+                                        // Track alternative paths used
+                                        alternativePathsUsed = signingResult.alternativePathsUsed
+                                        
                                         // Use smart QR generation for animated support
                                         val qrResult = withContext(Dispatchers.Default) {
                                             QRCodeUtils.generateSmartPSBTQR(signed)

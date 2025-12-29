@@ -52,7 +52,8 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 fun ImportWalletScreen(
     viewModel: ImportWalletViewModel = viewModel(),
     onBack: () -> Unit,
-    onWalletImported: () -> Unit
+    onWalletImported: () -> Unit,
+    onImportMultisig: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
@@ -103,7 +104,8 @@ fun ImportWalletScreen(
                     onDerivationPathChange = { viewModel.setDerivationPath(it) },
                     onAccountNumberChange = { viewModel.setAccountNumber(it) },
                     onTestnetChange = { viewModel.setTestnetMode(it) },
-                    onNext = { viewModel.goToNextStep() }
+                    onNext = { viewModel.goToNextStep() },
+                    onImportMultisig = onImportMultisig
                 )
                 
                 2 -> Step2SeedPhrase(
@@ -157,7 +159,8 @@ private fun Step1Configuration(
     onDerivationPathChange: (String) -> Unit,
     onAccountNumberChange: (Int) -> Unit,
     onTestnetChange: (Boolean) -> Unit,
-    onNext: () -> Unit
+    onNext: () -> Unit,
+    onImportMultisig: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -399,6 +402,22 @@ private fun Step1Configuration(
             }
         }
 
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Multisig import option
+        OutlinedButton(
+            onClick = onImportMultisig,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_qr_code_scanner),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Import Multisig Wallet")
         }
 
         Spacer(modifier = Modifier.height(16.dp))

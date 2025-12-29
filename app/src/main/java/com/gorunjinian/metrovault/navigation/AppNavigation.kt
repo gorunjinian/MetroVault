@@ -30,11 +30,13 @@ import com.gorunjinian.metrovault.feature.transaction.ScanPSBTScreen
 import com.gorunjinian.metrovault.feature.wallet.create.CompleteMnemonicScreen
 import com.gorunjinian.metrovault.feature.wallet.create.CreateWalletScreen
 import com.gorunjinian.metrovault.feature.wallet.create.ImportWalletScreen
+import com.gorunjinian.metrovault.feature.wallet.create.ImportMultisigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.AccountKeysScreen
 import com.gorunjinian.metrovault.feature.wallet.details.AddressDetailScreen
 import com.gorunjinian.metrovault.feature.wallet.details.AddressesScreen
 import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.DescriptorsScreen
+import com.gorunjinian.metrovault.feature.wallet.details.ExportMultiSigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SeedPhraseScreen
 import com.gorunjinian.metrovault.feature.wallet.details.RootKeyScreen
@@ -45,6 +47,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.DifferentAccountsScreen
 import com.gorunjinian.metrovault.feature.settings.AppearanceSettingsScreen
 import com.gorunjinian.metrovault.feature.settings.SecuritySettingsScreen
 import com.gorunjinian.metrovault.feature.settings.AdvancedSettingsScreen
+import com.gorunjinian.metrovault.feature.settings.WalletKeysScreen
 
 // Optimized animation parameters for smoother performance
 private const val ANIMATION_DURATION = 250
@@ -56,6 +59,7 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object CreateWallet : Screen("create_wallet")
     object ImportWallet : Screen("import_wallet")
+    object ImportMultisig : Screen("import_multisig")
     object WalletDetails : Screen("wallet_details")
     object Addresses : Screen("addresses?startTab={startTab}") {
         fun createRoute(startTab: Int = 0): String {
@@ -69,6 +73,7 @@ sealed class Screen(val route: String) {
     }
     object ScanPSBT : Screen("scan_psbt")
     object ExportOptions : Screen("export_options")
+    object ExportMultiSig : Screen("export_multisig")
     object BIP85Derive : Screen("bip85_derive")
     object SignMessage : Screen("sign_message?address={address}") {
         fun createRoute(address: String? = null): String {
@@ -91,6 +96,7 @@ sealed class Screen(val route: String) {
     object SeedPhrase : Screen("seed_phrase")
     object SeedQR : Screen("seed_qr")
     object RootKey : Screen("root_key")
+    object WalletKeys : Screen("wallet_keys")
 }
 
 @Suppress("AssignedValueIsNeverRead")
@@ -331,6 +337,23 @@ fun AppNavigation(
                             popUpTo(Screen.Home.route) { inclusive = true }
                         }
                     }
+                },
+                onImportMultisig = {
+                    navController.navigate(Screen.ImportMultisig.route)
+                }
+            )
+        }
+
+        composable(Screen.ImportMultisig.route) {
+            ImportMultisigScreen(
+                onBack = { navController.navigateUp() },
+                onWalletImported = {
+                    scope.launch {
+                        wallet.refreshWallets()
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                        }
+                    }
                 }
             )
         }
@@ -343,6 +366,7 @@ fun AppNavigation(
                 onViewAddresses = { navController.navigate(Screen.Addresses.createRoute()) },
                 onScanPSBT = { navController.navigate(Screen.ScanPSBT.route) },
                 onExport = { navController.navigate(Screen.ExportOptions.route) },
+                onExportMultiSig = { navController.navigate(Screen.ExportMultiSig.route) },
                 onBIP85 = { navController.navigate(Screen.BIP85Derive.route) },
                 onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
                 onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },
@@ -444,6 +468,28 @@ fun AppNavigation(
                 onViewDescriptors = { navController.navigate(Screen.Descriptors.route) },
                 onViewRootKey = { navController.navigate(Screen.RootKey.route) },
                 onViewSeedPhrase = { navController.navigate(Screen.SeedPhrase.route) }
+            )
+        }
+
+        composable(Screen.ExportMultiSig.route) {
+            val metadata = wallet.getActiveWalletId()?.let { id ->
+                secureStorage.loadWalletMetadata(id, wallet.isDecoyMode)
+            }
+            val descriptor = metadata?.multisigConfig?.rawDescriptor ?: ""
+            val walletName = wallet.getActiveWalletName()
+            
+            // Generate first receive address for BSMS format
+            val firstAddress = wallet.generateAddresses(1, 0, isChange = false)?.firstOrNull()?.address ?: ""
+            
+            ExportMultiSigScreen(
+                descriptor = descriptor,
+                walletName = walletName,
+                firstAddress = firstAddress,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route)
+                    }
+                }
             )
         }
 
@@ -625,6 +671,21 @@ fun AppNavigation(
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)
+                    }
+                },
+                onViewSavedKeys = {
+                    navController.navigate(Screen.WalletKeys.route)
+                }
+            )
+        }
+
+        composable(Screen.WalletKeys.route) {
+            WalletKeysScreen(
+                wallet = wallet,
+                secureStorage = secureStorage,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.SettingsAdvanced.route)
                     }
                 }
             )

@@ -196,10 +196,16 @@ fun WalletsListContent(
                         type = walletType,
                         masterFingerprint = walletItem.masterFingerprint,
                         isTestnet = isWalletTestnet,
+                        isMultisig = walletItem.isMultisig,
                         elevation = shadow,
                         isEditMode = isEditMode,
                         isExpanded = if (isEditMode) false else expandedWalletId == walletItem.id,
-                        quickShortcuts = quickShortcuts,
+                        // For multisig wallets, use only allowed shortcuts: Addresses, Sign PSBT, Check Address
+                        quickShortcuts = if (walletItem.isMultisig) {
+                            QuickShortcut.DEFAULT
+                        } else {
+                            quickShortcuts
+                        },
                         onClick = { 
                             if (draggingItemIndex == null) {
                                 if (isEditMode) {
@@ -402,6 +408,7 @@ fun WalletCard(
     type: String,
     masterFingerprint: String = "",
     isTestnet: Boolean = false,
+    isMultisig: Boolean = false,
     elevation: androidx.compose.ui.unit.Dp = 2.dp,
     isEditMode: Boolean = false,
     isExpanded: Boolean = false,
@@ -479,8 +486,23 @@ fun WalletCard(
                                     )
                                 }
                             }
+                            // Multi-Sig badge
+                            if (isMultisig) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Multi-Sig",
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
                         }
-                        if (masterFingerprint.isNotEmpty() && !isEditMode) {
+                        if (masterFingerprint.isNotEmpty() && !isEditMode && !isMultisig) {
                             Text(
                                 text = masterFingerprint,
                                 style = MaterialTheme.typography.bodyMedium,

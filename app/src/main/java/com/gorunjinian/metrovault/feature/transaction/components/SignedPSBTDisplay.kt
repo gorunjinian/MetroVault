@@ -42,6 +42,7 @@ fun SignedPSBTDisplay(
     selectedFormat: QRCodeUtils.OutputFormat,
     isPaused: Boolean,
     isLoading: Boolean = false,
+    alternativePathsUsed: List<String> = emptyList(),
     onPauseToggle: (Boolean) -> Unit,
     onPreviousFrame: () -> Unit,
     onNextFrame: () -> Unit,
@@ -64,6 +65,35 @@ fun SignedPSBTDisplay(
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold
         )
+        
+        // Alternative path warning card
+        if (alternativePathsUsed.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Text(
+                        text = "ⓘ Alternative Path Used",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Signing used a different derivation path than specified in the PSBT. " +
+                               "This can happen when coordinator wallets convert paths.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 

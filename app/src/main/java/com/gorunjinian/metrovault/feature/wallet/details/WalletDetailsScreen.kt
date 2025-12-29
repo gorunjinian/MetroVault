@@ -24,6 +24,7 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
+@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WalletDetailsScreen(
@@ -33,6 +34,7 @@ fun WalletDetailsScreen(
     onViewAddresses: () -> Unit,
     onScanPSBT: () -> Unit,
     onExport: () -> Unit,
+    onExportMultiSig: () -> Unit,
     onBIP85: () -> Unit,
     onSignMessage: () -> Unit,
     onCheckAddress: () -> Unit,
@@ -58,6 +60,9 @@ fun WalletDetailsScreen(
     // Calculate isTestnet early for app bar badge
     val derivationPath = wallet.getActiveWalletDerivationPath()
     val isTestnet = DerivationPaths.isTestnet(derivationPath)
+    
+    // Check if multisig wallet
+    val isMultisig = activeWalletMetadata?.isMultisig ?: false
 
     Scaffold(
         topBar = {
@@ -168,30 +173,67 @@ fun WalletDetailsScreen(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
+                        
+                        // For multisig: show local cosigner derivation paths (max 2)
+                        // For single-sig: show the regular derivation path
+                        val displayPath = if (isMultisig) {
+                            val localCosignerPaths = activeWalletMetadata?.multisigConfig?.cosigners
+                                ?.filter { it.isLocal }
+                                ?.map { "m/${it.derivationPath}" }
+                                ?: emptyList()
+                            when {
+                                localCosignerPaths.isEmpty() -> derivationPath
+                                localCosignerPaths.size == 1 -> localCosignerPaths.first()
+                                localCosignerPaths.size == 2 -> localCosignerPaths.joinToString(", ")
+                                else -> "${localCosignerPaths.take(2).joinToString(", ")} (${localCosignerPaths.size - 2} more)"
+                            }
+                        } else {
+                            derivationPath
+                        }
+                        
                         Text(
-                            text = derivationPath,
+                            text = displayPath,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
-                    if (fingerprint != null) {
+                    // Master Fingerprint display
+                    // For multisig: show local key fingerprints (up to 2, with "X more" if needed)
+                    // For single-sig: show single fingerprint
+                    val localFingerprints = if (isMultisig) {
+                        activeWalletMetadata.multisigConfig?.localKeyFingerprints ?: emptyList()
+                    } else {
+                        fingerprint?.let { listOf(it) } ?: emptyList()
+                    }
+                    
+                    if (localFingerprints.isNotEmpty()) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Master Fingerprint",
+                                text = if (isMultisig && localFingerprints.size > 1) "Local Keys" else "Master Fingerprint",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                             )
+                            
+                            // Format fingerprints: show up to 2, then "(X more)" if needed
+                            val displayFingerprints = localFingerprints.take(2).joinToString(", ") { it.uppercase() }
+                            val extraCount = localFingerprints.size - 2
+                            val fingerprintText = if (extraCount > 0) {
+                                "$displayFingerprints ($extraCount more)"
+                            } else {
+                                displayFingerprints
+                            }
+                            
                             Text(
-                                text = fingerprint,
+                                text = fingerprintText,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = if (fingerprintMismatch) 
-                                    MaterialTheme.colorScheme.error  // RED when mismatch
+                                color = if (!isMultisig && fingerprintMismatch) 
+                                    MaterialTheme.colorScheme.error  // RED when mismatch (single-sig only)
                                 else 
                                     MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -302,38 +344,40 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Sign/Verify Message
-            ElevatedCard(
-                onClick = onSignMessage,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Sign/Verify Message (not for multisig wallets)
+            if (!isMultisig) {
+                ElevatedCard(
+                    onClick = onSignMessage,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_signature),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column {
-                        Text(
-                            text = "Sign/Verify Message",
-                            style = MaterialTheme.typography.titleMedium
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_signature),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "Sign messages or verify signatures",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column {
+                            Text(
+                                text = "Sign/Verify Message",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Sign messages or verify signatures",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
 
-            // BIP-85 Derivation (only if enabled in settings)
-            if (bip85Enabled) {
+            // BIP-85 Derivation (only if enabled in settings and not multisig)
+            if (bip85Enabled && !isMultisig) {
                 ElevatedCard(
                     onClick = onBIP85,
                     modifier = Modifier.fillMaxWidth()
@@ -364,8 +408,8 @@ fun WalletDetailsScreen(
                 }
             }
 
-            // Different Accounts (only if enabled in settings)
-            if (differentAccountsEnabled) {
+            // Different Accounts (only if enabled in settings and not multisig)
+            if (differentAccountsEnabled && !isMultisig) {
                 ElevatedCard(
                     onClick = onDifferentAccounts,
                     modifier = Modifier.fillMaxWidth()
@@ -398,7 +442,7 @@ fun WalletDetailsScreen(
 
             // Export Options
             ElevatedCard(
-                onClick = onExport,
+                onClick = { if (isMultisig) onExportMultiSig() else onExport() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -418,7 +462,8 @@ fun WalletDetailsScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Export keys, descriptors or seed phrase",
+                            text = if (isMultisig) "Export multisig wallet descriptor" 
+                                   else "Export keys, descriptors or seed phrase",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

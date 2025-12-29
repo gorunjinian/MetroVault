@@ -35,7 +35,10 @@ data class WalletMetadata(
     val createdAt: Long,
     val accounts: List<Int> = listOf(0),      // Account numbers under this wallet
     val activeAccountNumber: Int = 0,          // Currently active account number
-    val accountNames: Map<Int, String> = emptyMap()  // Custom display names (empty = use default)
+    val accountNames: Map<Int, String> = emptyMap(),  // Custom display names (empty = use default)
+    val isMultisig: Boolean = false,           // true = this is a multisig wallet
+    val multisigConfig: MultisigConfig? = null, // Multisig configuration (null for single-sig)
+    val keyIds: List<String> = emptyList()      // References to WalletKey entries (1 for single-sig, 0-N for multisig)
 ) {
     /**
      * Get the display name for an account.
@@ -72,6 +75,15 @@ data class WalletMetadata(
                 put("accountNames", org.json.JSONObject().apply {
                     accountNames.forEach { (k, v) -> put(k.toString(), v) }
                 })
+            }
+            // Serialize multisig fields
+            put("isMultisig", isMultisig)
+            if (multisigConfig != null) {
+                put("multisigConfig", multisigConfig.toJson())
+            }
+            // Serialize keyIds
+            if (keyIds.isNotEmpty()) {
+                put("keyIds", org.json.JSONArray(keyIds))
             }
         }.toString()
     }
@@ -123,6 +135,22 @@ data class WalletMetadata(
                 emptyMap()
             }
             
+            // MIGRATION: Parse multisig fields, default to false/null for existing wallets
+            val isMultisig = obj.optBoolean("isMultisig", false)
+            val multisigConfig = if (obj.has("multisigConfig")) {
+                MultisigConfig.fromJson(obj.getJSONObject("multisigConfig"))
+            } else {
+                null
+            }
+            
+            // MIGRATION: Parse keyIds, default to empty for existing wallets (will be populated during migration)
+            val keyIds = if (obj.has("keyIds")) {
+                val arr = obj.getJSONArray("keyIds")
+                (0 until arr.length()).map { arr.getString(it) }
+            } else {
+                emptyList()
+            }
+            
             return WalletMetadata(
                 id = obj.getString("id"),
                 name = obj.getString("name"),
@@ -132,7 +160,10 @@ data class WalletMetadata(
                 createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                 accounts = accounts,
                 activeAccountNumber = activeAccountNumber,
-                accountNames = accountNames
+                accountNames = accountNames,
+                isMultisig = isMultisig,
+                multisigConfig = multisigConfig,
+                keyIds = keyIds
             )
         }
     }

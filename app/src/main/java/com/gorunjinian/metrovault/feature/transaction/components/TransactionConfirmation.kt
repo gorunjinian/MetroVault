@@ -60,6 +60,89 @@ fun TransactionConfirmation(
         
         Spacer(modifier = Modifier.height(16.dp))
         
+        // ==================== MULTISIG INFO CARD ====================
+        if (psbtDetails.isMultisig) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (psbtDetails.isReadyToBroadcast) 
+                        MaterialTheme.colorScheme.tertiaryContainer
+                    else 
+                        MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Multisig Transaction",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (psbtDetails.isReadyToBroadcast)
+                            MaterialTheme.colorScheme.onTertiaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Signature progress
+                    Text(
+                        text = "${psbtDetails.currentSignatures} of ${psbtDetails.requiredSignatures} signatures",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (psbtDetails.isReadyToBroadcast)
+                            MaterialTheme.colorScheme.onTertiaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Progress bar
+                    LinearProgressIndicator(
+                        progress = { 
+                            psbtDetails.currentSignatures.toFloat() / psbtDetails.requiredSignatures.toFloat() 
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = if (psbtDetails.isReadyToBroadcast)
+                            MaterialTheme.colorScheme.tertiary
+                        else
+                            MaterialTheme.colorScheme.secondary,
+                        trackColor = if (psbtDetails.isReadyToBroadcast)
+                            MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f)
+                        else
+                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f)
+                    )
+                    
+                    if (psbtDetails.isReadyToBroadcast) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "✓ Ready to broadcast",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "${psbtDetails.requiredSignatures - psbtDetails.currentSignatures} more signature${if (psbtDetails.requiredSignatures - psbtDetails.currentSignatures != 1) "s" else ""} needed",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+        
         // Toggles row - both side by side with equal width
         Row(
             modifier = Modifier.fillMaxWidth(),

@@ -85,6 +85,29 @@ object DerivationPaths {
         return "m/44'/$coinType/$account'"
     }
 
+    /**
+     * BIP48 script type constants:
+     * - 1' = P2SH-P2WSH (Ypub/Upub)
+     * - 2' = P2WSH native segwit (Zpub/Vpub)
+     */
+    enum class Bip48ScriptType(val value: String) {
+        P2SH_P2WSH("1'"),
+        P2WSH("2'")
+    }
+
+    /**
+     * Build BIP48 multisig path: m/48'/coin'/account'/script_type'
+     *
+     * @param account Account number (default 0)
+     * @param testnet Whether to use testnet coin type
+     * @param scriptType BIP48 script type (P2WSH or P2SH-P2WSH)
+     * @return Derivation path string
+     */
+    fun bip48(account: Int = 0, testnet: Boolean = false, scriptType: Bip48ScriptType = Bip48ScriptType.P2WSH): String {
+        val coinType = if (testnet) COIN_TYPE_TESTNET else COIN_TYPE_MAINNET
+        return "m/48'/$coinType/$account'/${scriptType.value}"
+    }
+
     // === Path parsing utilities ===
 
     /** Extract account number from path, e.g. "m/84'/0'/5'" → 5 */

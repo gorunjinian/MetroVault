@@ -29,7 +29,8 @@ fun AdvancedSettingsScreen(
     wallet: Wallet,
     secureStorage: SecureStorage,
     userPreferencesRepository: UserPreferencesRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onViewSavedKeys: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -43,6 +44,8 @@ fun AdvancedSettingsScreen(
     var showDeleteAllWalletsDialog by remember { mutableStateOf(false) }
     var showDeletePasswordDialog by remember { mutableStateOf(false) }
     var showDisableAccountsWarningDialog by remember { mutableStateOf(false) }
+    var showKeysPasswordDialog by remember { mutableStateOf(false) }
+    var keysPasswordError by remember { mutableStateOf("") }
 
     // Check if any wallet has multiple accounts
     val walletsList by wallet.wallets.collectAsState()
@@ -239,6 +242,17 @@ fun AdvancedSettingsScreen(
                 )
             }
 
+            // View All Saved Keys
+            SettingsItem(
+                icon = R.drawable.ic_key,
+                title = "View All Saved Keys",
+                description = "Manage seed phrases stored in the vault",
+                onClick = { 
+                    keysPasswordError = ""
+                    showKeysPasswordDialog = true
+                }
+            )
+
             // Delete All Wallets
             SettingsItem(
                 icon = R.drawable.ic_delete,
@@ -379,6 +393,33 @@ fun AdvancedSettingsScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    // Password confirmation dialog for View All Saved Keys
+    if (showKeysPasswordDialog) {
+        ConfirmPasswordDialog(
+            onDismiss = {
+                showKeysPasswordDialog = false
+                keysPasswordError = ""
+            },
+            onConfirm = { password ->
+                val isDecoy = wallet.isDecoyMode
+                val isValidPassword = if (isDecoy) {
+                    secureStorage.isDecoyPassword(password)
+                } else {
+                    secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
+                }
+
+                if (isValidPassword) {
+                    showKeysPasswordDialog = false
+                    keysPasswordError = ""
+                    onViewSavedKeys()
+                } else {
+                    keysPasswordError = "Incorrect password"
+                }
+            },
+            errorMessage = keysPasswordError
         )
     }
 }
