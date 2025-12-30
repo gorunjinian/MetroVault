@@ -197,7 +197,7 @@ fun WalletsListContent(
 
                     WalletCard(
                         name = walletItem.name,
-                        masterFingerprint = walletItem.masterFingerprint,
+                        masterFingerprint = walletItem.masterFingerprint.uppercase(),
                         isTestnet = isWalletTestnet,
                         isMultisig = walletItem.isMultisig,
                         elevation = shadow,
