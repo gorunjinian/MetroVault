@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.Stable
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
+import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.data.model.WalletCreationError
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
@@ -21,6 +22,7 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
+import com.gorunjinian.metrovault.domain.manager.WalletSigningService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,7 +55,7 @@ class   Wallet(context: Context) {
     private val passphraseManager = com.gorunjinian.metrovault.domain.manager.PassphraseManager(secureStorage, bitcoinService)
     private val sessionManager = com.gorunjinian.metrovault.domain.manager.WalletSessionManager(secureStorage, passphraseManager)
     private val accountManager = com.gorunjinian.metrovault.domain.manager.WalletAccountManager(secureStorage)
-    private val signingService = com.gorunjinian.metrovault.domain.manager.WalletSigningService(secureStorage, bitcoinService)
+    private val signingService = WalletSigningService(secureStorage, bitcoinService)
 
     private val walletStates = ConcurrentHashMap<String, WalletState>()
     private val _walletMetadataList = mutableListOf<WalletMetadata>()
@@ -689,39 +691,19 @@ class   Wallet(context: Context) {
 
         /**
          * Signing failed with a specific error.
-         * @property error The error type
+         * @property error The error type (from WalletSigningService.SigningError)
          * @property message Human-readable error message
          */
         data class Failure(
-            val error: SigningError,
+            val error: WalletSigningService.SigningError,
             val message: String
         ) : PsbtSigningResult()
-    }
-
-    /**
-     * Specific error types for PSBT signing failures.
-     */
-    enum class SigningError {
-        /** No wallet is currently active/loaded */
-        NO_ACTIVE_WALLET,
-        /** Wallet state is not loaded (keys not in memory) */
-        WALLET_NOT_LOADED,
-        /** Multisig wallet has no local keys configured */
-        NO_LOCAL_KEYS,
-        /** Failed to load key material from storage */
-        KEY_LOAD_FAILED,
-        /** Multisig config is missing or invalid */
-        INVALID_MULTISIG_CONFIG,
-        /** PSBT signing operation failed (no inputs could be signed) */
-        SIGNING_FAILED,
-        /** Key derivation failed */
-        KEY_DERIVATION_FAILED
     }
 
     fun signPsbt(psbtString: String): PsbtSigningResult {
         val activeMetadata = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
             ?: return PsbtSigningResult.Failure(
-                SigningError.NO_ACTIVE_WALLET,
+                WalletSigningService.SigningError.NO_ACTIVE_WALLET,
                 "No wallet is currently active. Please open a wallet first."
             )
 
@@ -738,7 +720,7 @@ class   Wallet(context: Context) {
             // Single-sig: delegate to signing service
             val state = getActiveWalletState()
                 ?: return PsbtSigningResult.Failure(
-                    SigningError.WALLET_NOT_LOADED,
+                    WalletSigningService.SigningError.WALLET_NOT_LOADED,
                     "Wallet is not loaded. Please open the wallet first."
                 )
             signingService.signSingleSig(psbtString, state, isActiveWalletTestnet())
@@ -746,23 +728,10 @@ class   Wallet(context: Context) {
 
         // Map signing service result to public API result
         return when (result) {
-            is com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningResult.Success ->
+            is WalletSigningService.SigningResult.Success ->
                 PsbtSigningResult.Success(result.signedPsbt, result.alternativePathsUsed)
-            is com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningResult.Failure ->
-                PsbtSigningResult.Failure(mapSigningError(result.error), result.message)
-        }
-    }
-
-    /** Map internal signing error to public API error type */
-    private fun mapSigningError(error: com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningError): SigningError {
-        return when (error) {
-            com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningError.NO_ACTIVE_WALLET -> SigningError.NO_ACTIVE_WALLET
-            com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningError.WALLET_NOT_LOADED -> SigningError.WALLET_NOT_LOADED
-            com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningError.NO_LOCAL_KEYS -> SigningError.NO_LOCAL_KEYS
-            com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningError.KEY_LOAD_FAILED -> SigningError.KEY_LOAD_FAILED
-            com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningError.INVALID_MULTISIG_CONFIG -> SigningError.INVALID_MULTISIG_CONFIG
-            com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningError.SIGNING_FAILED -> SigningError.SIGNING_FAILED
-            com.gorunjinian.metrovault.domain.manager.WalletSigningService.SigningError.KEY_DERIVATION_FAILED -> SigningError.KEY_DERIVATION_FAILED
+            is WalletSigningService.SigningResult.Failure ->
+                PsbtSigningResult.Failure(result.error, result.message)
         }
     }
 
@@ -789,8 +758,8 @@ class   Wallet(context: Context) {
                     isChange = isChange,
                     isTestnet = isTestnet
                 )) {
-                    is MultisigAddressService.MultisigAddressResult.Success -> result.address
-                    is MultisigAddressService.MultisigAddressResult.Error -> null
+                    is Result.Success -> result.value
+                    is Result.Error -> null
                 }
             }
         }

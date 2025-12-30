@@ -14,6 +14,7 @@ import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
  *
  * Reference: https://github.com/satoshilabs/slips/blob/master/slip-0132.md
  */
+@Suppress("ConstPropertyName")
 object Bip48MultisigPrefixes {
 
     // P2WSH multisig mainnet (Zpub/Zprv) - BIP48 script type 2'

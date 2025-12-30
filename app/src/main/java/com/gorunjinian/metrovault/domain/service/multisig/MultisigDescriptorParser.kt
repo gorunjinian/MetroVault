@@ -4,6 +4,7 @@ import android.util.Log
 import com.gorunjinian.metrovault.data.model.CosignerInfo
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
+import com.gorunjinian.metrovault.data.model.Result
 
 /**
  * Parser for multisig output descriptors.
@@ -41,11 +42,8 @@ class MultisigDescriptorParser {
 
     /**
      * Result of parsing a descriptor.
+     * Returns Result<MultisigConfig, String> where success carries the parsed config and failure carries error message.
      */
-    sealed class ParseResult {
-        data class Success(val config: MultisigConfig) : ParseResult()
-        data class Error(val message: String) : ParseResult()
-    }
 
     /**
      * Data class for BSMS format parsing result.
@@ -68,7 +66,7 @@ class MultisigDescriptorParser {
      * @param localFingerprints List of fingerprints from local wallets to identify which keys we own
      * @return ParseResult with MultisigConfig on success, or error message
      */
-    fun parse(descriptor: String, localFingerprints: List<String>): ParseResult {
+    fun parse(descriptor: String, localFingerprints: List<String>): Result<MultisigConfig, String> {
         try {
             Log.d(TAG, "Parsing descriptor: ${descriptor.take(100)}...")
             Log.d(TAG, "Local fingerprints to match: $localFingerprints")
@@ -101,10 +99,10 @@ class MultisigDescriptorParser {
             val thresholdMatch = THRESHOLD_PATTERN.find(cleanDescriptor)
             if (thresholdMatch == null) {
                 Log.e(TAG, "Could not find threshold pattern in: ${cleanDescriptor.take(200)}")
-                return ParseResult.Error("Could not find multisig threshold in descriptor")
+                return Result.Error("Could not find multisig threshold in descriptor")
             }
             val threshold = thresholdMatch.groupValues[1].toIntOrNull()
-                ?: return ParseResult.Error("Invalid threshold value")
+                ?: return Result.Error("Invalid threshold value")
             Log.d(TAG, "Threshold (m): $threshold")
 
             // Extract all keys
@@ -113,7 +111,7 @@ class MultisigDescriptorParser {
 
             if (keyMatches.isEmpty()) {
                 Log.e(TAG, "No keys matched. Descriptor content around keys: ${cleanDescriptor.take(500)}")
-                return ParseResult.Error("No valid keys found in descriptor. Make sure the descriptor is in standard format.")
+                return Result.Error("No valid keys found in descriptor. Make sure the descriptor is in standard format.")
             }
 
             val cosigners = keyMatches.map { match ->
@@ -137,16 +135,16 @@ class MultisigDescriptorParser {
 
             // Validate threshold
             if (threshold > n) {
-                return ParseResult.Error("Threshold ($threshold) cannot be greater than number of keys ($n)")
+                return Result.Error("Threshold ($threshold) cannot be greater than number of keys ($n)")
             }
             if (threshold < 1) {
-                return ParseResult.Error("Threshold must be at least 1")
+                return Result.Error("Threshold must be at least 1")
             }
 
             // Check if we have at least one local key
             val localKeys = cosigners.filter { it.isLocal }
             if (localKeys.isEmpty()) {
-                return ParseResult.Error("None of the cosigner keys match your local wallets. Import the corresponding single-sig wallet first.")
+                return Result.Error("None of the cosigner keys match your local wallets. Import the corresponding single-sig wallet first.")
             }
             Log.d(TAG, "Local keys found: ${localKeys.size}")
 
@@ -159,11 +157,11 @@ class MultisigDescriptorParser {
                 rawDescriptor = extractedDescriptor // Keep extracted descriptor (handles both BSMS and plain)
             )
 
-            return ParseResult.Success(config)
+            return Result.Success(config)
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse descriptor: ${e.message}", e)
-            return ParseResult.Error("Failed to parse descriptor: ${e.message}")
+            return Result.Error("Failed to parse descriptor: ${e.message}")
         }
     }
 

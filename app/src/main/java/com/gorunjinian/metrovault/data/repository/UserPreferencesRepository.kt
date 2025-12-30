@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.gorunjinian.metrovault.data.repository
 
 import android.content.Context
@@ -19,7 +21,6 @@ import com.gorunjinian.metrovault.data.model.QuickShortcut
  * Migration to DataStore + Tink is planned for a future release.
  */
 @Stable
-@Suppress("DEPRECATION")
 class UserPreferencesRepository(context: Context) {
 
     private val masterKey = MasterKey.Builder(context)

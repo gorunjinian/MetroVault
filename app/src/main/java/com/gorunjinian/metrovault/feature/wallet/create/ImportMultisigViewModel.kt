@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.data.model.MultisigConfig
+import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
@@ -193,8 +194,8 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
             }
 
             when (result) {
-                is MultisigDescriptorParser.ParseResult.Success -> {
-                    val config = result.config
+                is Result.Success -> {
+                    val config = result.value
                     val defaultName = "${config.m}-of-${config.n} Multisig"
 
                     // Perform BSMS address verification if applicable
@@ -217,8 +218,8 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
                         )
                     }
                 }
-                is MultisigDescriptorParser.ParseResult.Error -> {
-                    showError(result.message)
+                is Result.Error -> {
+                    showError(result.error)
                 }
             }
         } catch (e: Exception) {
@@ -245,16 +246,17 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
             )
 
             when (result) {
-                is MultisigAddressService.MultisigAddressResult.Success -> {
-                    val generatedAddress = result.address.address
+                is Result.Success -> {
+                    val bitcoinAddress = result.value
+                    val generatedAddress = bitcoinAddress.address
                     val matches = generatedAddress == expectedAddress
                     if (!matches) {
                         Log.w(TAG, "BSMS address mismatch: expected=$expectedAddress, generated=$generatedAddress")
                     }
                     matches
                 }
-                is MultisigAddressService.MultisigAddressResult.Error -> {
-                    Log.e(TAG, "Failed to generate address for verification: ${result.message}")
+                is Result.Error -> {
+                    Log.e(TAG, "Failed to generate address for verification: ${result.error}")
                     false
                 }
             }

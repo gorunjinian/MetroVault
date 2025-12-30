@@ -40,11 +40,8 @@ object BSMS {
 
     /**
      * Result of parsing a BSMS format string.
+     * Uses Result<DescriptorRecord, String> for success with DescriptorRecord and failure with String error message.
      */
-    sealed class ParseResult {
-        data class Success(val record: DescriptorRecord) : ParseResult()
-        data class Error(val message: String) : ParseResult()
-    }
 
     /**
      * Result of BSMS data extraction (intermediate step before full parsing).

@@ -4,6 +4,7 @@ import android.util.Log
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
+import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.io.readNBytes
@@ -28,11 +29,8 @@ class MultisigAddressService {
 
     /**
      * Result of address generation.
+     * Returns Result<BitcoinAddress, String> where success carries the generated address and failure carries error message.
      */
-    sealed class MultisigAddressResult {
-        data class Success(val address: BitcoinAddress) : MultisigAddressResult()
-        data class Error(val message: String) : MultisigAddressResult()
-    }
 
     /**
      * Generates a multisig address at the specified index.
@@ -41,14 +39,14 @@ class MultisigAddressService {
      * @param index Address index
      * @param isChange Whether this is a change address (1) or receive address (0)
      * @param isTestnet Whether to generate testnet addresses
-     * @return MultisigAddressResult with the generated address or error
+     * @return Result<BitcoinAddress, String> with the generated address or error
      */
     fun generateMultisigAddress(
         config: MultisigConfig,
         index: Int,
         isChange: Boolean,
         isTestnet: Boolean
-    ): MultisigAddressResult {
+    ): Result<BitcoinAddress, String> {
         return try {
             val chainHash = BitcoinUtils.getChainHash(isTestnet)
             val changeIndex = if (isChange) 1L else 0L
@@ -66,7 +64,7 @@ class MultisigAddressService {
 
             if (childPubKeys.size != config.n) {
                 val failedList = failedCosigners.joinToString(", ")
-                return MultisigAddressResult.Error(
+                return Result.Error(
                     "Failed to derive keys from $failedList (got ${childPubKeys.size}/${config.n} keys)"
                 )
             }
@@ -94,7 +92,7 @@ class MultisigAddressService {
             }
 
             if (address == null) {
-                return MultisigAddressResult.Error("Failed to compute multisig address")
+                return Result.Error("Failed to compute multisig address")
             }
 
             val scriptType = when (config.scriptType) {
@@ -103,7 +101,7 @@ class MultisigAddressService {
                 MultisigScriptType.P2SH -> ScriptType.P2PKH
             }
 
-            MultisigAddressResult.Success(
+            Result.Success(
                 BitcoinAddress(
                     address = address,
                     derivationPath = "multisig/$changeIndex/$index",
@@ -115,7 +113,7 @@ class MultisigAddressService {
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to generate multisig address: ${e.message}", e)
-            MultisigAddressResult.Error("Failed to generate address: ${e.message}")
+            Result.Error("Failed to generate address: ${e.message}")
         }
     }
 
@@ -131,16 +129,18 @@ class MultisigAddressService {
         // Check receive addresses
         for (i in 0 until scanRange) {
             val result = generateMultisigAddress(config, i, isChange = false, isTestnet)
-            if (result is MultisigAddressResult.Success && result.address.address == address) {
-                return AddressCheckResult(true, result.address.derivationPath, i, false)
+            if (result is Result.Success<*, *> && (result.value as BitcoinAddress).address == address) {
+                val bitcoinAddress = result.value
+                return AddressCheckResult(true, bitcoinAddress.derivationPath, i, false)
             }
         }
 
         // Check change addresses
         for (i in 0 until scanRange) {
             val result = generateMultisigAddress(config, i, isChange = true, isTestnet)
-            if (result is MultisigAddressResult.Success && result.address.address == address) {
-                return AddressCheckResult(true, result.address.derivationPath, i, true)
+            if (result is Result.Success<*, *> && (result.value as BitcoinAddress).address == address) {
+                val bitcoinAddress = result.value
+                return AddressCheckResult(true, bitcoinAddress.derivationPath, i, true)
             }
         }
 
@@ -266,7 +266,7 @@ class MultisigAddressService {
                 return null
             }
 
-            // I = HMAC-SHA512(Key = cpar, Data = serP(Kpar) || ser32(i))
+            // I = HMAC-SHA512(Key =    cpar, Data = serP(Kpar) || ser32(i))
             val data = parentPublicKey + com.gorunjinian.metrovault.lib.bitcoin.crypto.Pack.writeInt32BE(index.toInt())
             val I = Crypto.hmac512(parentChaincode, data)
 
