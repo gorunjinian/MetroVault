@@ -26,8 +26,6 @@ import java.security.MessageDigest
  */
 object SeedQRUtils {
 
-    // ============== Standard SeedQR ==============
-
     /**
      * Converts a mnemonic word list to a Standard SeedQR digit string.
      *

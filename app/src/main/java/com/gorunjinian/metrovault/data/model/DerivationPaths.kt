@@ -89,12 +89,6 @@ object DerivationPaths {
         return regex.find(path)?.groupValues?.get(1)?.toIntOrNull() ?: 84
     }
 
-    /** Get coin type from path, e.g. "m/84'/1'/0'" → 1 (testnet) */
-    fun getCoinType(path: String): Int {
-        val regex = """m/\d+'/(\d+)'""".toRegex()
-        return regex.find(path)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-    }
-
     /** Check if a derivation path is for testnet (coin_type = 1') */
     fun isTestnet(path: String): Boolean = NetworkUtils.isTestnetPath(path)
 

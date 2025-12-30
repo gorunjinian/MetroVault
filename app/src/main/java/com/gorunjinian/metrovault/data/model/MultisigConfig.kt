@@ -104,7 +104,7 @@ data class CosignerInfo(
             fingerprint = json.getString("fingerprint").lowercase(),  // Normalize to lowercase
             derivationPath = json.getString("derivationPath"),
             isLocal = json.optBoolean("isLocal", false),
-            keyId = json.optString("keyId", null).takeIf { !it.isNullOrEmpty() }
+            keyId = json.optString("keyId", "").takeIf { it.isNotEmpty() }
         )
     }
 }

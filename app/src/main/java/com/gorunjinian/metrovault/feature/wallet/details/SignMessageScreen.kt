@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.Manifest
+import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,9 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -72,8 +73,8 @@ fun SignMessageScreen(
     var showSignatureQR by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
-    val clipboardManager = LocalClipboardManager.current
-    
+    val clipboard = LocalClipboard.current
+
     // Camera permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -317,7 +318,10 @@ fun SignMessageScreen(
                         if (signatureInput.isNotBlank()) {
                             IconButton(
                                 onClick = {
-                                    clipboardManager.setText(AnnotatedString(signatureInput))
+                                    scope.launch {
+                                        val clipData = ClipData.newPlainText("signature", signatureInput)
+                                        clipboard.setClipEntry(clipData.toClipEntry())
+                                    }
                                 }
                             ) {
                                 Icon(

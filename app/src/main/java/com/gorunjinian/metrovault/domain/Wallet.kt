@@ -15,14 +15,15 @@ import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletState
 import com.gorunjinian.metrovault.core.storage.SecureStorage
-import com.gorunjinian.metrovault.core.crypto.SecureByteArray
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
+import com.gorunjinian.metrovault.domain.service.bitcoin.KeyEncodingService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.manager.WalletSigningService
+import com.gorunjinian.metrovault.data.repository.WalletRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,6 +57,7 @@ class   Wallet(context: Context) {
     private val sessionManager = com.gorunjinian.metrovault.domain.manager.WalletSessionManager(secureStorage, passphraseManager)
     private val accountManager = com.gorunjinian.metrovault.domain.manager.WalletAccountManager(secureStorage)
     private val signingService = WalletSigningService(secureStorage, bitcoinService)
+    private val keyEncodingService = KeyEncodingService()
 
     private val walletStates = ConcurrentHashMap<String, WalletState>()
     private val _walletMetadataList = mutableListOf<WalletMetadata>()
@@ -69,10 +71,28 @@ class   Wallet(context: Context) {
 
     private var activeWalletId: String? = null
 
+    // Repository for wallet CRUD and state management
+    private var walletRepository: WalletRepository
+
     // isDecoyMode now delegated to sessionManager
     var isDecoyMode: Boolean
         get() = sessionManager.isDecoyMode
         private set(_) { /* no-op, managed by sessionManager */ }
+
+    init {
+        // Initialize repository with shared state
+        // Pass a lambda for isDecoyMode since it's dynamic (depends on session state)
+        walletRepository = WalletRepository(
+            secureStorage = secureStorage,
+            bitcoinService = bitcoinService,
+            passphraseManager = passphraseManager,
+            walletStates = walletStates,
+            walletMetadataList = _walletMetadataList,
+            walletsFlow = _wallets,
+            walletListLock = walletListLock,
+            getIsDecoyMode = { isDecoyMode }
+        )
+    }
 
     companion object {
         private const val TAG = "Wallet"
@@ -121,22 +141,9 @@ class   Wallet(context: Context) {
     /**
      * Loads wallet metadata list for display.
      * Fast operation (<10ms) - no decryption needed for metadata.
+     * Delegates to WalletRepository.
      */
-    suspend fun loadWalletList(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val list = secureStorage.loadAllWalletMetadata(isDecoyMode)
-            synchronized(walletListLock) {
-                _walletMetadataList.clear()
-                _walletMetadataList.addAll(list)
-                _wallets.value = _walletMetadataList.toList()
-            }
-            Log.d(TAG, "Loaded ${list.size} wallets")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load wallet list: ${e.message}", e)
-            false
-        }
-    }
+    suspend fun loadWalletList(): Boolean = walletRepository.loadWalletList()
 
     /**
      * Refreshes the wallet list using current session.
@@ -404,6 +411,7 @@ class   Wallet(context: Context) {
     /**
      * Opens a wallet - loads it into memory for operations.
      * Fast operation (<10ms) - just AES decryption.
+     * Delegates to WalletRepository for loading logic.
      */
     suspend fun openWallet(walletId: String, showLoading: Boolean = true): Boolean {
         // Already loaded and active
@@ -420,82 +428,13 @@ class   Wallet(context: Context) {
         if (showLoading) _isLoading.value = true
 
         return try {
-            withContext(Dispatchers.IO) {
-                loadWalletFull(walletId)
+            val (success, _) = walletRepository.loadWalletFull(walletId)
+            if (success) {
+                activeWalletId = walletId
             }
+            success
         } finally {
             if (showLoading) _isLoading.value = false
-        }
-    }
-
-    private suspend fun loadWalletFull(walletId: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode)
-                ?: return@withContext false
-
-            // Special handling for multisig wallets - they don't have secrets
-            if (metadata.isMultisig) {
-                // For multisig wallets, we don't load actual wallet crypto state
-                // We just need to set the wallet as active for viewing details
-                // The signing will be handled by loading the corresponding single-sig wallets
-                activeWalletId = walletId
-                Log.d(TAG, "Multisig wallet activated: $walletId")
-                return@withContext true
-            }
-
-            // Load key material from WalletKey (single-sig wallets have exactly one keyId)
-            val keyId = metadata.keyIds.firstOrNull()
-            if (keyId == null) {
-                Log.e(TAG, "No keyId found for wallet $walletId")
-                return@withContext false
-            }
-
-            val walletKey = secureStorage.loadWalletKey(keyId, isDecoyMode)
-            if (walletKey == null) {
-                Log.e(TAG, "Failed to load WalletKey $keyId for wallet $walletId")
-                return@withContext false
-            }
-
-            // Determine which BIP39 seed to use
-            // If hasPassphrase=true, check for session seed (computed from user-entered passphrase)
-            // Otherwise, use the stored seed directly
-            val seedToUse = if (metadata.hasPassphrase) {
-                // Check if user has entered passphrase this session
-                passphraseManager.getSessionSeed(walletId) ?: walletKey.bip39Seed  // Fallback to stored base seed
-            } else {
-                walletKey.bip39Seed
-            }
-
-            // Use active account's derivation path
-            val derivationPath = metadata.getActiveDerivationPath()
-
-            // Load wallet from pre-computed seed (fast - skips PBKDF2)
-            val walletResult = bitcoinService.createWalletFromSeed(seedToUse, derivationPath)
-                ?: return@withContext false
-
-            // Create secure mnemonic storage for in-memory use
-            val mnemonicBytes = walletKey.mnemonic.toByteArray()
-            val secureMnemonic = SecureByteArray(mnemonicBytes.size)
-            secureMnemonic.copyFrom(mnemonicBytes)
-            mnemonicBytes.fill(0) // Wipe intermediate
-
-            val walletState = WalletState(
-                name = metadata.name,
-                mnemonic = secureMnemonic,
-                derivationPath = derivationPath,
-                fingerprint = walletResult.fingerprint,
-                masterPrivateKey = walletResult.masterPrivateKey,
-                accountPrivateKey = walletResult.accountPrivateKey,
-                accountPublicKey = walletResult.accountPublicKey
-            )
-
-            walletStates[walletId] = walletState
-            activeWalletId = walletId
-            Log.d(TAG, "Wallet loaded: $walletId (fingerprint=${walletResult.fingerprint})")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load wallet: ${e.message}", e)
-            false
         }
     }
 
@@ -510,69 +449,18 @@ class   Wallet(context: Context) {
         }
     }
 
-    fun getActiveWalletState(): WalletState? = activeWalletId?.let { walletStates[it] }
+    fun getActiveWalletState(): WalletState? = walletRepository.getActiveWalletState(activeWalletId)
 
     // ==================== Wallet Operations ====================
 
-    suspend fun deleteWallet(walletId: String): Boolean = withContext(Dispatchers.IO) {
-        // Get metadata before deletion to check keyIds
-        val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode)
-        val keyIds = metadata?.keyIds ?: emptyList()
-        
-        unloadWallet(walletId)
-        synchronized(walletListLock) {
-            _walletMetadataList.removeAll { it.id == walletId }
-            _wallets.value = _walletMetadataList.toList()
-        }
-        
-        // Delete wallet (metadata and secrets)
-        val deleted = secureStorage.deleteWallet(walletId, isDecoyMode)
-        
-        // Clean up keys that are no longer referenced by any wallet
-        for (keyId in keyIds) {
-            secureStorage.deleteKeyIfUnreferenced(keyId, isDecoyMode)
-        }
-        
-        deleted
-    }
+    suspend fun deleteWallet(walletId: String): Boolean = walletRepository.deleteWallet(walletId)
 
     suspend fun renameWallet(walletId: String, newName: String): Boolean =
-        withContext(Dispatchers.IO) {
-            val metadata = synchronized(walletListLock) {
-                _walletMetadataList.find { it.id == walletId }
-            } ?: return@withContext false
+        walletRepository.renameWallet(walletId, newName)
 
-            val updated = metadata.copy(name = newName)
-            if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-                synchronized(walletListLock) {
-                    val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                    if (idx != -1) {
-                        _walletMetadataList[idx] = updated
-                        _wallets.value = _walletMetadataList.toList()
-                    }
-                }
-                walletStates[walletId]?.rename(newName)
-                true
-            } else false
-        }
+    fun swapWallets(index1: Int, index2: Int) = walletRepository.swapWallets(index1, index2)
 
-    fun swapWallets(index1: Int, index2: Int) {
-        synchronized(walletListLock) {
-            if (index1 in _walletMetadataList.indices && index2 in _walletMetadataList.indices) {
-                val temp = _walletMetadataList[index1]
-                _walletMetadataList[index1] = _walletMetadataList[index2]
-                _walletMetadataList[index2] = temp
-                _wallets.value = _walletMetadataList.toList()
-            }
-        }
-    }
-
-    suspend fun saveWalletListOrder(): Boolean = withContext(Dispatchers.IO) {
-        val orderedIds = synchronized(walletListLock) {
-            _walletMetadataList.map { it.id }
-        }
-        secureStorage.saveWalletOrder(orderedIds, isDecoyMode)
-    }
+    suspend fun saveWalletListOrder(): Boolean = walletRepository.saveWalletListOrder()
 
     // ==================== Account Management (delegated to WalletAccountManager) ====================
 
@@ -619,8 +507,7 @@ class   Wallet(context: Context) {
     // ==================== Memory Management ====================
 
     fun unloadWallet(walletId: String) {
-        walletStates[walletId]?.wipe()
-        walletStates.remove(walletId)
+        walletRepository.unloadWallet(walletId)
         if (activeWalletId == walletId) activeWalletId = null
     }
 
@@ -628,34 +515,21 @@ class   Wallet(context: Context) {
      * Wipe all wallet keys from memory but keep metadata list.
      * Use when navigating away from wallet screens (security).
      * Resets RAM to same state as fresh app launch.
+     * Delegates to WalletRepository.
      */
     fun unloadAllWalletKeys() {
-        val count = walletStates.size
-        walletStates.values.forEach { it.wipe() }
-        walletStates.clear()
-        passphraseManager.clearAll()  // Clear all passphrase-derived seeds
+        walletRepository.unloadAllWalletKeys()
         activeWalletId = null
-        Log.d(TAG, "Wiped $count wallet key(s) + session seeds from memory (HomeScreen navigation)")
     }
 
     /**
      * Full session wipe - clears both keys AND metadata.
      * Use for lock/logout/emergency wipe.
+     * Delegates to WalletRepository.
      */
     fun unloadAllWallets() {
-        val keyCount = walletStates.size
-        val metadataCount = _walletMetadataList.size
-        walletStates.values.forEach { it.wipe() }
-        walletStates.clear()
-        synchronized(walletListLock) {
-            _walletMetadataList.clear()
-            _wallets.value = emptyList()
-        }
+        walletRepository.unloadAllWallets()
         activeWalletId = null
-        Log.d(
-            TAG,
-            "Full session wipe: $keyCount keys + $metadataCount metadata cleared"
-        )
     }
 
     // ==================== Bitcoin Operations ====================
@@ -818,6 +692,7 @@ class   Wallet(context: Context) {
 
     /**
      * Gets the extended public key (xpub/ypub/zpub) for a specific account number.
+     * Delegates to KeyEncodingService with account derivation.
      *
      * @param baseDerivationPath Base derivation path for the wallet
      * @param accountNumber Account number to derive key for
@@ -826,22 +701,18 @@ class   Wallet(context: Context) {
     fun getXpubForAccount(baseDerivationPath: String, accountNumber: Int): String {
         val state = getActiveWalletState() ?: return ""
         val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
-        val scriptType = getScriptType(accountPath)
+        val scriptType = getScriptType(baseDerivationPath)
         val isTestnet = isActiveWalletTestnet()
-        
-        return try {
-            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
-            val accountPublicKey = accountPrivateKey.extendedPublicKey
-            bitcoinService.getAccountXpub(accountPublicKey, scriptType, isTestnet)
-        } catch (_: Exception) {
-            ""
-        }
+
+        return keyEncodingService.getXpubForAccount(
+            masterPrivateKey, baseDerivationPath, accountNumber, scriptType, isTestnet
+        )
     }
 
     /**
      * Gets the extended private key (xprv/yprv/zprv) for a specific account number.
      * WARNING: Contains private keys - handle with extreme care!
+     * Delegates to KeyEncodingService with account derivation.
      *
      * @param baseDerivationPath Base derivation path for the wallet
      * @param accountNumber Account number to derive key for
@@ -850,16 +721,12 @@ class   Wallet(context: Context) {
     fun getXprivForAccount(baseDerivationPath: String, accountNumber: Int): String {
         val state = getActiveWalletState() ?: return ""
         val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
-        val scriptType = getScriptType(accountPath)
+        val scriptType = getScriptType(baseDerivationPath)
         val isTestnet = isActiveWalletTestnet()
-        
-        return try {
-            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
-            bitcoinService.getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
-        } catch (_: Exception) {
-            ""
-        }
+
+        return keyEncodingService.getXprivForAccount(
+            masterPrivateKey, baseDerivationPath, accountNumber, scriptType, isTestnet
+        )
     }
 
     @Suppress("unused")
@@ -873,6 +740,7 @@ class   Wallet(context: Context) {
     /**
      * Gets the unified output descriptor (public/watch-only) for a specific account number.
      * Uses multipath syntax compatible with Sparrow, Bitcoin Core, etc.
+     * Delegates to KeyEncodingService with account derivation.
      *
      * @param baseDerivationPath Base derivation path for the wallet
      * @param accountNumber Account number to derive descriptor for
@@ -882,29 +750,18 @@ class   Wallet(context: Context) {
         val state = getActiveWalletState() ?: return ""
         val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
         val fingerprint = state.fingerprint
-        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
-        val scriptType = getScriptType(accountPath)
+        val scriptType = getScriptType(baseDerivationPath)
         val isTestnet = isActiveWalletTestnet()
-        
-        return try {
-            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
-            val accountPublicKey = accountPrivateKey.extendedPublicKey
-            
-            bitcoinService.getWalletDescriptor(
-                fingerprint = fingerprint,
-                accountPath = accountPath,
-                accountPublicKey = accountPublicKey,
-                scriptType = scriptType,
-                isTestnet = isTestnet
-            )
-        } catch (_: Exception) {
-            ""
-        }
+
+        return keyEncodingService.getUnifiedDescriptorForAccount(
+            fingerprint, masterPrivateKey, baseDerivationPath, accountNumber, scriptType, isTestnet
+        )
     }
 
     /**
      * Gets the private (spending) descriptor for a specific account number.
      * WARNING: Contains private keys - handle with extreme care!
+     * Delegates to KeyEncodingService with account derivation.
      *
      * @param baseDerivationPath Base derivation path for the wallet
      * @param accountNumber Account number to derive descriptor for
@@ -914,28 +771,18 @@ class   Wallet(context: Context) {
         val state = getActiveWalletState() ?: return ""
         val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
         val fingerprint = state.fingerprint
-        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
-        val scriptType = getScriptType(accountPath)
+        val scriptType = getScriptType(baseDerivationPath)
         val isTestnet = isActiveWalletTestnet()
-        
-        return try {
-            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
-            
-            bitcoinService.getPrivateWalletDescriptor(
-                fingerprint = fingerprint,
-                accountPath = accountPath,
-                accountPrivateKey = accountPrivateKey,
-                scriptType = scriptType,
-                isTestnet = isTestnet
-            )
-        } catch (_: Exception) {
-            ""
-        }
+
+        return keyEncodingService.getPrivateDescriptorForAccount(
+            fingerprint, masterPrivateKey, baseDerivationPath, accountNumber, scriptType, isTestnet
+        )
     }
 
     /**
      * Gets the BIP32 root key (master private key at depth 0).
      * WARNING: This is the root of all derived keys - handle with extreme care!
+     * Delegates to KeyEncodingService.
      *
      * @return Master private key as xprv (mainnet) or tprv (testnet), or empty string on error
      */
@@ -944,11 +791,7 @@ class   Wallet(context: Context) {
         val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
         val isTestnet = isActiveWalletTestnet()
 
-        return try {
-            masterPrivateKey.encode(isTestnet)
-        } catch (_: Exception) {
-            ""
-        }
+        return keyEncodingService.getBIP32RootKey(masterPrivateKey, isTestnet)
     }
 
     fun getMasterFingerprint(): String? {

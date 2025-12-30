@@ -33,6 +33,35 @@ class KeyEncodingService {
     }
 
     /**
+     * Gets the extended public key for a specific account number.
+     * Handles account derivation and encoding in one step.
+     *
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param baseDerivationPath Base derivation path for the wallet
+     * @param accountNumber Account number to derive key for
+     * @param scriptType Script type for determining prefix
+     * @param isTestnet Whether to use testnet prefixes
+     * @return Extended public key string (xpub/ypub/zpub etc), or empty string on error
+     */
+    fun getXpubForAccount(
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        baseDerivationPath: String,
+        accountNumber: Int,
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
+            val accountPublicKey = accountPrivateKey.extendedPublicKey
+            getAccountXpub(accountPublicKey, scriptType, isTestnet)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to derive xpub for account $accountNumber")
+            ""
+        }
+    }
+
+    /**
      * Gets the account extended private key encoded with appropriate prefix.
      * @param isTestnet Whether to use testnet prefixes (tprv/uprv/vprv)
      */
@@ -43,6 +72,35 @@ class KeyEncodingService {
     ): String {
         val prefix = getPrivateKeyPrefix(scriptType, isTestnet)
         return accountPrivateKey.encode(prefix)
+    }
+
+    /**
+     * Gets the extended private key for a specific account number.
+     * WARNING: Contains private keys - handle with extreme care!
+     * Handles account derivation and encoding in one step.
+     *
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param baseDerivationPath Base derivation path for the wallet
+     * @param accountNumber Account number to derive key for
+     * @param scriptType Script type for determining prefix
+     * @param isTestnet Whether to use testnet prefixes
+     * @return Extended private key string (xprv/yprv/zprv etc), or empty string on error
+     */
+    fun getXprivForAccount(
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        baseDerivationPath: String,
+        accountNumber: Int,
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
+            getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to derive xpriv for account $accountNumber")
+            ""
+        }
     }
 
     /**
@@ -108,6 +166,87 @@ class KeyEncodingService {
         val fp = fingerprint.toLongOrNull(16) ?: 0L
         val xpriv = getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
         return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpriv, scriptType)
+    }
+
+    /**
+     * Gets the unified output descriptor for a specific account number.
+     * Uses multipath syntax compatible with Sparrow, Bitcoin Core, etc.
+     *
+     * @param fingerprint Master fingerprint as hex string
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param baseDerivationPath Base derivation path for the wallet
+     * @param accountNumber Account number to derive descriptor for
+     * @param scriptType Script type for the wallet
+     * @param isTestnet Whether to use testnet key prefixes
+     * @return Descriptor string with checksum, or empty string on error
+     */
+    fun getUnifiedDescriptorForAccount(
+        fingerprint: String,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        baseDerivationPath: String,
+        accountNumber: Int,
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
+            val accountPublicKey = accountPrivateKey.extendedPublicKey
+            getWalletDescriptor(fingerprint, accountPath, accountPublicKey, scriptType, isTestnet)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to generate unified descriptor for account $accountNumber")
+            ""
+        }
+    }
+
+    /**
+     * Gets the private (spending) descriptor for a specific account number.
+     * WARNING: Contains private keys - handle with extreme care!
+     *
+     * @param fingerprint Master fingerprint as hex string
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param baseDerivationPath Base derivation path for the wallet
+     * @param accountNumber Account number to derive descriptor for
+     * @param scriptType Script type for the wallet
+     * @param isTestnet Whether to use testnet key prefixes
+     * @return Private descriptor string with checksum, or empty string on error
+     */
+    fun getPrivateDescriptorForAccount(
+        fingerprint: String,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        baseDerivationPath: String,
+        accountNumber: Int,
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNumber)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
+            getPrivateWalletDescriptor(fingerprint, accountPath, accountPrivateKey, scriptType, isTestnet)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to generate private descriptor for account $accountNumber")
+            ""
+        }
+    }
+
+    /**
+     * Gets the BIP32 root key (master private key at depth 0).
+     * WARNING: This is the root of all derived keys - handle with extreme care!
+     *
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param isTestnet Whether to use testnet prefix (tprv vs xprv)
+     * @return Master private key as xprv (mainnet) or tprv (testnet), or empty string on error
+     */
+    fun getBIP32RootKey(
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            masterPrivateKey.encode(isTestnet)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to encode BIP32 root key")
+            ""
+        }
     }
 
     // ==================== BIP48 Multisig Key Encoding ====================
