@@ -1,12 +1,16 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.DerivationPaths
+import com.gorunjinian.metrovault.data.model.DerivedWalletKeys
 import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.data.model.SigningResult
+import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
+import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
+import com.gorunjinian.metrovault.domain.service.util.hexToByteArray
 
 /**
  * Facade service for all Bitcoin-related operations.
@@ -22,18 +26,6 @@ class BitcoinService {
 
     companion object {
         private const val TAG = "BitcoinService"
-
-        /**
-         * Gets the appropriate chain hash (genesis block hash) based on network type.
-         * @see BitcoinUtils.getChainHash
-         */
-        fun getChainHash(isTestnet: Boolean): BlockHash = BitcoinUtils.getChainHash(isTestnet)
-
-        /**
-         * Gets the chain hash from a derivation path by checking the coin type.
-         * @see BitcoinUtils.getChainHashFromPath
-         */
-        fun getChainHashFromPath(derivationPath: String): BlockHash = BitcoinUtils.getChainHashFromPath(derivationPath)
     }
 
     // Delegate services
@@ -42,30 +34,38 @@ class BitcoinService {
     private val keyEncodingService = KeyEncodingService()
     private val psbtService = PsbtService()
 
-    /**
-     * Result of wallet creation operations.
-     */
-    data class WalletCreationResult(
-        val masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
-        val accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
-        val accountPublicKey: DeterministicWallet.ExtendedPublicKey,
-        val fingerprint: String
-    )
-
     // ==================== Mnemonic Operations (delegated to MnemonicService) ====================
 
     @Suppress("unused") // Public API for future use/testing
-    fun generateMnemonic(wordCount: Int = 24): List<String> = 
+    fun generateMnemonic(wordCount: Int = 24): List<String> =
         mnemonicService.generateMnemonic(wordCount)
 
     fun generateMnemonicWithUserEntropy(wordCount: Int = 24, userEntropy: ByteArray?): List<String> =
         mnemonicService.generateMnemonicWithUserEntropy(wordCount, userEntropy)
 
-    fun validateMnemonic(words: List<String>): Boolean = 
+    fun validateMnemonic(words: List<String>): Boolean =
         mnemonicService.validateMnemonic(words)
 
     fun calculateFingerprint(mnemonicWords: List<String>, passphrase: String): String? =
         mnemonicService.calculateFingerprint(mnemonicWords, passphrase)
+
+    /**
+     * Calculates master fingerprint from a hex-encoded BIP39 seed.
+     * Used for calculating fingerprints from session seeds (after passphrase derivation).
+     *
+     * @param seedHex Hex-encoded 64-byte BIP39 seed
+     * @return 8-character hex fingerprint or null on error
+     */
+    fun calculateFingerprintFromSeed(seedHex: String): String? {
+        return try {
+            val seedBytes = seedHex.hexToByteArray()
+            val masterPrivateKey = DeterministicWallet.generate(seedBytes.byteVector())
+            BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to calculate fingerprint from seed: ${e.message}")
+            null
+        }
+    }
 
     // ==================== Wallet Creation ====================
 
@@ -73,7 +73,7 @@ class BitcoinService {
         mnemonicWords: List<String>,
         passphrase: String = "",
         derivationPath: String
-    ): WalletCreationResult? {
+    ): DerivedWalletKeys? {
         return try {
             val seed = MnemonicCode.toSeed(mnemonicWords, passphrase)
             val masterPrivateKey = DeterministicWallet.generate(seed.byteVector())
@@ -83,7 +83,7 @@ class BitcoinService {
 
             val fingerprint = BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
 
-            WalletCreationResult(
+            DerivedWalletKeys(
                 masterPrivateKey = masterPrivateKey,
                 accountPrivateKey = accountPrivateKey,
                 accountPublicKey = accountPublicKey,
@@ -98,10 +98,10 @@ class BitcoinService {
     fun createWalletFromSeed(
         seedHex: String,
         derivationPath: String
-    ): WalletCreationResult? {
+    ): DerivedWalletKeys? {
         return try {
             Log.d(TAG, "createWalletFromSeed: path=$derivationPath, seedLen=${seedHex.length}")
-            val seedBytes = seedHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            val seedBytes = seedHex.hexToByteArray()
             Log.d(TAG, "Seed bytes length: ${seedBytes.size}")
             val masterPrivateKey = DeterministicWallet.generate(seedBytes.byteVector())
             Log.d(TAG, "Master key generated")
@@ -113,7 +113,7 @@ class BitcoinService {
             val fingerprint = BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
             Log.d(TAG, "Wallet created, fingerprint: $fingerprint")
 
-            WalletCreationResult(
+            DerivedWalletKeys(
                 masterPrivateKey = masterPrivateKey,
                 accountPrivateKey = accountPrivateKey,
                 accountPublicKey = accountPublicKey,
@@ -135,23 +135,13 @@ class BitcoinService {
         isTestnet: Boolean = false
     ): BitcoinAddress? = addressService.generateAddress(accountPublicKey, index, isChange, scriptType, isTestnet)
 
-    /**
-     * Data class for address key pair.
-     */
-    data class AddressKeyPair(
-        val publicKey: String,
-        val privateKeyWIF: String
-    )
-
     fun getAddressKeys(
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         index: Int,
         isChange: Boolean,
         isTestnet: Boolean = false
-    ): AddressKeyPair? {
-        val result = addressService.getAddressKeys(accountPrivateKey, index, isChange, isTestnet)
-        return result?.let { AddressKeyPair(it.publicKey, it.privateKeyWIF) }
-    }
+    ): AddressService.AddressKeyPair? =
+        addressService.getAddressKeys(accountPrivateKey, index, isChange, isTestnet)
 
     fun checkAddressBelongsToWallet(
         address: String,

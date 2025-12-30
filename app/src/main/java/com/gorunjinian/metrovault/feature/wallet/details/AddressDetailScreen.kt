@@ -30,9 +30,9 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.domain.service.BitcoinService
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
+import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 
 @Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,9 +51,8 @@ fun AddressDetailScreen(
     var showWarningDialog by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var showKeysDialog by remember { mutableStateOf(false) }
-    var passwordInput by remember { mutableStateOf("") }
     var passwordError by remember { mutableStateOf("") }
-    var addressKeys by remember { mutableStateOf<BitcoinService.AddressKeyPair?>(null) }
+    var addressKeys by remember { mutableStateOf<AddressService.AddressKeyPair?>(null) }
 
     val context = LocalContext.current
     val secureStorage = remember { SecureStorage(context) }

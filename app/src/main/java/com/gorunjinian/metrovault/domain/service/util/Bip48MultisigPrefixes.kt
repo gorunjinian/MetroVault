@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.util
 
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 
@@ -45,14 +45,9 @@ object Bip48MultisigPrefixes {
 
     /**
      * Check if prefix is a testnet xpub prefix (single-sig or multisig).
+     * Delegates to NetworkUtils for consistent testnet detection.
      */
-    fun isTestnetPrefix(prefix: Int): Boolean {
-        return prefix == DeterministicWallet.tpub ||
-               prefix == DeterministicWallet.upub ||
-               prefix == DeterministicWallet.vpub ||
-               prefix == Vpub ||
-               prefix == Upub
-    }
+    fun isTestnetPrefix(prefix: Int): Boolean = NetworkUtils.isTestnetPrefix(prefix)
 
     /**
      * Check if prefix is a valid xpub prefix (single-sig or multisig).

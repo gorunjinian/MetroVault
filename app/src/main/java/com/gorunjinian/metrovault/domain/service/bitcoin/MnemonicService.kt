@@ -1,9 +1,10 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector
+import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import java.security.MessageDigest
 import java.security.SecureRandom
 
@@ -88,10 +89,56 @@ class MnemonicService {
         }
     }
 
+    // ==================== Seed Generation (Centralized) ====================
+
+    /**
+     * Converts a mnemonic phrase to a BIP39 seed.
+     *
+     * WARNING: The caller is responsible for securely wiping the returned ByteArray
+     * from memory when done by calling seedBytes.fill(0).
+     *
+     * For automatic memory cleanup, prefer [toSeedWithSecureWipe].
+     *
+     * @param mnemonic List of mnemonic words
+     * @param passphrase Optional BIP39 passphrase (default empty)
+     * @return 64-byte BIP39 seed
+     */
+    fun toSeed(mnemonic: List<String>, passphrase: String = ""): ByteArray {
+        return MnemonicCode.toSeed(mnemonic, passphrase)
+    }
+
+    /**
+     * Converts a mnemonic phrase to a BIP39 seed and automatically wipes it after use.
+     *
+     * This is the preferred way to use seeds since it guarantees memory cleanup.
+     *
+     * @param mnemonic List of mnemonic words
+     * @param passphrase Optional BIP39 passphrase (default empty)
+     * @param block Callback that receives the seed bytes
+     * @return Result from the block
+     */
+    inline fun <T> toSeedWithSecureWipe(
+        mnemonic: List<String>,
+        passphrase: String = "",
+        block: (ByteArray) -> T
+    ): T {
+        val seedBytes = MnemonicCode.toSeed(mnemonic, passphrase)
+        return try {
+            block(seedBytes)
+        } finally {
+            seedBytes.fill(0)
+        }
+    }
+
+    /**
+     * Converts seed bytes to hex string format.
+     */
+    fun seedToHex(seedBytes: ByteArray): String = seedBytes.joinToString("") { "%02x".format(it) }
+
     /**
      * Calculates the master fingerprint from mnemonic and passphrase.
      * Used for real-time fingerprint preview in passphrase dialogs.
-     * 
+     *
      * @return 8-character hex fingerprint or null on error
      */
     fun calculateFingerprint(mnemonicWords: List<String>, passphrase: String): String? {

@@ -14,13 +14,19 @@ import kotlinx.coroutines.delay
 /**
  * Dialog for re-entering BIP39 passphrase when opening a wallet
  * that has hasPassphrase = true (passphrase not saved locally).
- * 
+ *
  * Shows a live-updating master fingerprint as user types.
  * Fingerprint is red if it doesn't match the original.
+ *
+ * @param label Display name (wallet name for single-sig, key label for multi-sig)
+ * @param originalFingerprint Expected fingerprint for visual comparison
+ * @param onDismiss Called when user dismisses the dialog
+ * @param onConfirm Called when user confirms (passphrase can be empty)
+ * @param calculateFingerprint Function to calculate fingerprint from passphrase
  */
 @Composable
 fun PassphraseEntryDialog(
-    walletName: String,
+    label: String,
     originalFingerprint: String,  // From metadata (for comparison, NOT displayed)
     onDismiss: () -> Unit,
     onConfirm: (passphrase: String, calculatedFingerprint: String) -> Unit,
@@ -29,7 +35,7 @@ fun PassphraseEntryDialog(
     var passphrase by remember { mutableStateOf("") }
     var currentFingerprint by remember { mutableStateOf("") }
     var isCalculating by remember { mutableStateOf(true) }  // Start as true to show initial calculation
-    
+
     // Calculate fingerprint in real-time as user types (with debounce)
     LaunchedEffect(passphrase) {
         isCalculating = true
@@ -38,11 +44,11 @@ fun PassphraseEntryDialog(
         currentFingerprint = fingerprint ?: ""
         isCalculating = false
     }
-    
+
     // Mismatch if: fingerprint calculated AND doesn't match original
     // OR if still calculating/empty (initial state = mismatch since empty passphrase != original)
     val fingerprintMismatch = currentFingerprint.isEmpty() || currentFingerprint != originalFingerprint
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Enter Passphrase") },
@@ -52,7 +58,7 @@ fun PassphraseEntryDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = "Enter the BIP39 passphrase for \"$walletName\"",
+                    text = "Enter the BIP39 passphrase for \"$label\"",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 

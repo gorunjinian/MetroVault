@@ -1,5 +1,6 @@
 package com.gorunjinian.metrovault.data.model
 
+import com.gorunjinian.metrovault.domain.service.util.NetworkUtils
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -24,29 +25,18 @@ data class MultisigConfig(
 ) {
     /**
      * Determines if this is a testnet multisig wallet.
-     * Checks the cosigner derivation paths for coin_type=1' (testnet).
-     * Also checks xpub prefixes as fallback (tpub/Vpub/Upub = testnet).
+     * Delegates to NetworkUtils for consistent testnet detection across the codebase.
      */
     fun isTestnet(): Boolean {
-        // Check cosigner derivation paths for coin_type=1'
-        // Path format: "48h/1h/0h/2h" or "48'/1'/0'/2'" where second element is coin_type
+        // Check any cosigner's derivation path or xpub for testnet indicators
         for (cosigner in cosigners) {
-            val pathParts = cosigner.derivationPath.split("/").filter { it.isNotEmpty() }
-            if (pathParts.size >= 2) {
-                val coinType = pathParts[1].replace("'", "").replace("h", "")
-                if (coinType == "1") return true
-            }
-        }
-
-        // Fallback: check xpub prefixes
-        for (cosigner in cosigners) {
-            val xpub = cosigner.xpub.lowercase()
-            // Testnet prefixes: tpub, upub, vpub (lowercase single-sig), Vpub, Upub (uppercase multisig)
-            if (xpub.startsWith("tpub") || xpub.startsWith("upub") || xpub.startsWith("vpub")) {
+            if (NetworkUtils.isTestnet(
+                derivationPath = cosigner.derivationPath,
+                xpub = cosigner.xpub
+            )) {
                 return true
             }
         }
-
         return false
     }
 

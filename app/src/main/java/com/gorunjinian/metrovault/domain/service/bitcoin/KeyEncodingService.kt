@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.Descriptor
@@ -6,6 +6,8 @@ import com.gorunjinian.metrovault.lib.bitcoin.DescriptorExtensions
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.domain.service.util.Bip48MultisigPrefixes
+import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 
 /**
  * Service responsible for encoding extended keys and generating descriptors.
@@ -65,7 +67,7 @@ class KeyEncodingService {
     /**
      * Gets a unified output descriptor for the wallet with multipath syntax.
      * Compatible with Sparrow, Bitcoin Core, and other modern wallets.
-     * 
+     *
      * @param fingerprint Master fingerprint as hex string
      * @param accountPath Account derivation path (e.g., "m/84'/0'/0'")
      * @param accountPublicKey Account-level extended public key
@@ -88,7 +90,7 @@ class KeyEncodingService {
     /**
      * Gets a private (spending) unified output descriptor for the wallet.
      * WARNING: Contains private keys - handle with extreme care!
-     * 
+     *
      * @param fingerprint Master fingerprint as hex string
      * @param accountPath Account derivation path (e.g., "m/84'/0'/0'")
      * @param accountPrivateKey Account-level extended private key

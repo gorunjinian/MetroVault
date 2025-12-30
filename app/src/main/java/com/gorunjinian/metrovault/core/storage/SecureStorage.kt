@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.gorunjinian.metrovault.core.storage
 
 import android.content.Context
@@ -359,9 +361,13 @@ class SecureStorage(private val context: Context) {
         try {
             for (walletKey in walletKeys) {
                 val plaintext = walletKey.toJson().toByteArray()
-                val encrypted = sessionKeyManager.encrypt(plaintext)
-                val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
-                newEncryptedKeys[walletKey.keyId] = encoded
+                try {
+                    val encrypted = sessionKeyManager.encrypt(plaintext)
+                    val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
+                    newEncryptedKeys[walletKey.keyId] = encoded
+                } finally {
+                    plaintext.fill(0)  // Wipe sensitive plaintext from memory
+                }
             }
         } catch (e: Exception) {
             // Encryption failed - restore old session and abort
@@ -493,9 +499,10 @@ class SecureStorage(private val context: Context) {
     fun saveWalletSecrets(walletId: String, secrets: WalletSecrets, isDecoy: Boolean): Boolean {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
+        var plaintext: ByteArray? = null
         return try {
             val prefs = if (isDecoy) decoyPrefs else mainPrefs
-            val plaintext = secrets.toJson().toByteArray()
+            plaintext = secrets.toJson().toByteArray()
             val encrypted = sessionKeyManager.encrypt(plaintext)
             val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
             prefs.edit { putString("wallet_secrets_$walletId", encoded) }
@@ -504,6 +511,8 @@ class SecureStorage(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save secrets: ${e.message}", e)
             false
+        } finally {
+            plaintext?.fill(0)  // Wipe sensitive plaintext from memory
         }
     }
 
@@ -560,9 +569,10 @@ class SecureStorage(private val context: Context) {
     fun saveWalletKey(key: WalletKey, isDecoy: Boolean): Boolean {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
+        var plaintext: ByteArray? = null
         return try {
             val prefs = if (isDecoy) decoyPrefs else mainPrefs
-            val plaintext = key.toJson().toByteArray()
+            plaintext = key.toJson().toByteArray()
             val encrypted = sessionKeyManager.encrypt(plaintext)
             val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
             prefs.edit { putString("wallet_key_${key.keyId}", encoded) }
@@ -572,6 +582,8 @@ class SecureStorage(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save wallet key: ${e.message}", e)
             false
+        } finally {
+            plaintext?.fill(0)  // Wipe sensitive plaintext from memory
         }
     }
 

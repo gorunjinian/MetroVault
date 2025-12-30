@@ -1,11 +1,30 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.util
 
 import com.gorunjinian.metrovault.lib.bitcoin.Block
 import com.gorunjinian.metrovault.lib.bitcoin.BlockHash
 import com.gorunjinian.metrovault.lib.bitcoin.Crypto
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.PublicKey
-import com.gorunjinian.metrovault.data.model.DerivationPaths
+
+// ==================== Hex Encoding Extensions ====================
+
+/**
+ * Converts a ByteArray to a lowercase hex string.
+ * Example: byteArrayOf(0xCA.toByte(), 0xFE.toByte()) -> "cafe"
+ */
+fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
+
+/**
+ * Converts a hex string to a ByteArray.
+ * @throws IllegalArgumentException if the string length is odd or contains invalid hex chars
+ * Example: "cafe" -> byteArrayOf(0xCA.toByte(), 0xFE.toByte())
+ */
+fun String.hexToByteArray(): ByteArray {
+    require(length % 2 == 0) { "Hex string must have even length, got $length" }
+    return chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+}
+
+// ==================== Bitcoin Utilities ====================
 
 /**
  * Shared utility functions used across Bitcoin services.
@@ -18,13 +37,6 @@ object BitcoinUtils {
      */
     fun getChainHash(isTestnet: Boolean): BlockHash {
         return if (isTestnet) Block.Testnet4GenesisBlock.hash else Block.LivenetGenesisBlock.hash
-    }
-
-    /**
-     * Gets the chain hash from a derivation path by checking the coin type.
-     */
-    fun getChainHashFromPath(derivationPath: String): BlockHash {
-        return getChainHash(DerivationPaths.isTestnet(derivationPath))
     }
 
     /**

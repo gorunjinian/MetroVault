@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.multisig
 
 import android.util.Log
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
@@ -7,10 +7,15 @@ import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.io.readNBytes
+import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
+import com.gorunjinian.metrovault.domain.service.util.Bip48MultisigPrefixes
+import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
+import com.gorunjinian.metrovault.domain.service.util.ScriptUtils
+import com.gorunjinian.metrovault.domain.service.util.WalletConstants
 
 /**
  * Service for generating and verifying multisig addresses.
- * 
+ *
  * Generates P2WSH (and P2SH-P2WSH) addresses from multisig configurations.
  * Uses sortedmulti semantics: public keys are sorted lexicographically before
  * building the witness script.
@@ -31,7 +36,7 @@ class MultisigAddressService {
 
     /**
      * Generates a multisig address at the specified index.
-     * 
+     *
      * @param config The multisig configuration with all cosigner xpubs
      * @param index Address index
      * @param isChange Whether this is a change address (1) or receive address (0)
@@ -47,7 +52,7 @@ class MultisigAddressService {
         return try {
             val chainHash = BitcoinUtils.getChainHash(isTestnet)
             val changeIndex = if (isChange) 1L else 0L
-            
+
             // Derive child public keys from each cosigner's xpub
             // Track failures for better error reporting
             val failedCosigners = mutableListOf<String>()
@@ -58,20 +63,20 @@ class MultisigAddressService {
                         null
                     }
             }
-            
+
             if (childPubKeys.size != config.n) {
                 val failedList = failedCosigners.joinToString(", ")
                 return MultisigAddressResult.Error(
                     "Failed to derive keys from $failedList (got ${childPubKeys.size}/${config.n} keys)"
                 )
             }
-            
+
             // Sort public keys lexicographically (sortedmulti semantics)
             val sortedPubKeys = childPubKeys.sortedBy { it.toHex() }
-            
+
             // Build witness script: OP_m <pubkey1> <pubkey2> ... OP_n OP_CHECKMULTISIG
             val witnessScript = buildMultisigScript(config.m, sortedPubKeys)
-            
+
             // Generate address based on script type
             val address = when (config.scriptType) {
                 MultisigScriptType.P2WSH -> {
@@ -87,17 +92,17 @@ class MultisigAddressService {
                     computeP2shMultisigAddress(config.m, sortedPubKeys, chainHash)
                 }
             }
-            
+
             if (address == null) {
                 return MultisigAddressResult.Error("Failed to compute multisig address")
             }
-            
+
             val scriptType = when (config.scriptType) {
                 MultisigScriptType.P2WSH -> ScriptType.P2WPKH // Closest match for display
                 MultisigScriptType.P2SH_P2WSH -> ScriptType.P2SH_P2WPKH
                 MultisigScriptType.P2SH -> ScriptType.P2PKH
             }
-            
+
             MultisigAddressResult.Success(
                 BitcoinAddress(
                     address = address,
@@ -130,7 +135,7 @@ class MultisigAddressService {
                 return AddressCheckResult(true, result.address.derivationPath, i, false)
             }
         }
-        
+
         // Check change addresses
         for (i in 0 until scanRange) {
             val result = generateMultisigAddress(config, i, isChange = true, isTestnet)
@@ -138,7 +143,7 @@ class MultisigAddressService {
                 return AddressCheckResult(true, result.address.derivationPath, i, true)
             }
         }
-        
+
         return AddressCheckResult(false, null, null, null)
     }
 
@@ -148,7 +153,7 @@ class MultisigAddressService {
      * Derives a child public key from an extended public key string.
      * The xpub should already be at the account level (e.g., m/48'/0'/0'/2').
      * We then derive: xpub / changeIndex / addressIndex
-     * 
+     *
      * Note: This uses raw BIP32 derivation to avoid ExtendedPublicKey constructor validation
      * issues with descriptor xpubs that have inconsistent depth metadata.
      */
@@ -161,20 +166,20 @@ class MultisigAddressService {
         return try {
             // Extract raw key data from xpub
             val keyData = decodeXpubRaw(xpubString) ?: return null
-            
+
             // Derive: xpub / changeIndex / addressIndex using raw BIP32
             val level1 = deriveChildKeyRaw(keyData.publicKeyBytes, keyData.chaincode, changeIndex)
                 ?: return null
             val level2 = deriveChildKeyRaw(level1.first, level1.second, addressIndex)
                 ?: return null
-            
+
             PublicKey(level2.first.byteVector())
         } catch (e: Exception) {
             Log.e(TAG, "Failed to derive child key from xpub: ${e.message}")
             null
         }
     }
-    
+
     /**
      * Raw xpub data without the validation-problematic ExtendedPublicKey wrapper.
      */
@@ -215,38 +220,38 @@ class MultisigAddressService {
                 Log.e(TAG, "Invalid xpub prefix: $prefix (hex: ${prefix.toLong().toString(16)})")
                 return null
             }
-            
+
             // Parse xpub structure (78 bytes after prefix):
             // depth (1) + parent (4) + childNumber (4) + chaincode (32) + publicKey (33) = 74 bytes
             if (bin.size < 74) {
                 Log.e(TAG, "xpub data too short: ${bin.size}")
                 return null
             }
-            
+
             val bis = com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayInput(bin)
             bis.read() // depth - skip
             bis.readNBytes(4) // parent - skip
             bis.readNBytes(4) // childNumber - skip
             val chaincode = bis.readNBytes(32) ?: return null
             val publicKeyBytes = bis.readNBytes(33) ?: return null
-            
+
             // Validate public key is valid
             if (!Crypto.isPubKeyValid(publicKeyBytes)) {
                 Log.e(TAG, "Invalid public key in xpub")
                 return null
             }
-            
+
             RawXpubData(publicKeyBytes, chaincode)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to decode xpub raw: ${e.message} (len=${cleanedXpub.length})")
             null
         }
     }
-    
+
     /**
      * Performs raw BIP32 public key derivation without using ExtendedPublicKey.
      * Implements the child key derivation formula from BIP32.
-     * 
+     *
      * @return Pair of (childPublicKey, childChaincode) or null on failure
      */
     private fun deriveChildKeyRaw(
@@ -260,33 +265,33 @@ class MultisigAddressService {
                 Log.e(TAG, "Cannot derive hardened key from public key")
                 return null
             }
-            
+
             // I = HMAC-SHA512(Key = cpar, Data = serP(Kpar) || ser32(i))
             val data = parentPublicKey + com.gorunjinian.metrovault.lib.bitcoin.crypto.Pack.writeInt32BE(index.toInt())
             val I = Crypto.hmac512(parentChaincode, data)
-            
+
             val IL = I.take(32).toByteArray()
             val IR = I.takeLast(32).toByteArray()
-            
+
             // Validate IL is a valid private key
             if (!Crypto.isPrivKeyValid(IL)) {
                 Log.e(TAG, "IL is not a valid private key")
                 return null
             }
-            
+
             // Ki = point(parse256(IL)) + Kpar
             val ilPoint = PrivateKey(IL.byteVector32()).publicKey()
             val parentPoint = PublicKey(parentPublicKey.byteVector())
             val childPoint = ilPoint + parentPoint
-            
+
             val childPublicKey = childPoint.value.toByteArray()
-            
+
             // Validate result
             if (!Crypto.isPubKeyValid(childPublicKey)) {
                 Log.e(TAG, "Derived child key is invalid")
                 return null
             }
-            
+
             Pair(childPublicKey, IR)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to derive child key: ${e.message}")
@@ -317,7 +322,7 @@ class MultisigAddressService {
             // P2WSH: witness program is SHA256 of witness script
             val scriptBytes = Script.write(witnessScript)
             val witnessProgram = Crypto.sha256(scriptBytes)
-            
+
             // Encode as bech32 address
             val hrp = if (chainHash == Block.LivenetGenesisBlock.hash) "bc" else "tb"
             Bech32.encodeWitnessAddress(hrp, 0, witnessProgram)
@@ -336,17 +341,17 @@ class MultisigAddressService {
             val scriptBytes = Script.write(witnessScript)
             val witnessProgram = Crypto.sha256(scriptBytes)
             val p2wshScript = Script.pay2wsh(witnessProgram.byteVector32())
-            
+
             // Then wrap in P2SH
             val redeemScriptBytes = Script.write(p2wshScript)
             val scriptHash = Crypto.hash160(redeemScriptBytes)
-            
+
             val prefix = if (chainHash == Block.LivenetGenesisBlock.hash) {
                 Base58.Prefix.ScriptAddress
             } else {
                 Base58.Prefix.ScriptAddressTestnet
             }
-            
+
             Base58Check.encode(prefix, scriptHash)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to compute P2SH-P2WSH address: ${e.message}")
@@ -358,8 +363,8 @@ class MultisigAddressService {
      * Computes a legacy P2SH multisig address.
      */
     private fun computeP2shMultisigAddress(
-        m: Int, 
-        sortedPubKeys: List<PublicKey>, 
+        m: Int,
+        sortedPubKeys: List<PublicKey>,
         chainHash: BlockHash
     ): String? {
         return try {
@@ -367,13 +372,13 @@ class MultisigAddressService {
             val redeemScript = buildMultisigScript(m, sortedPubKeys)
             val redeemScriptBytes = Script.write(redeemScript)
             val scriptHash = Crypto.hash160(redeemScriptBytes)
-            
+
             val prefix = if (chainHash == Block.LivenetGenesisBlock.hash) {
                 Base58.Prefix.ScriptAddress
             } else {
                 Base58.Prefix.ScriptAddressTestnet
             }
-            
+
             Base58Check.encode(prefix, scriptHash)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to compute P2SH address: ${e.message}")

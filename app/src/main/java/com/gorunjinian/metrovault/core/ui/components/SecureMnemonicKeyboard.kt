@@ -104,9 +104,6 @@ fun SecureMnemonicKeyboard(
             "zxcvbnm"
         )
 
-        // Maximum number of keys in a row (first row has 10 letters)
-        val maxKeysPerRow = 10
-
         keyboardRows.forEachIndexed { rowIndex, row ->
             Row(
                 modifier = Modifier

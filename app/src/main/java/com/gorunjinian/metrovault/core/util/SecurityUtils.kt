@@ -40,21 +40,19 @@ object SecurityUtils {
      * @param view The view to disable autofill on
      */
     fun disableAutofill(view: View) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS = 0x8
-            // This tells the system not to use this view or any of its children for autofill
-            view.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-            
-            // Also clear any autofill hints that might trigger password manager
-            view.setAutofillHints(null)
-            
-            // Recursively apply to all children (in case the flag doesn't propagate correctly)
-            if (view is android.view.ViewGroup) {
-                for (i in 0 until view.childCount) {
-                    val child = view.getChildAt(i)
-                    child.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-                    child.setAutofillHints(null)
-                }
+        // IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS = 0x8
+        // This tells the system not to use this view or any of its children for autofill
+        view.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+
+        // Also clear any autofill hints that might trigger password manager
+        view.setAutofillHints(null)
+
+        // Recursively apply to all children (in case the flag doesn't propagate correctly)
+        if (view is android.view.ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                child.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                child.setAutofillHints(null)
             }
         }
     }
@@ -74,20 +72,6 @@ object SecurityUtils {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-        }
-    }
-
-    /**
-     * Clears clipboard after a delay
-     * Useful for automatically clearing sensitive data after copying
-     * 
-     * @param context Application context
-     * @param delayMs Delay in milliseconds before clearing (default: 60 seconds)
-     */
-    fun clearClipboardAfterDelay(context: Context, delayMs: Long = 60000) {
-        CoroutineScope(Dispatchers.Main).launch {
-            delay(delayMs)
-            clearClipboard(context)
         }
     }
 
@@ -118,7 +102,7 @@ object SecurityUtils {
                 // Only clear if the same content is still in clipboard
                 val currentClip = try {
                     clipboard?.primaryClip?.getItemAt(0)?.text?.toString()
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     null
                 }
                 if (currentClip == text) {

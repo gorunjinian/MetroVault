@@ -12,17 +12,12 @@ import com.gorunjinian.metrovault.lib.bitcoin.PSBTDecoder
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector32
 import com.gorunjinian.metrovault.lib.qrtools.registry.RegistryType
-import kotlin.math.ceil
+import androidx.core.graphics.get
 
 /**
  * Utilities for QR code generation including animated QR codes for large data.
  */
-@Suppress("KDocUnresolvedReference")
 object QRCodeUtils {
-
-    // Maximum bytes that can fit in a single QR code for easy scanning
-    // Reduced to 500 to ensure consistent, easily scannable QR codes across all frames
-    private const val MAX_QR_BYTES = 500
 
     // Prefix for animated QR code frames
     private const val ANIMATED_PREFIX = "p"  // p[part]/[total] format
@@ -123,7 +118,7 @@ object QRCodeUtils {
         
         for (y in 0 until height) {
             for (x in 0 until width) {
-                if (bitmap.getPixel(x, y) != backgroundColor) {
+                if (bitmap[x, y] != backgroundColor) {
                     if (x < minX) minX = x
                     if (y < minY) minY = y
                     if (x > maxX) maxX = x
@@ -191,95 +186,6 @@ object QRCodeUtils {
      */
     fun generateAddressQRCode(address: String, size: Int = 512): Bitmap? {
         return generateQRCode("bitcoin:$address", size)
-    }
-
-    /**
-     * Generates QR code for PSBT.
-     * For large PSBTs, returns null - use generatePSBTQRFrames instead.
-     */
-    fun generatePSBTQRCode(psbt: String, size: Int = 512): Bitmap? {
-        // Check if PSBT fits in a single QR code
-        if (psbt.length > MAX_QR_BYTES) {
-            return null // Use animated QR instead
-        }
-        return generateQRCode(psbt, size)
-    }
-
-    /**
-     * Check if content needs animated QR codes (multiple frames)
-     */
-    fun needsAnimatedQR(content: String): Boolean {
-        return content.length > MAX_QR_BYTES
-    }
-
-    /**
-     * Generates animated QR code frames for large PSBTs.
-     * Uses a simple format: "p[part]/[total] [data]"
-     *
-     * @param psbt The full PSBT base64 string
-     * @param size QR code size in pixels
-     * @return List of bitmap frames, or null on error
-     */
-    fun generatePSBTQRFrames(
-        psbt: String,
-        size: Int = 512,
-        foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE
-    ): List<Bitmap>? {
-        return try {
-            // Calculate chunk size accounting for header overhead
-            // Header format: "p1/10 " = max 8 chars for parts up to 99
-            val headerOverhead = 10
-            val chunkSize = MAX_QR_BYTES - headerOverhead
-
-            val chunks = splitIntoChunks(psbt, chunkSize)
-            val totalParts = chunks.size
-
-            // Build all frame contents first
-            val frameContents = chunks.mapIndexed { index, chunk ->
-                val partNumber = index + 1
-                "$ANIMATED_PREFIX$partNumber/$totalParts $chunk"
-            }
-            
-            // Generate with consistent density
-            generateConsistentQRCodes(frameContents, size, foregroundColor, backgroundColor)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    /**
-     * Alternative animated QR format using UR (Uniform Resources) style.
-     * Format: "ur:bytes/[part]/[total]/[data]"
-     * This is more compatible with some wallet implementations.
-     */
-    fun generateURQRFrames(
-        psbt: String,
-        size: Int = 512,
-        foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE
-    ): List<Bitmap>? {
-        return try {
-            // UR format has more overhead
-            val headerOverhead = 25
-            val chunkSize = MAX_QR_BYTES - headerOverhead
-
-            val chunks = splitIntoChunks(psbt, chunkSize)
-            val totalParts = chunks.size
-
-            // Build all frame contents first
-            val frameContents = chunks.mapIndexed { index, chunk ->
-                val partNumber = index + 1
-                "ur:bytes/$partNumber-$totalParts/$chunk"
-            }
-            
-            // Generate with consistent density
-            generateConsistentQRCodes(frameContents, size, foregroundColor, backgroundColor)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
     }
 
     /**
@@ -548,81 +454,6 @@ object QRCodeUtils {
             null
         }
     }
-    
-    /**
-     * Fallback to raw Base64 format.
-     */
-    private fun generateSmartPSBTQRRaw(
-        psbt: String,
-        size: Int = 512,
-        foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE
-    ): AnimatedQRResult? {
-        return try {
-            if (!needsAnimatedQR(psbt)) {
-                val bitmap = generateQRCode(psbt, size, foregroundColor, backgroundColor)
-                if (bitmap != null) {
-                    AnimatedQRResult(
-                        frames = listOf(bitmap),
-                        totalParts = 1,
-                        isAnimated = false,
-                        format = OutputFormat.UR_LEGACY
-                    )
-                } else null
-            } else {
-                val frames = generatePSBTQRFrames(psbt, size, foregroundColor, backgroundColor)
-                if (frames != null && frames.isNotEmpty()) {
-                    AnimatedQRResult(
-                        frames = frames,
-                        totalParts = frames.size,
-                        isAnimated = true,
-                        recommendedFrameDelayMs = if (frames.size > 5) 600 else 500,
-                        format = OutputFormat.UR_LEGACY
-                    )
-                } else null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-    
-    /**
-     * Generate animated QR frames for BC-UR ur:psbt/ format.
-     * Uses part markers: ur:psbt/1-5/[data_chunk]
-     */
-    private fun generateURPsbtFrames(
-        urPsbt: String,
-        size: Int = 512,
-        foregroundColor: Int = Color.BLACK,
-        backgroundColor: Int = Color.WHITE
-    ): List<Bitmap>? {
-        return try {
-            // Extract the data portion (after ur:psbt/)
-            val prefix = "ur:psbt/"
-            if (!urPsbt.lowercase().startsWith(prefix)) return null
-            val data = urPsbt.substring(prefix.length)
-            
-            // Calculate chunk size accounting for header overhead
-            // Format: ur:psbt/1-10/[data] = max ~15 chars overhead
-            val headerOverhead = 20
-            val chunkSize = MAX_QR_BYTES - headerOverhead
-
-            val chunks = splitIntoChunks(data, chunkSize)
-            val totalParts = chunks.size
-
-            // Build all frame contents first
-            val frameContents = chunks.mapIndexed { index, chunk ->
-                val partNumber = index + 1
-                "$prefix$partNumber-$totalParts/$chunk"
-            }
-            
-            // Generate with consistent density
-            generateConsistentQRCodes(frameContents, size, foregroundColor, backgroundColor)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
 
     /**
      * Parses animated QR frame to extract part info.
@@ -664,42 +495,6 @@ object QRCodeUtils {
                 }
                 else -> null
             }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    /**
-     * Reassembles data from multiple animated QR frames.
-     * Frames can be provided in any order.
-     *
-     * @param frames List of scanned frame contents
-     * @return The reassembled data, or null if incomplete/invalid
-     */
-    fun reassembleAnimatedFrames(frames: List<String>): String? {
-        return try {
-            if (frames.isEmpty()) return null
-
-            val parsedFrames = frames.mapNotNull { parseAnimatedFrame(it) }
-            if (parsedFrames.isEmpty()) {
-                // Not animated format, return single frame content
-                return if (frames.size == 1) frames[0] else null
-            }
-
-            val totalParts = parsedFrames.first().second
-
-            // Verify all frames agree on total parts
-            if (parsedFrames.any { it.second != totalParts }) return null
-
-            // Check we have all parts
-            val partNumbers = parsedFrames.map { it.first }.toSet()
-            if (partNumbers.size != totalParts) return null
-            if (partNumbers != (1..totalParts).toSet()) return null
-
-            // Sort by part number and concatenate data
-            parsedFrames
-                .sortedBy { it.first }
-                .joinToString("") { it.third }
         } catch (_: Exception) {
             null
         }
@@ -876,17 +671,6 @@ object QRCodeUtils {
                     PSBTDecoder.decode(combined) ?: combined
                 }
             }
-        }
-
-        /**
-         * Get missing part numbers (only for non-UR formats)
-         */
-        fun getMissingParts(): List<Int> {
-            if (detectedFormat == "ur-psbt" || detectedFormat == "ur") {
-                return emptyList() // UR fountain codes don't have sequential parts
-            }
-            val total = expectedTotal ?: return emptyList()
-            return (1..total).filter { it !in receivedFrames.keys }
         }
 
         /**
@@ -1205,7 +989,8 @@ object QRCodeUtils {
                     } ?: 0L
 
                     // Get child number from last path component
-                    val childNumber = originPath.split("/").filter { it.isNotEmpty() }.lastOrNull()?.let { component ->
+                    val childNumber = originPath.split("/").lastOrNull { it.isNotEmpty() }
+                        ?.let { component ->
                         val cleaned = component.replace("'", "").replace("h", "")
                         val num = cleaned.toLongOrNull() ?: 0L
                         if (component.contains("'") || component.contains("h")) {
@@ -1270,14 +1055,21 @@ object QRCodeUtils {
                 
                 val combinedData = sortedFrames.joinToString("")
                 
-                val bytes = when (encoding) {
-                    'H' -> decodeHex(combinedData)
-                    '2' -> decodeBase32(combinedData)
-                    'Z' -> decodeZlibBase32(combinedData)
-                    else -> null
-                } ?: return null
-                
-                return String(bytes, Charsets.UTF_8)
+                // Handle different BBQr encodings
+                // U = Uncompressed UTF-8 (raw text, no encoding)
+                // H = Hex encoded
+                // 2 = Base32 encoded
+                // Z = Zlib compressed + Base32 encoded
+                return when (encoding) {
+                    'U' -> combinedData  // Uncompressed UTF-8 - data is already the string
+                    'H' -> decodeHex(combinedData)?.let { String(it, Charsets.UTF_8) }
+                    '2' -> decodeBase32(combinedData)?.let { String(it, Charsets.UTF_8) }
+                    'Z' -> decodeZlibBase32(combinedData)?.let { String(it, Charsets.UTF_8) }
+                    else -> {
+                        android.util.Log.w("DescriptorQRScanner", "Unknown BBQr encoding: $encoding")
+                        null
+                    }
+                }
             } catch (e: Exception) {
                 android.util.Log.e("DescriptorQRScanner", "BBQr decode error: ${e.message}")
                 return null
@@ -1363,16 +1155,5 @@ object QRCodeUtils {
         }
         
         fun getDetectedFormat(): String? = detectedFormat
-    }
-
-    // ==================== Private Helpers ====================
-
-    private fun splitIntoChunks(data: String, chunkSize: Int): List<String> {
-        val numChunks = ceil(data.length.toDouble() / chunkSize).toInt()
-        return (0 until numChunks).map { i ->
-            val start = i * chunkSize
-            val end = minOf(start + chunkSize, data.length)
-            data.substring(start, end)
-        }
     }
 }

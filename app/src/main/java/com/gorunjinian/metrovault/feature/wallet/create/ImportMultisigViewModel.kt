@@ -7,7 +7,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.domain.service.MultisigDescriptorParser
+import com.gorunjinian.metrovault.domain.service.multisig.BSMS
+import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
+import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -29,6 +31,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
     // Dependencies
     private val wallet: Wallet by lazy { Wallet.getInstance(context) }
     private val descriptorParser = MultisigDescriptorParser()
+    private val addressService = MultisigAddressService()
 
     // ========== UI State ==========
 
@@ -49,7 +52,11 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
         // Animated QR scan progress
         val scanProgress: Int = 0,
         val isAnimatedScan: Boolean = false,
-        val scanProgressString: String = ""
+        val scanProgressString: String = "",
+        // BSMS address verification
+        val isBsmsFormat: Boolean = false,
+        val addressVerified: Boolean? = null, // null = not applicable, true/false = result
+        val verificationAddress: String? = null
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -155,32 +162,58 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
 
     /**
      * Process a decoded descriptor string.
+     * Supports both plain descriptor format and BSMS (BIP-0129) format.
+     * When BSMS format is detected, performs address verification.
      */
     private suspend fun processDescriptor(descriptor: String) {
         try {
             Log.d(TAG, "Processing descriptor: ${descriptor.take(100)}...")
-            
+
             _uiState.update { it.copy(isScanning = false) }
-            
+
+            // Check if this is BSMS format and extract verification info
+            val bsmsData = BSMS.extractFromInput(descriptor)
+            val isBsmsFormat = bsmsData.isBsmsFormat
+            val verificationAddress = bsmsData.verificationAddress
+
+            if (isBsmsFormat) {
+                Log.d(TAG, "Detected BSMS format")
+                if (verificationAddress != null) {
+                    Log.d(TAG, "BSMS verification address: $verificationAddress")
+                }
+            }
+
             // Get local wallet fingerprints for matching
             val localFingerprints = getLocalWalletFingerprints()
             Log.d(TAG, "Local fingerprints: $localFingerprints")
-            
+
             // Parse the descriptor
             val result = withContext(Dispatchers.Default) {
                 descriptorParser.parse(descriptor, localFingerprints)
             }
-            
+
             when (result) {
                 is MultisigDescriptorParser.ParseResult.Success -> {
                     val config = result.config
                     val defaultName = "${config.m}-of-${config.n} Multisig"
-                    
+
+                    // Perform BSMS address verification if applicable
+                    var addressVerified: Boolean? = null
+                    if (isBsmsFormat && verificationAddress != null) {
+                        addressVerified = withContext(Dispatchers.Default) {
+                            verifyBsmsAddress(config, verificationAddress)
+                        }
+                        Log.d(TAG, "BSMS address verification result: $addressVerified")
+                    }
+
                     _uiState.update {
                         it.copy(
                             screenState = ScreenState.PARSED,
                             parsedConfig = config,
-                            walletName = defaultName
+                            walletName = defaultName,
+                            isBsmsFormat = isBsmsFormat,
+                            addressVerified = addressVerified,
+                            verificationAddress = verificationAddress
                         )
                     }
                 }
@@ -191,6 +224,43 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
         } catch (e: Exception) {
             Log.e(TAG, "Error processing descriptor: ${e.message}", e)
             showError("Failed to process descriptor: ${e.message}")
+        }
+    }
+
+    /**
+     * Verify that the BSMS verification address matches the expected first receive address.
+     *
+     * @param config The parsed multisig configuration
+     * @param expectedAddress The verification address from BSMS record
+     * @return True if address matches, false otherwise
+     */
+    private fun verifyBsmsAddress(config: MultisigConfig, expectedAddress: String): Boolean {
+        return try {
+            val isTestnet = config.isTestnet()
+            val result = addressService.generateMultisigAddress(
+                config = config,
+                index = 0,
+                isChange = false,
+                isTestnet = isTestnet
+            )
+
+            when (result) {
+                is MultisigAddressService.MultisigAddressResult.Success -> {
+                    val generatedAddress = result.address.address
+                    val matches = generatedAddress == expectedAddress
+                    if (!matches) {
+                        Log.w(TAG, "BSMS address mismatch: expected=$expectedAddress, generated=$generatedAddress")
+                    }
+                    matches
+                }
+                is MultisigAddressService.MultisigAddressResult.Error -> {
+                    Log.e(TAG, "Failed to generate address for verification: ${result.message}")
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "BSMS address verification error: ${e.message}", e)
+            false
         }
     }
 

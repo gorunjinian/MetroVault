@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.psbt
 
 import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.*
@@ -9,6 +9,10 @@ import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.data.model.PsbtInput
 import com.gorunjinian.metrovault.data.model.PsbtOutput
 import com.gorunjinian.metrovault.data.model.SigningResult
+import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
+import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
+import com.gorunjinian.metrovault.domain.service.util.ScriptUtils
+import com.gorunjinian.metrovault.domain.service.util.WalletConstants
 
 /**
  * Service responsible for PSBT (Partially Signed Bitcoin Transaction) operations.
@@ -18,7 +22,7 @@ class PsbtService {
 
     companion object {
         private const val TAG = "PsbtService"
-        
+
         // Standard derivation path purposes to try when fingerprint matches but pubkey doesn't
         // This handles cases where coordinator wallets (e.g., Sparrow) convert paths
         private val STANDARD_SINGLE_SIG_PURPOSES = listOf(84, 44, 49, 86) // P2WPKH, P2PKH, P2SH-P2WPKH, P2TR
@@ -63,7 +67,7 @@ class PsbtService {
                     }
                 }
             }
-            
+
             // Compute wallet fingerprint for BIP-174 matching
             val walletFingerprint = BitcoinUtils.computeFingerprintLong(masterPrivateKey.publicKey)
 
@@ -112,7 +116,7 @@ class PsbtService {
 
             val signedBytes = Psbt.write(signedPsbt).toByteArray()
             val signedBase64 = android.util.Base64.encodeToString(signedBytes, android.util.Base64.NO_WRAP)
-            
+
             SigningResult(
                 signedPsbt = signedBase64,
                 usedAlternativePath = alternativePathsUsed.isNotEmpty(),
@@ -161,7 +165,7 @@ class PsbtService {
         return try {
             Log.d(TAG, "getPsbtDetails called, base64 length: ${psbtBase64.length}")
             Log.d(TAG, "Base64 prefix: ${psbtBase64.take(50)}...")
-            
+
             val chainHash = BitcoinUtils.getChainHash(isTestnet)
             val psbtBytes = try {
                 android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
@@ -169,10 +173,10 @@ class PsbtService {
                 Log.e(TAG, "Base64 decode failed: ${e.message}")
                 return null
             }
-            
+
             Log.d(TAG, "Decoded PSBT bytes length: ${psbtBytes.size}")
             Log.d(TAG, "First 20 bytes (hex): ${psbtBytes.take(20).joinToString("") { "%02x".format(it) }}")
-            
+
             // Try standard parsing first
             val psbt = when (val psbtResult = Psbt.read(psbtBytes)) {
                 is Either.Right -> {
@@ -203,7 +207,7 @@ class PsbtService {
             }
 
             val tx = psbt.global.tx
-            
+
             // Track multisig info across inputs
             var isMultisig = false
             var requiredSignatures = 1
@@ -214,7 +218,7 @@ class PsbtService {
             val inputs = tx.txIn.mapIndexed { index, txIn ->
                 val input = psbt.inputs.getOrNull(index)
                 val inputValue = getInputValue(input)
-                
+
                 // Extract input address from scriptPubKey
                 val inputAddress = input?.let { getInputScriptPubKey(it) }?.let { scriptPubKey ->
                     try {
@@ -227,18 +231,18 @@ class PsbtService {
                         null
                     }
                 } ?: "Unknown"
-                
+
                 // Analyze input for multisig and signature count
                 val (inputIsMultisig, inputM, inputN, sigCount) = analyzeInputSignatures(input)
-                
+
                 if (inputIsMultisig) {
                     isMultisig = true
                     requiredSignatures = inputM
                     totalSigners = inputN
                 }
-                
+
                 totalCurrentSignatures += sigCount
-                
+
                 // Check if this input has sufficient signatures
                 val inputSigned = if (inputIsMultisig) {
                     sigCount >= inputM
@@ -265,13 +269,13 @@ class PsbtService {
             val totalInput = inputs.sumOf { it.value }
             val totalOutput = outputs.sumOf { it.value }
             val fee = if (totalInput > 0) totalInput - totalOutput else null
-            
+
             val virtualSize = calculateVirtualSize(psbt, tx)
 
             PsbtDetails(
-                inputs = inputs, 
-                outputs = outputs, 
-                fee = fee, 
+                inputs = inputs,
+                outputs = outputs,
+                fee = fee,
                 virtualSize = virtualSize,
                 isMultisig = isMultisig,
                 requiredSignatures = requiredSignatures,
@@ -283,19 +287,19 @@ class PsbtService {
             null
         }
     }
-    
+
     /**
      * Analyzes a PSBT input for multisig information and signature count.
-     * 
+     *
      * @return Tuple of (isMultisig, m, n, currentSignatureCount)
      */
     private fun analyzeInputSignatures(input: Input?): InputSignatureInfo {
         if (input == null) return InputSignatureInfo(false, 1, 1, 0)
-        
+
         return when (input) {
             is Input.WitnessInput.PartiallySignedWitnessInput -> {
                 val sigCount = input.partialSigs.size
-                
+
                 // Check witness script for multisig pattern
                 val witnessScript = input.witnessScript
                 if (witnessScript != null) {
@@ -309,7 +313,7 @@ class PsbtService {
             }
             is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> {
                 val sigCount = input.partialSigs.size
-                
+
                 // Check redeem script for multisig pattern
                 val redeemScript = input.redeemScript
                 if (redeemScript != null) {
@@ -334,11 +338,11 @@ class PsbtService {
             }
         }
     }
-    
+
     /**
      * Parses a script to detect m-of-n multisig pattern.
      * Looks for: OP_m <pubkey1> <pubkey2> ... OP_n OP_CHECKMULTISIG
-     * 
+     *
      * @return Triple of (isMultisig, m, n)
      */
     private fun parseMultisigScript(script: List<ScriptElt>): Triple<Boolean, Int, Int> {
@@ -347,11 +351,11 @@ class PsbtService {
             if (script.isEmpty() || script.last() != OP_CHECKMULTISIG) {
                 return Triple(false, 1, 1)
             }
-            
+
             // Find OP_m at start and OP_n before OP_CHECKMULTISIG
             val m = ScriptUtils.opNumToInt(script.firstOrNull())
             val n = ScriptUtils.opNumToInt(script.getOrNull(script.size - 2))
-            
+
             if (m != null && n != null && m in 1..16 && n in 1..16 && m <= n) {
                 Triple(true, m, n)
             } else {
@@ -370,7 +374,7 @@ class PsbtService {
     private fun calculateVirtualSize(psbt: Psbt, tx: Transaction): Int {
         var hasSegwit = false
         var inputVBytes = 0.0
-        
+
         psbt.inputs.forEach { input ->
             val scriptPubKey = getInputScriptPubKey(input)
             if (scriptPubKey != null) {
@@ -403,7 +407,7 @@ class PsbtService {
                 inputVBytes += 68.0
             }
         }
-        
+
         // Calculate output vBytes: nValue(8) + scriptPubKey length(1) + scriptPubKey
         var outputVBytes = 0.0
         tx.txOut.forEach { txOut ->
@@ -422,7 +426,7 @@ class PsbtService {
                 outputVBytes += 31.0
             }
         }
-        
+
         // Overhead: version(4) + inputCount(1) + outputCount(1) + locktime(4) + segwit marker(0.5 if segwit)
         val overheadVBytes = if (hasSegwit) 10.5 else 10.0
         return (overheadVBytes + inputVBytes + outputVBytes).toInt()
@@ -431,7 +435,7 @@ class PsbtService {
     /**
      * Attempts to sign an input using BIP-174 derivation path metadata.
      * If fingerprint matches but derived pubkey doesn't match, tries alternative standard paths.
-     * 
+     *
      * @return Pair of (signed PSBT, alternative path used) or null if signing failed.
      *         The path string is non-null only when an alternative path was used for signing.
      */
@@ -468,7 +472,7 @@ class PsbtService {
                         val signed = signInput(psbt, inputIndex, input, signingPrivateKey, publicKey)
                         return signed?.let { Pair(it, null) }  // null = no alternative path
                     }
-                    
+
                     // Fingerprint matches but pubkey doesn't - try alternative paths
                     Log.w(TAG, "  Derived public key doesn't match PSBT key, trying alternative paths...")
                     val altResult = tryAlternativePaths(
@@ -487,19 +491,19 @@ class PsbtService {
             // Check taproot derivation paths
             for ((xOnlyPublicKey, taprootPath) in input.taprootDerivationPaths) {
                 if (taprootPath.masterKeyFingerprint == walletFingerprint) {
-                    
+
                     // Derive key using the full path from master
                     val signingPrivateKey = masterPrivateKey
                         .derivePrivateKey(taprootPath.keyPath)
                         .privateKey
-                    
+
                     // Verify derived x-only public key matches
                     val derivedXOnly = XonlyPublicKey(signingPrivateKey.publicKey())
                     if (derivedXOnly == xOnlyPublicKey) {
                         val signed = signInput(psbt, inputIndex, input, signingPrivateKey, signingPrivateKey.publicKey())
                         return signed?.let { Pair(it, null) }
                     }
-                    
+
                     // For Taproot, try alternative paths as well
                     Log.w(TAG, "  Taproot pubkey mismatch, trying alternative paths...")
                     val altResult = tryAlternativePaths(
@@ -522,11 +526,11 @@ class PsbtService {
             null
         }
     }
-    
+
     /**
      * Tries alternative standard derivation paths to find a matching public key.
      * This handles cases where coordinator wallets convert paths (e.g., m/84' -> m/48' for multisig).
-     * 
+     *
      * @param masterPrivateKey The master private key to derive from
      * @param expectedPublicKey The public key we're looking for
      * @param originalPath The original path from the PSBT that didn't match
@@ -543,9 +547,9 @@ class PsbtService {
         // Typical format: m/purpose'/coin'/account'/change/index
         val pathList = originalPath.path
         if (pathList.size < 3) return null  // Need at least purpose/coin/account
-        
+
         val coinType = if (isTestnet) DeterministicWallet.hardened(1) else DeterministicWallet.hardened(0)
-        
+
         // Try to extract account number (typically at index 2, hardened)
         val originalAccount = pathList.getOrNull(2) ?: return null
         val accountNum = if (DeterministicWallet.isHardened(originalAccount)) {
@@ -553,7 +557,7 @@ class PsbtService {
         } else {
             originalAccount
         }
-        
+
         // Get the child path (change/index portion after account level)
         // For m/48'/0'/0'/2'/0/5, child path would be [0, 5]
         // For paths with script type like m/48'/0'/0'/2'/0/5, need to skip the script type too
@@ -563,9 +567,9 @@ class PsbtService {
             else -> return null
         }
         val childPath = if (childStartIndex < pathList.size) pathList.subList(childStartIndex, pathList.size) else emptyList()
-        
+
         Log.d(TAG, "  tryAlternativePaths: original=$originalPath, account=$accountNum, childPath=$childPath")
-        
+
         // Try single-sig paths first (most common case: coordinator converted m/84 to m/48)
         for (purpose in STANDARD_SINGLE_SIG_PURPOSES) {
             try {
@@ -575,7 +579,7 @@ class PsbtService {
                     coinType,
                     DeterministicWallet.hardened(accountNum)
                 ) + childPath)
-                
+
                 val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
                 if (derivedKey.publicKey == expectedPublicKey) {
                     return Pair(derivedKey.privateKey, altPath.toString())
@@ -584,7 +588,7 @@ class PsbtService {
                 Log.d(TAG, "  Alternative path m/$purpose' failed: ${e.message}")
             }
         }
-        
+
         // Try BIP48 multisig paths
         for (scriptType in BIP48_SCRIPT_TYPES) {
             try {
@@ -595,7 +599,7 @@ class PsbtService {
                     DeterministicWallet.hardened(accountNum),
                     DeterministicWallet.hardened(scriptType.toLong())
                 ) + childPath)
-                
+
                 val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
                 if (derivedKey.publicKey == expectedPublicKey) {
                     return Pair(derivedKey.privateKey, altPath.toString())
@@ -604,7 +608,7 @@ class PsbtService {
                 Log.d(TAG, "  Alternative path m/48'/.../$ scriptType' failed: ${e.message}")
             }
         }
-        
+
         return null
     }
 
@@ -648,16 +652,16 @@ class PsbtService {
         // but must remove it afterwards per BIP-174 (P2WPKH doesn't use witnessScript field)
         var psbtToSign = psbt
         var addedWitnessScriptForP2wpkh = false
-        
+
         if (input is Input.WitnessInput.PartiallySignedWitnessInput && input.witnessScript == null) {
             // Check if this is actually P2WPKH
-            val pubkeyScript = runCatching { 
-                Script.parse(input.txOut.publicKeyScript) 
+            val pubkeyScript = runCatching {
+                Script.parse(input.txOut.publicKeyScript)
             }.getOrNull()
-            
+
             if (pubkeyScript != null && Script.isPay2wpkh(pubkeyScript)) {
                 val witnessScript = Script.pay2pkh(signingPublicKey)
-                
+
                 val updatedInput = input.copy(witnessScript = witnessScript)
                 val updatedInputs = psbt.inputs.toMutableList()
                 updatedInputs[inputIndex] = updatedInput
@@ -669,13 +673,13 @@ class PsbtService {
         return when (val signResult = psbtToSign.sign(signingPrivateKey, inputIndex)) {
             is Either.Right -> {
                 var signedPsbt = signResult.value.psbt
-                
+
                 // Remove the temporary witnessScript for P2WPKH - it should NOT be in the final PSBT
                 // as it causes some finalizers (like BlueWallet) to incorrectly add it to the witness
                 if (addedWitnessScriptForP2wpkh) {
                     signedPsbt = removeWitnessScriptFromInput(signedPsbt, inputIndex)
                 }
-                
+
                 signedPsbt
             }
             is Either.Left -> null
@@ -768,7 +772,7 @@ class PsbtService {
             "Unknown"
         }
     }
-    
+
     /**
      * Strips global xpub entries (keytype 0x01) from PSBT bytes.
      * This is a workaround for PSBTs with malformed xpub metadata that fail strict validation.
@@ -778,22 +782,22 @@ class PsbtService {
         return try {
             // PSBT structure: magic (5) + global section + inputs + outputs
             if (psbtBytes.size < 5) return null
-            
+
             // Verify magic header: "psbt\xff"
-            if (psbtBytes[0] != 0x70.toByte() || 
-                psbtBytes[1] != 0x73.toByte() || 
-                psbtBytes[2] != 0x62.toByte() || 
+            if (psbtBytes[0] != 0x70.toByte() ||
+                psbtBytes[1] != 0x73.toByte() ||
+                psbtBytes[2] != 0x62.toByte() ||
                 psbtBytes[3] != 0x74.toByte() ||
                 psbtBytes[4] != 0xff.toByte()) {
                 return null
             }
-            
+
             val output = java.io.ByteArrayOutputStream()
             // Write magic header
             output.write(psbtBytes, 0, 5)
-            
+
             var pos = 5
-            
+
             // Parse global section, excluding xpub entries (keytype 0x01)
             while (pos < psbtBytes.size) {
                 // Read key length
@@ -804,22 +808,22 @@ class PsbtService {
                     pos += keyLenBytes
                     break
                 }
-                
+
                 pos += keyLenBytes
                 if (pos + keyLen > psbtBytes.size) return null
-                
+
                 val keyStart = pos
                 val keyFirstByte = psbtBytes[pos]
                 pos += keyLen.toInt()
-                
+
                 // Read value length
                 val (valueLen, valueLenBytes) = readVarint(psbtBytes, pos)
                 pos += valueLenBytes
                 if (pos + valueLen > psbtBytes.size) return null
-                
+
                 val valueStart = pos
                 pos += valueLen.toInt()
-                
+
                 // Skip xpub entries (keytype 0x01), keep everything else
                 if (keyFirstByte != 0x01.toByte()) {
                     writeVarint(keyLen, output)
@@ -830,19 +834,19 @@ class PsbtService {
                     Log.d(TAG, "Stripping global xpub entry")
                 }
             }
-            
+
             // Copy the rest of the PSBT (inputs and outputs) unchanged
             if (pos < psbtBytes.size) {
                 output.write(psbtBytes, pos, psbtBytes.size - pos)
             }
-            
+
             output.toByteArray()
         } catch (e: Exception) {
             Log.e(TAG, "Error stripping global xpubs: ${e.message}")
             null
         }
     }
-    
+
     /**
      * Reads a varint from byte array at given position.
      * @return Pair of (value, bytesRead)
@@ -854,13 +858,13 @@ class PsbtService {
             first < 0xFD -> Pair(first.toLong(), 1)
             first == 0xFD -> {
                 if (pos + 2 >= bytes.size) return Pair(0, 0)
-                val v = ((bytes[pos + 1].toInt() and 0xFF) or 
+                val v = ((bytes[pos + 1].toInt() and 0xFF) or
                         ((bytes[pos + 2].toInt() and 0xFF) shl 8)).toLong()
                 Pair(v, 3)
             }
             first == 0xFE -> {
                 if (pos + 4 >= bytes.size) return Pair(0, 0)
-                val v = ((bytes[pos + 1].toInt() and 0xFF) or 
+                val v = ((bytes[pos + 1].toInt() and 0xFF) or
                         ((bytes[pos + 2].toInt() and 0xFF) shl 8) or
                         ((bytes[pos + 3].toInt() and 0xFF) shl 16) or
                         ((bytes[pos + 4].toInt() and 0xFF) shl 24)).toLong() and 0xFFFFFFFFL
@@ -876,7 +880,7 @@ class PsbtService {
             }
         }
     }
-    
+
     /**
      * Writes a varint to output stream.
      */
@@ -923,4 +927,3 @@ private data class InputSignatureInfo(
     val totalSigners: Int,
     val currentSignatures: Int
 )
-

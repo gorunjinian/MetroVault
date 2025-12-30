@@ -60,9 +60,19 @@ fun WalletDetailsScreen(
     // Calculate isTestnet early for app bar badge
     val derivationPath = wallet.getActiveWalletDerivationPath()
     val isTestnet = DerivationPaths.isTestnet(derivationPath)
-    
+
     // Check if multisig wallet
     val isMultisig = activeWalletMetadata?.isMultisig ?: false
+
+    // Calculated fingerprints for multi-sig local keys (reflects passphrase if entered)
+    var calculatedKeyFingerprints by remember { mutableStateOf<List<com.gorunjinian.metrovault.domain.manager.PassphraseManager.CalculatedKeyFingerprint>>(emptyList()) }
+
+    // Load calculated fingerprints when screen opens (for multi-sig wallets)
+    LaunchedEffect(activeWalletId, isMultisig) {
+        if (isMultisig && activeWalletId != null) {
+            calculatedKeyFingerprints = wallet.getCalculatedKeyFingerprints(activeWalletId)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -177,7 +187,7 @@ fun WalletDetailsScreen(
                         // For multisig: show local cosigner derivation paths (max 2)
                         // For single-sig: show the regular derivation path
                         val displayPath = if (isMultisig) {
-                            val localCosignerPaths = activeWalletMetadata?.multisigConfig?.cosigners
+                            val localCosignerPaths = activeWalletMetadata.multisigConfig?.cosigners
                                 ?.filter { it.isLocal }
                                 ?.map { "m/${it.derivationPath}" }
                                 ?: emptyList()
@@ -199,44 +209,73 @@ fun WalletDetailsScreen(
                         )
                     }
                     // Master Fingerprint display
-                    // For multisig: show local key fingerprints (up to 2, with "X more" if needed)
+                    // For multisig: show calculated local key fingerprints (reflects passphrase if entered)
                     // For single-sig: show single fingerprint
-                    val localFingerprints = if (isMultisig) {
-                        activeWalletMetadata.multisigConfig?.localKeyFingerprints ?: emptyList()
-                    } else {
-                        fingerprint?.let { listOf(it) } ?: emptyList()
-                    }
-                    
-                    if (localFingerprints.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (isMultisig && localFingerprints.size > 1) "Local Keys" else "Master Fingerprint",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
-                            
-                            // Format fingerprints: show up to 2, then "(X more)" if needed
-                            val displayFingerprints = localFingerprints.take(2).joinToString(", ") { it.uppercase() }
-                            val extraCount = localFingerprints.size - 2
-                            val fingerprintText = if (extraCount > 0) {
-                                "$displayFingerprints ($extraCount more)"
-                            } else {
-                                displayFingerprints
+                    if (isMultisig) {
+                        // Multi-sig: use calculated fingerprints (shows passphrase-derived fingerprint if entered)
+                        val displayFingerprints = if (calculatedKeyFingerprints.isNotEmpty()) {
+                            calculatedKeyFingerprints.map { it.calculatedFingerprint }
+                        } else {
+                            activeWalletMetadata.multisigConfig?.localKeyFingerprints ?: emptyList()
+                        }
+                        val hasAnyMismatch = calculatedKeyFingerprints.any { it.isMismatch }
+
+                        if (displayFingerprints.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (displayFingerprints.size > 1) "Local Keys" else "Master Fingerprint",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                )
+
+                                // Format fingerprints: show up to 2, then "(X more)" if needed
+                                val fingerprintsText = displayFingerprints.take(2).joinToString(", ") { it.uppercase() }
+                                val extraCount = displayFingerprints.size - 2
+                                val fingerprintText = if (extraCount > 0) {
+                                    "$fingerprintsText ($extraCount more)"
+                                } else {
+                                    fingerprintsText
+                                }
+
+                                Text(
+                                    text = fingerprintText,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (hasAnyMismatch)
+                                        MaterialTheme.colorScheme.error  // RED when any key has mismatch
+                                    else
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                )
                             }
-                            
-                            Text(
-                                text = fingerprintText,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = if (!isMultisig && fingerprintMismatch) 
-                                    MaterialTheme.colorScheme.error  // RED when mismatch (single-sig only)
-                                else 
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                        }
+                    } else {
+                        // Single-sig: show fingerprint with mismatch detection
+                        if (fingerprint != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Master Fingerprint",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                )
+
+                                Text(
+                                    text = fingerprint.uppercase(),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (fingerprintMismatch)
+                                        MaterialTheme.colorScheme.error  // RED when mismatch
+                                    else
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                         }
                     }
                 }

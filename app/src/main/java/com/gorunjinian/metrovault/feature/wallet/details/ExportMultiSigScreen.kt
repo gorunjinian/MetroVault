@@ -22,7 +22,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
+import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.lib.qrtools.UR
+import com.gorunjinian.metrovault.lib.qrtools.UREncoder
+import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -82,11 +86,11 @@ fun ExportMultiSigScreen(
     }
     
     // Generate QR code when content or QR format changes
-    LaunchedEffect(contentToEncode, selectedQRFormat) {
+    LaunchedEffect(contentToEncode, selectedQRFormat, selectedContentFormat) {
         isLoading = true
         currentFrame = 0
         qrResult = withContext(Dispatchers.IO) {
-            generateDescriptorQR(contentToEncode, selectedQRFormat)
+            generateDescriptorQR(contentToEncode, selectedQRFormat, selectedContentFormat)
         }
         isLoading = false
     }
@@ -339,46 +343,49 @@ fun ExportMultiSigScreen(
     }
 }
 
+/**
+ * Format descriptor as BSMS (BIP-0129) Descriptor Record.
+ * Uses centralized BSMS module for proper path restriction extraction.
+ *
+ * @param descriptor The output descriptor
+ * @param firstAddress The first receive address for verification
+ * @return BSMS formatted string (4 lines, LF separated)
+ */
 private fun formatAsBSMS(descriptor: String, firstAddress: String): String {
-    // Remove the checksum (everything after and including the last #)
-    val descriptorWithoutChecksum = if (descriptor.contains("#")) {
-        descriptor.substringBeforeLast("#")
-    } else {
-        descriptor
-    }
-    
-    return buildString {
-        appendLine("BSMS 1.0")
-        appendLine(descriptorWithoutChecksum)
-        appendLine("/0/*,/1/*")
-        append(firstAddress)
-    }
+    return BSMS.formatDescriptor(descriptor, firstAddress)
 }
 
 /**
- * Generate QR code for descriptor based on selected QR encoding format
+ * Generate QR code for descriptor based on selected QR and content format.
+ *
+ * @param content The content to encode (descriptor or BSMS formatted)
+ * @param format The QR encoding format
+ * @param contentFormat The content format (DESCRIPTOR or BSMS)
  */
 private fun generateDescriptorQR(
     content: String,
-    format: QRCodeUtils.OutputFormat
+    format: QRCodeUtils.OutputFormat,
+    contentFormat: ContentFormat
 ): QRCodeUtils.AnimatedQRResult? {
     return when (format) {
         QRCodeUtils.OutputFormat.UR_LEGACY -> generateDescriptorURv1(content)
         QRCodeUtils.OutputFormat.BBQR -> generateDescriptorBBQr(content)
-        QRCodeUtils.OutputFormat.UR_MODERN -> generateDescriptorURv2(content)
+        QRCodeUtils.OutputFormat.UR_MODERN -> generateDescriptorURv2(content, contentFormat)
     }
 }
 
 /**
- * Generate BC-UR v1 (ur:crypto-output) encoded descriptor QR
+ * Generate BC-UR v1 encoded descriptor QR.
+ * Uses ur:bytes/ encoding for broad compatibility with legacy wallets.
+ * This format wraps raw UTF-8 bytes in CBOR and encodes with fountain codes.
  */
 private fun generateDescriptorURv1(content: String): QRCodeUtils.AnimatedQRResult? {
     return try {
         // For BC-UR v1, we use ur:bytes encoding
         val contentBytes = content.toByteArray(Charsets.UTF_8)
         
-        val ur = com.gorunjinian.metrovault.lib.qrtools.UR.fromBytes("bytes", contentBytes)
-        val encoder = com.gorunjinian.metrovault.lib.qrtools.UREncoder(ur, 250, 50, 0)
+        val ur = UR.fromBytes("bytes", contentBytes)
+        val encoder = UREncoder(ur, 250, 50, 0)
         
         if (encoder.isSinglePart) {
             val urString = encoder.nextPart()
@@ -487,17 +494,29 @@ private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRRe
 }
 
 /**
- * Generate BC-UR v2 encoded descriptor QR
+ * Generate BC-UR v2 encoded descriptor QR.
+ *
+ * For raw descriptors: Uses ur:output-descriptor/ (UR 2.0 standard)
+ * For BSMS format: Uses ur:bytes/ (raw text encoding)
+ *
+ * @param content The content to encode
+ * @param contentFormat The content format (affects UR type selection)
  */
-private fun generateDescriptorURv2(descriptor: String): QRCodeUtils.AnimatedQRResult? {
+private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat): QRCodeUtils.AnimatedQRResult? {
     return try {
-        // For descriptors, we use simple ur:bytes encoding
-        // Convert descriptor to bytes and encode as UR
-        val descBytes = descriptor.toByteArray(Charsets.UTF_8)
-        
-        val ur = com.gorunjinian.metrovault.lib.qrtools.UR.fromBytes("bytes", descBytes)
-        val encoder = com.gorunjinian.metrovault.lib.qrtools.UREncoder(ur, 250, 50, 0)
-        
+        val ur = when (contentFormat) {
+            ContentFormat.DESCRIPTOR -> {
+                // Use ur:output-descriptor/ for raw descriptor - proper UR 2.0 type
+                createOutputDescriptorUR(content)
+            }
+            ContentFormat.BSMS -> {
+                // Use ur:bytes/ for BSMS multi-line text format
+                UR.fromBytes("bytes", content.toByteArray(Charsets.UTF_8))
+            }
+        }
+
+        val encoder = UREncoder(ur, 250, 50, 0)
+
         if (encoder.isSinglePart) {
             val urString = encoder.nextPart()
             val bitmap = QRCodeUtils.generateQRCode(urString.uppercase(), size = 512)
@@ -515,7 +534,7 @@ private fun generateDescriptorURv2(descriptor: String): QRCodeUtils.AnimatedQRRe
             repeat(seqLen) {
                 frameStrings.add(encoder.nextPart().uppercase())
             }
-            
+
             val bitmaps = QRCodeUtils.generateConsistentQRCodes(frameStrings, size = 512)
             bitmaps?.let {
                 QRCodeUtils.AnimatedQRResult(
@@ -530,7 +549,7 @@ private fun generateDescriptorURv2(descriptor: String): QRCodeUtils.AnimatedQRRe
     } catch (e: Exception) {
         android.util.Log.e("ExportMultiSigScreen", "BC-UR v2 generation failed: ${e.message}")
         // Fall back to plain text
-        val bitmap = QRCodeUtils.generateQRCode(descriptor, size = 512)
+        val bitmap = QRCodeUtils.generateQRCode(content, size = 512)
         bitmap?.let {
             QRCodeUtils.AnimatedQRResult(
                 frames = listOf(it),
@@ -540,4 +559,13 @@ private fun generateDescriptorURv2(descriptor: String): QRCodeUtils.AnimatedQRRe
             )
         }
     }
+}
+
+/**
+ * Create a UR with ur:output-descriptor/ type from a descriptor string.
+ * Uses UROutputDescriptor registry item for proper CBOR encoding.
+ */
+private fun createOutputDescriptorUR(descriptor: String): UR {
+    // Create UROutputDescriptor with the descriptor text and convert to UR
+    return UROutputDescriptor(descriptor).toUR()
 }

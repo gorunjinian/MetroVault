@@ -45,6 +45,7 @@ import kotlinx.coroutines.withContext
  * - Sign messages with their wallet's private key (BIP-137)
  * - Verify signatures against an address and message
  */
+@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignMessageScreen(
@@ -238,7 +239,7 @@ fun SignMessageScreen(
                                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
                                     .background(
                                         if (signatureFormat == format) MaterialTheme.colorScheme.primary
-                                        else androidx.compose.ui.graphics.Color.Transparent
+                                        else Color.Transparent
                                     )
                                     .clickable { signatureFormat = format }
                                     .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -572,7 +573,7 @@ private fun parseSignMessageQR(qrContent: String, wallet: Wallet): Pair<String, 
         val address = deriveAddressFromPath(pathString, wallet) ?: return null
         
         Pair(address, message)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         null
     }
 }
@@ -610,7 +611,7 @@ private fun deriveAddressFromPath(pathString: String, wallet: Wallet): String? {
         
         // Determine address type from path (84h = P2WPKH, 49h = P2SH-P2WPKH, 44h = P2PKH, 86h = P2TR)
         val purposeIndex = pathComponents.getOrNull(0) ?: return null
-        val chainHash = com.gorunjinian.metrovault.lib.bitcoin.Block.LivenetGenesisBlock.hash
+        val chainHash = Block.LivenetGenesisBlock.hash
         
         when (purposeIndex) {
             com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(84) -> 
@@ -623,7 +624,7 @@ private fun deriveAddressFromPath(pathString: String, wallet: Wallet): String? {
                 publicKey.xOnly().p2trAddress(chainHash)
             else -> publicKey.p2wpkhAddress(chainHash) // Default to P2WPKH
         }
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         null
     }
 }

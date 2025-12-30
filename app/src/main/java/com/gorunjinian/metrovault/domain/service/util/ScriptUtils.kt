@@ -1,10 +1,10 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.util
 
 import com.gorunjinian.metrovault.lib.bitcoin.*
 
 /**
  * Utility functions for working with Bitcoin Script elements.
- * 
+ *
  * Centralizes OP code mappings used by both MultisigAddressService and PsbtService
  * to avoid code duplication.
  */
@@ -13,7 +13,7 @@ object ScriptUtils {
     /**
      * Converts an integer (0-16) to the corresponding OP_N script element.
      * Used when building multisig scripts: OP_m <pubkeys> OP_n OP_CHECKMULTISIG
-     * 
+     *
      * @param n Integer value (0-16)
      * @return The corresponding OP_N script element
      * @throws IllegalArgumentException if n is outside 0-16 range
@@ -44,7 +44,7 @@ object ScriptUtils {
     /**
      * Converts an OP_N script element to its integer value.
      * Used when parsing multisig scripts to extract m and n values.
-     * 
+     *
      * @param op The script element (OP_0 through OP_16)
      * @return The integer value (0-16), or null if not a valid OP_N
      */

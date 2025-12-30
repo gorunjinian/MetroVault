@@ -1,9 +1,11 @@
-package com.gorunjinian.metrovault.domain.service
+package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
+import com.gorunjinian.metrovault.domain.service.util.WalletConstants
 
 /**
  * Service responsible for Bitcoin address operations.

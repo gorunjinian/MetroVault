@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -109,22 +110,19 @@ fun ImportMultisigScreen(
                 .padding(horizontal = 24.dp)
         ) {
             when (uiState.screenState) {
-                ImportMultisigViewModel.ScreenState.INITIAL -> {
-                    InitialScreen(
-                        onStartScanning = {
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                    )
-                }
-                
+                ImportMultisigViewModel.ScreenState.INITIAL,
                 ImportMultisigViewModel.ScreenState.SCANNING -> {
                     // Track last scanned frame to avoid duplicates
                     var lastScannedFrame by remember { mutableStateOf("") }
-                    
-                    ScanningScreen(
+
+                    InitialScreen(
+                        isScanning = uiState.isScanning,
                         scanProgress = uiState.scanProgress,
                         isAnimatedScan = uiState.isAnimatedScan,
                         scanProgressString = uiState.scanProgressString,
+                        onStartScanning = {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                        },
                         onBarcodeViewCreated = { view ->
                             barcodeView = view
                             view.decodeContinuous { result ->
@@ -132,10 +130,10 @@ fun ImportMultisigScreen(
                                     // Skip duplicate frames
                                     if (scannedText == lastScannedFrame) return@let
                                     lastScannedFrame = scannedText
-                                    
+
                                     // Process frame through ViewModel's scanner
                                     viewModel.processScannedFrame(scannedText)
-                                    
+
                                     // Pause scanner if scan is complete
                                     if (viewModel.descriptorScanner.isComplete()) {
                                         view.pause()
@@ -143,15 +141,17 @@ fun ImportMultisigScreen(
                                 }
                             }
                         },
-                        onCancel = { viewModel.cancelScanning() }
+                        onCancelScanning = { viewModel.cancelScanning() }
                     )
                 }
-                
+
                 ImportMultisigViewModel.ScreenState.PARSED -> {
                     ParsedDescriptorScreen(
                         parsedConfig = uiState.parsedConfig!!,
                         walletName = uiState.walletName,
                         isImporting = uiState.isImporting,
+                        isBsmsFormat = uiState.isBsmsFormat,
+                        addressVerified = uiState.addressVerified,
                         onWalletNameChange = { viewModel.setWalletName(it) },
                         onConfirmImport = { viewModel.importMultisigWallet() },
                         onCancel = { viewModel.resetToInitial() }
@@ -169,18 +169,23 @@ fun ImportMultisigScreen(
     }
 }
 
+@Suppress("COMPOSE_APPLIER_CALL_MISMATCH")
 @Composable
 private fun InitialScreen(
-    onStartScanning: () -> Unit
+    isScanning: Boolean,
+    scanProgress: Int,
+    isAnimatedScan: Boolean,
+    scanProgressString: String,
+    onStartScanning: () -> Unit,
+    onBarcodeViewCreated: (CompoundBarcodeView) -> Unit,
+    onCancelScanning: () -> Unit
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(32.dp))
-        
+
         // Info card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -201,16 +206,11 @@ private fun InitialScreen(
                     text = "Scan the multisig wallet's output descriptor QR code from the online wallet or coordinator.",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                Text(
-                    text = "You must have at least one of the multisig's keys already imported as a single-sig wallet in Metro Vault.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                )
             }
         }
-        
+
         Spacer(modifier = Modifier.height(24.dp))
-        
+
         // Supported formats hint
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -232,115 +232,98 @@ private fun InitialScreen(
                 )
             }
         }
-        
-        Spacer(modifier = Modifier.weight(1f))
-        
-        // Scan button
-        Button(
-            onClick = onStartScanning,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_qr_code_scanner),
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Scan Descriptor QR Code")
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-    }
-}
 
-@Composable
-private fun ScanningScreen(
-    scanProgress: Int = 0,
-    isAnimatedScan: Boolean = false,
-    scanProgressString: String = "",
-    onBarcodeViewCreated: (CompoundBarcodeView) -> Unit,
-    onCancel: () -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Text(
-            text = "Scan multisig descriptor QR code",
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Scanner view with progress overlay
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            Card(modifier = Modifier.fillMaxSize()) {
-                AndroidView(
-                    factory = { ctx ->
-                        CompoundBarcodeView(ctx).apply {
-                            onBarcodeViewCreated(this)
-                            setStatusText("")
-                            resume()
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            
-            // Progress overlay for animated QR scans
-            if (isAnimatedScan && scanProgress > 0 && scanProgress < 100) {
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Inline QR Scanner (shown when scanning)
+        if (isScanning) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
                 Card(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    AndroidView(
+                        factory = { ctx ->
+                            CompoundBarcodeView(ctx).apply {
+                                onBarcodeViewCreated(this)
+                                setStatusText("")
+                                resume()
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                // Progress overlay for animated QR scans
+                if (isAnimatedScan && scanProgress > 0 && scanProgress < 100) {
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
-                        Text(
-                            text = "Scanning Animated QR",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { scanProgress / 100f },
-                            modifier = Modifier
-                                .width(200.dp)
-                                .height(8.dp)
-                                .padding(0.dp),
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = scanProgressString,
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Scanning Animated QR",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { scanProgress / 100f },
+                                modifier = Modifier
+                                    .width(200.dp)
+                                    .height(8.dp),
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = scanProgressString,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        } else {
+            // Empty space when not scanning
+            Spacer(modifier = Modifier.weight(1f))
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        OutlinedButton(
-            onClick = onCancel,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Cancel")
+
+        // Scan/Cancel button
+        if (isScanning) {
+            OutlinedButton(
+                onClick = onCancelScanning,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Cancel")
+            }
+        } else {
+            Button(
+                onClick = onStartScanning,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_qr_code_scanner),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Scan Descriptor QR Code")
+            }
         }
-        
+
         Spacer(modifier = Modifier.height(24.dp))
     }
 }
@@ -350,6 +333,8 @@ private fun ParsedDescriptorScreen(
     parsedConfig: com.gorunjinian.metrovault.data.model.MultisigConfig,
     walletName: String,
     isImporting: Boolean,
+    isBsmsFormat: Boolean = false,
+    addressVerified: Boolean? = null,
     onWalletNameChange: (String) -> Unit,
     onConfirmImport: () -> Unit,
     onCancel: () -> Unit
@@ -385,7 +370,65 @@ private fun ParsedDescriptorScreen(
                 )
             }
         }
-        
+
+        // BSMS verification status (if applicable)
+        if (isBsmsFormat) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = when (addressVerified) {
+                        true -> MaterialTheme.colorScheme.secondaryContainer
+                        false -> MaterialTheme.colorScheme.errorContainer
+                        null -> MaterialTheme.colorScheme.surfaceVariant
+                    }
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = when (addressVerified) {
+                            true -> Icons.Default.CheckCircle
+                            false -> Icons.Default.Warning
+                            null -> Icons.Default.CheckCircle
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = when (addressVerified) {
+                            true -> MaterialTheme.colorScheme.primary
+                            false -> MaterialTheme.colorScheme.error
+                            null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Column {
+                        Text(
+                            text = "BSMS Format",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = when (addressVerified) {
+                                true -> "Address verified successfully"
+                                false -> "Address verification failed - proceed with caution"
+                                null -> "No verification address provided"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = when (addressVerified) {
+                                true -> MaterialTheme.colorScheme.onSecondaryContainer
+                                false -> MaterialTheme.colorScheme.onErrorContainer
+                                null -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
         
         // Wallet name input

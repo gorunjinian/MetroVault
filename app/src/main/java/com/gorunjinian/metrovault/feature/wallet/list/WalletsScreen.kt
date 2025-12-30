@@ -66,6 +66,11 @@ fun WalletsListContent(
     var pendingShortcut by remember { mutableStateOf<QuickShortcut?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     var expandedWalletId by remember { mutableStateOf<String?>(null) }
+
+    // Multi-sig passphrase dialog state
+    var multisigKeysNeedingPassphrase by remember { mutableStateOf<List<com.gorunjinian.metrovault.domain.manager.PassphraseManager.KeyPassphraseInfo>>(emptyList()) }
+    var currentKeyPassphraseIndex by remember { mutableIntStateOf(0) }
+    var pendingMultisigWalletId by remember { mutableStateOf<String?>(null) }
     
     // Delete wallet dialog state (single state drives the reusable component)
     var walletToDelete by remember { mutableStateOf<WalletMetadata?>(null) }
@@ -191,9 +196,7 @@ fun WalletsListContent(
                     }
 
                     WalletCard(
-                        walletId = walletItem.id,
                         name = walletItem.name,
-                        type = walletType,
                         masterFingerprint = walletItem.masterFingerprint,
                         isTestnet = isWalletTestnet,
                         isMultisig = walletItem.isMultisig,
@@ -206,17 +209,32 @@ fun WalletsListContent(
                         } else {
                             quickShortcuts
                         },
-                        onClick = { 
+                        onClick = {
                             if (draggingItemIndex == null) {
                                 if (isEditMode) {
                                     // In edit mode, tapping card opens rename dialog
                                     showRenameDialog = walletItem.id to walletItem.name
                                 } else {
                                     // Normal mode: navigate to wallet details
-                                    if (wallet.needsPassphraseInput(walletItem.id)) {
-                                        showPassphraseDialog = walletItem
+                                    if (walletItem.isMultisig) {
+                                        // Multi-sig: check if any local keys need passphrase
+                                        scope.launch {
+                                            val keysNeeding = wallet.getKeysNeedingPassphrase(walletItem.id)
+                                            if (keysNeeding.isNotEmpty()) {
+                                                multisigKeysNeedingPassphrase = keysNeeding
+                                                currentKeyPassphraseIndex = 0
+                                                pendingMultisigWalletId = walletItem.id
+                                            } else {
+                                                onWalletClick(walletItem.id)
+                                            }
+                                        }
                                     } else {
-                                        onWalletClick(walletItem.id)
+                                        // Single-sig: use existing passphrase check
+                                        if (wallet.needsPassphraseInput(walletItem.id)) {
+                                            showPassphraseDialog = walletItem
+                                        } else {
+                                            onWalletClick(walletItem.id)
+                                        }
                                     }
                                 }
                             }
@@ -235,7 +253,27 @@ fun WalletsListContent(
                         },
                         onShortcutClick = { shortcut ->
                             // Check if wallet needs passphrase re-entry before executing shortcut
-                            if (wallet.needsPassphraseInput(walletItem.id)) {
+                            if (walletItem.isMultisig) {
+                                // Multi-sig: check if any local keys need passphrase
+                                scope.launch {
+                                    val keysNeeding = wallet.getKeysNeedingPassphrase(walletItem.id)
+                                    if (keysNeeding.isNotEmpty()) {
+                                        pendingShortcut = shortcut
+                                        multisigKeysNeedingPassphrase = keysNeeding
+                                        currentKeyPassphraseIndex = 0
+                                        pendingMultisigWalletId = walletItem.id
+                                    } else {
+                                        when (shortcut) {
+                                            QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
+                                            QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
+                                            QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
+                                            QuickShortcut.EXPORT -> onExport(walletItem.id)
+                                            QuickShortcut.BIP85 -> onBIP85(walletItem.id)
+                                            QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
+                                        }
+                                    }
+                                }
+                            } else if (wallet.needsPassphraseInput(walletItem.id)) {
                                 pendingShortcut = shortcut
                                 showPassphraseDialog = walletItem
                             } else {
@@ -326,34 +364,34 @@ fun WalletsListContent(
         )
     }
 
-    // Passphrase re-entry dialog for wallets with unsaved passphrase
+    // Passphrase re-entry dialog for single-sig wallets with unsaved passphrase
     if (showPassphraseDialog != null) {
         val walletMeta = showPassphraseDialog!!
         var mnemonic by remember { mutableStateOf<List<String>?>(null) }
-        
+
         // Load mnemonic when dialog opens
         LaunchedEffect(walletMeta.id) {
             mnemonic = wallet.getMnemonicForWallet(walletMeta.id)
         }
-        
+
         if (mnemonic != null) {
             PassphraseEntryDialog(
-                walletName = walletMeta.name,
+                label = walletMeta.name,
                 originalFingerprint = walletMeta.masterFingerprint,
-                onDismiss = { 
+                onDismiss = {
                     showPassphraseDialog = null
                     pendingShortcut = null
                 },
-                onConfirm = { passphrase, calculatedFingerprint ->
+                onConfirm = { passphrase, _ ->
                     // Store session seed (computed from passphrase) and navigate
                     val shortcut = pendingShortcut
                     pendingShortcut = null
                     showPassphraseDialog = null
-                    
+
                     scope.launch {
                         // Compute and store BIP39 seed from passphrase
                         wallet.setSessionPassphrase(walletMeta.id, passphrase)
-                        
+
                         // Execute pending shortcut action or open wallet
                         if (shortcut != null) {
                             when (shortcut) {
@@ -374,6 +412,63 @@ fun WalletsListContent(
                 }
             )
         }
+    }
+
+    // Passphrase re-entry dialog for multi-sig wallet keys (sequential dialogs)
+    if (multisigKeysNeedingPassphrase.isNotEmpty() && currentKeyPassphraseIndex < multisigKeysNeedingPassphrase.size) {
+        val currentKey = multisigKeysNeedingPassphrase[currentKeyPassphraseIndex]
+        val walletId = pendingMultisigWalletId
+
+        PassphraseEntryDialog(
+            label = currentKey.label,
+            originalFingerprint = currentKey.fingerprint,
+            onDismiss = {
+                // Cancel all - clear state
+                multisigKeysNeedingPassphrase = emptyList()
+                currentKeyPassphraseIndex = 0
+                pendingMultisigWalletId = null
+                pendingShortcut = null
+            },
+            onConfirm = { passphrase, _ ->
+                scope.launch {
+                    // Store session seed for this key (empty passphrase = derive from base key)
+                    wallet.setSessionKeyPassphrase(currentKey.keyId, passphrase)
+
+                    // Move to next key or complete
+                    if (currentKeyPassphraseIndex + 1 < multisigKeysNeedingPassphrase.size) {
+                        // More keys to process
+                        currentKeyPassphraseIndex += 1
+                    } else {
+                        // All keys processed - execute pending action
+                        val shortcut = pendingShortcut
+
+                        // Clear state
+                        multisigKeysNeedingPassphrase = emptyList()
+                        currentKeyPassphraseIndex = 0
+                        pendingMultisigWalletId = null
+                        pendingShortcut = null
+
+                        if (walletId != null) {
+                            if (shortcut != null) {
+                                when (shortcut) {
+                                    QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletId)
+                                    QuickShortcut.SIGN_PSBT -> onScanPSBT(walletId)
+                                    QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletId)
+                                    QuickShortcut.EXPORT -> onExport(walletId)
+                                    QuickShortcut.BIP85 -> onBIP85(walletId)
+                                    QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletId)
+                                }
+                            } else {
+                                onWalletClick(walletId)
+                            }
+                        }
+                    }
+                }
+            },
+            calculateFingerprint = { passphrase ->
+                wallet.calculateFingerprint(currentKey.mnemonic, passphrase)
+            }
+        )
     }
     
     if (errorMessage.isNotEmpty()) {
@@ -403,9 +498,7 @@ fun WalletsListContent(
 @Composable
 fun WalletCard(
     modifier: Modifier = Modifier,
-    walletId: String,
     name: String,
-    type: String,
     masterFingerprint: String = "",
     isTestnet: Boolean = false,
     isMultisig: Boolean = false,

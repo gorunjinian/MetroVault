@@ -36,7 +36,6 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
  */
 @Composable
 fun SignedPSBTDisplay(
-    signedPSBT: String,
     signedQRResult: QRCodeUtils.AnimatedQRResult,
     currentFrame: Int,
     selectedFormat: QRCodeUtils.OutputFormat,
