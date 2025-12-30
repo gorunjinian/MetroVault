@@ -178,7 +178,6 @@ fun ScanPSBTScreen(
                 // ==================== SIGNED TRANSACTION DISPLAY ====================
                 signedPSBT != null && signedQRResult != null -> {
                     SignedPSBTDisplay(
-                        signedPSBT = signedPSBT!!,
                         signedQRResult = signedQRResult!!,
                         currentFrame = currentDisplayFrame,
                         selectedFormat = selectedOutputFormat,
