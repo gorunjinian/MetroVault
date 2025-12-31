@@ -15,6 +15,7 @@ import java.util.zip.Deflater
  * - BC-UR: Blockchain Commons Uniform Resources (ur:psbt/ and ur:crypto-psbt/)
  * - Hex: Raw hex-encoded PSBT
  */
+@Suppress("KDocUnresolvedReference")
 object PSBTDecoder {
     
     private const val TAG = "PSBTDecoder"

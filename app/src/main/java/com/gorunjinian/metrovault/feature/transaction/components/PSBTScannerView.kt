@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
  * - Animated multi-frame QR codes with progress tracking
  * - Camera permission handling
  */
+@Suppress("AssignedValueIsNeverRead")
 @Composable
 fun PSBTScannerView(
     hasCameraPermission: Boolean,

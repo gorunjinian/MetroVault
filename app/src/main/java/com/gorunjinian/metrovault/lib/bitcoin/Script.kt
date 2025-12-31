@@ -1,7 +1,7 @@
+@file:Suppress("SpellCheckingInspection")
+
 package com.gorunjinian.metrovault.lib.bitcoin
 
-import android.os.Build
-import androidx.annotation.RequiresApi
 import com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayInput
 import com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayOutput
 import com.gorunjinian.metrovault.lib.bitcoin.io.Input
@@ -11,12 +11,12 @@ import fr.acinq.secp256k1.Secp256k1
 import kotlin.jvm.JvmField
 import kotlin.jvm.JvmStatic
 
+@Suppress("unused")
 object Script {
     const val MAX_SCRIPT_SIZE: Int = 10000
     const val MAX_SCRIPT_ELEMENT_SIZE: Int = 520
-    public const val MAX_OPS_PER_SCRIPT: Int = 201
-    public const val MAX_STACK_SIZE: Int = 1000
-    const val LOCKTIME_THRESHOLD: Long = 500000000L
+    const val MAX_OPS_PER_SCRIPT: Int = 201
+    const val MAX_STACK_SIZE: Int = 1000
     const val WITNESS_V0_SCRIPTHASH_SIZE: Int = 32
     const val WITNESS_V0_KEYHASH_SIZE: Int = 20
     const val WITNESS_V1_TAPROOT_SIZE: Int = 32
@@ -26,7 +26,7 @@ object Script {
     // Validation weight per passing signature (Tapscript only, see BIP 342).
     const val VALIDATION_WEIGHT_PER_SIGOP_PASSED: Int = 50
 
-    // How much weight budget is added to the witness size (Tapscript only, see BIP 342).
+    // How much weight budget is added to the witness size (Tap-script only, see BIP 342).
     const val VALIDATION_WEIGHT_OFFSET: Int = 50
 
     val True: ByteVector = ByteVector("01")
@@ -266,7 +266,7 @@ object Script {
     }
 
     @JvmStatic
-    public fun isPayToScript(script: ByteArray): Boolean =
+    fun isPayToScript(script: ByteArray): Boolean =
         script.size == 23 && script[0] == OP_HASH160.code.toByte() && script[1] == 0x14.toByte() && script[22] == OP_EQUAL.code.toByte()
 
     @JvmStatic
@@ -280,16 +280,16 @@ object Script {
     }
 
     @JvmStatic
-    public fun isNativeWitnessScript(script: ByteVector): Boolean = runCatching { parse(script) }.map { isNativeWitnessScript(it) }.getOrDefault(false)
+    fun isNativeWitnessScript(script: ByteVector): Boolean = runCatching { parse(script) }.map { isNativeWitnessScript(it) }.getOrDefault(false)
 
     @JvmStatic
-    public fun pushSize(op: ScriptElt): Int? = when (op) {
+    fun pushSize(op: ScriptElt): Int? = when (op) {
         is OP_PUSHDATA -> op.data.size()
         else -> null
     }
 
     @JvmStatic
-    public fun getWitnessVersion(script: List<ScriptElt>): Int? = when {
+    fun getWitnessVersion(script: List<ScriptElt>): Int? = when {
         script.size != 2 -> null
         script[0] == OP_0 && (script[1].isPush(20) || script[1].isPush(32)) -> 0
         simpleValue(script[0]) in 1..16 && pushSize(script[1]) in 2..40 -> simpleValue(script[0]).toInt()
@@ -297,7 +297,7 @@ object Script {
     }
 
     @JvmStatic
-    public fun getWitnessVersion(script: ByteVector): Int? = runCatching { parse(script) }.map { getWitnessVersion(it) }.getOrDefault(null)
+    fun getWitnessVersion(script: ByteVector): Int? = runCatching { parse(script) }.map { getWitnessVersion(it) }.getOrDefault(null)
 
     /**
      * Creates a m-of-n multisig script.
@@ -308,7 +308,7 @@ object Script {
      * @return a multisig redeem script
      */
     @JvmStatic
-    public fun createMultiSigMofN(m: Int, pubkeys: List<PublicKey>): List<ScriptElt> {
+    fun createMultiSigMofN(m: Int, pubkeys: List<PublicKey>): List<ScriptElt> {
         require(m in 1..16) { "number of required signatures is $m, should be between 1 and 16" }
         require(pubkeys.count() in 1..16) { "number of public keys is ${pubkeys.size}, should be between 1 and 16" }
         require(m <= pubkeys.count()) { "The required number of signatures shouldn't be greater than the number of public keys" }
@@ -324,13 +324,13 @@ object Script {
      * @return script witness for the pay-to-witness-script-hash script containing a multisig script.
      */
     @JvmStatic
-    public fun witnessMultiSigMofN(pubKeys: List<PublicKey>, sigs: List<ByteVector>): ScriptWitness {
+    fun witnessMultiSigMofN(pubKeys: List<PublicKey>, sigs: List<ByteVector>): ScriptWitness {
         val redeemScript = write(createMultiSigMofN(sigs.size, pubKeys))
         return ScriptWitness(listOf(ByteVector.empty) + sigs + listOf(ByteVector(redeemScript)))
     }
 
     @JvmStatic
-    public fun isPay2pkh(script: List<ScriptElt>): Boolean {
+    fun isPay2pkh(script: List<ScriptElt>): Boolean {
         return when {
             script.size == 5 && script[0] == OP_DUP && script[1] == OP_HASH160 && script[2].isPush(20) && script[3] == OP_EQUALVERIFY && script[4] == OP_CHECKSIG -> true
             else -> false
@@ -338,10 +338,10 @@ object Script {
     }
 
     @JvmStatic
-    public fun isPay2pkh(script: ByteArray): Boolean = isPay2pkh(parse(script))
+    fun isPay2pkh(script: ByteArray): Boolean = isPay2pkh(parse(script))
 
     @JvmStatic
-    public fun isPay2sh(script: List<ScriptElt>): Boolean {
+    fun isPay2sh(script: List<ScriptElt>): Boolean {
         return when {
             script.size == 3 && script[0] == OP_HASH160 && script[1].isPush(20) && script[2] == OP_EQUAL -> true
             else -> false
@@ -349,10 +349,10 @@ object Script {
     }
 
     @JvmStatic
-    public fun isPay2sh(script: ByteArray): Boolean = isPay2sh(parse(script))
+    fun isPay2sh(script: ByteArray): Boolean = isPay2sh(parse(script))
 
     @JvmStatic
-    public fun isPay2wpkh(script: List<ScriptElt>): Boolean {
+    fun isPay2wpkh(script: List<ScriptElt>): Boolean {
         return when {
             script.size == 2 && script[0] == OP_0 && script[1].isPush(20) -> true
             else -> false
@@ -360,10 +360,10 @@ object Script {
     }
 
     @JvmStatic
-    public fun isPay2wpkh(script: ByteArray): Boolean = isPay2wpkh(parse(script))
+    fun isPay2wpkh(script: ByteArray): Boolean = isPay2wpkh(parse(script))
 
     @JvmStatic
-    public fun isPay2wsh(script: List<ScriptElt>): Boolean {
+    fun isPay2wsh(script: List<ScriptElt>): Boolean {
         return when {
             script.size == 2 && script[0] == OP_0 && script[1].isPush(32) -> true
             else -> false
@@ -371,10 +371,10 @@ object Script {
     }
 
     @JvmStatic
-    public fun isPay2wsh(script: ByteArray): Boolean = isPay2wsh(parse(script))
+    fun isPay2wsh(script: ByteArray): Boolean = isPay2wsh(parse(script))
 
     @JvmStatic
-    public fun isPay2tr(script: List<ScriptElt>): Boolean {
+    fun isPay2tr(script: List<ScriptElt>): Boolean {
         return when {
             script.size == 2 && script[0] == OP_1 && script[1].isPush(32) -> true
             else -> false
@@ -382,17 +382,17 @@ object Script {
     }
 
     @JvmStatic
-    public fun isPay2tr(script: ByteArray): Boolean = isPay2tr(parse(script))
+    fun isPay2tr(script: ByteArray): Boolean = isPay2tr(parse(script))
 
     @JvmStatic
-    public fun isPay2tr(script: ByteVector): Boolean = isPay2tr(script.toByteArray())
+    fun isPay2tr(script: ByteVector): Boolean = isPay2tr(script.toByteArray())
 
     /**
      * @param pubKeyHash public key hash
      * @return a pay-to-public-key-hash script
      */
     @JvmStatic
-    public fun pay2pkh(pubKeyHash: ByteArray): List<ScriptElt> {
+    fun pay2pkh(pubKeyHash: ByteArray): List<ScriptElt> {
         require(pubKeyHash.size == 20) { "pubkey hash length must be 20 bytes" }
         return listOf(OP_DUP, OP_HASH160, OP_PUSHDATA(pubKeyHash), OP_EQUALVERIFY, OP_CHECKSIG)
     }
@@ -402,49 +402,49 @@ object Script {
      * @return a pay-to-public-key-hash script
      */
     @JvmStatic
-    public fun pay2pkh(pubKey: PublicKey): List<ScriptElt> = pay2pkh(pubKey.hash160())
+    fun pay2pkh(pubKey: PublicKey): List<ScriptElt> = pay2pkh(pubKey.hash160())
 
     /**
      * @param script bitcoin script
      * @return a pay-to-script script
      */
     @JvmStatic
-    public fun pay2sh(script: List<ScriptElt>): List<ScriptElt> = pay2sh(write(script))
+    fun pay2sh(script: List<ScriptElt>): List<ScriptElt> = pay2sh(write(script))
 
     /**
      * @param script bitcoin script
      * @return a pay-to-script script
      */
     @JvmStatic
-    public fun pay2sh(script: ByteArray): List<ScriptElt> = listOf(OP_HASH160, OP_PUSHDATA(Crypto.hash160(script)), OP_EQUAL)
+    fun pay2sh(script: ByteArray): List<ScriptElt> = listOf(OP_HASH160, OP_PUSHDATA(Crypto.hash160(script)), OP_EQUAL)
 
     /**
      * @param script bitcoin script
      * @return a pay-to-witness-script script
      */
     @JvmStatic
-    public fun pay2wsh(script: List<ScriptElt>): List<ScriptElt> = pay2wsh(write(script))
+    fun pay2wsh(script: List<ScriptElt>): List<ScriptElt> = pay2wsh(write(script))
 
     /**
      * @param script bitcoin script
      * @return a pay-to-witness-script script
      */
     @JvmStatic
-    public fun pay2wsh(script: ByteArray): List<ScriptElt> = listOf(OP_0, OP_PUSHDATA(Crypto.sha256(script)))
+    fun pay2wsh(script: ByteArray): List<ScriptElt> = listOf(OP_0, OP_PUSHDATA(Crypto.sha256(script)))
 
     /**
      * @param script bitcoin script
      * @return a pay-to-witness-script script
      */
     @JvmStatic
-    public fun pay2wsh(script: ByteVector): List<ScriptElt> = pay2wsh(script.toByteArray())
+    fun pay2wsh(script: ByteVector): List<ScriptElt> = pay2wsh(script.toByteArray())
 
     /**
      * @param pubKeyHash public key hash
      * @return a pay-to-witness-public-key-hash script
      */
     @JvmStatic
-    public fun pay2wpkh(pubKeyHash: ByteArray): List<ScriptElt> {
+    fun pay2wpkh(pubKeyHash: ByteArray): List<ScriptElt> {
         require(pubKeyHash.size == 20) { "pubkey hash length must be 20 bytes" }
         return listOf(OP_0, OP_PUSHDATA(pubKeyHash))
     }
@@ -454,7 +454,7 @@ object Script {
      * @return a pay-to-witness-public-key-hash script
      */
     @JvmStatic
-    public fun pay2wpkh(pubKey: PublicKey): List<ScriptElt> = pay2wpkh(pubKey.hash160())
+    fun pay2wpkh(pubKey: PublicKey): List<ScriptElt> = pay2wpkh(pubKey.hash160())
 
     /**
      * @param pubKey public key
@@ -462,28 +462,28 @@ object Script {
      * @return script witness for the corresponding pay-to-witness-public-key-hash script
      */
     @JvmStatic
-    public fun witnessPay2wpkh(pubKey: PublicKey, sig: ByteVector): ScriptWitness = ScriptWitness(listOf(sig, pubKey.value))
+    fun witnessPay2wpkh(pubKey: PublicKey, sig: ByteVector): ScriptWitness = ScriptWitness(listOf(sig, pubKey.value))
 
     /**
      * @param outputKey public key exposed by the taproot script (tweaked based on the tapscripts).
      * @return a pay-to-taproot script.
      */
     @JvmStatic
-    public fun pay2tr(outputKey: XonlyPublicKey): List<ScriptElt> = listOf(OP_1, OP_PUSHDATA(outputKey.value))
+    fun pay2tr(outputKey: XonlyPublicKey): List<ScriptElt> = listOf(OP_1, OP_PUSHDATA(outputKey.value))
 
     /**
      * @param internalKey internal public key that will be tweaked with the [scripts] provided.
      * @param scripts optional spending scripts that can be used instead of key-path spending.
      */
     @JvmStatic
-    public fun pay2tr(internalKey: XonlyPublicKey, scripts: ScriptTree?): List<ScriptElt> = pay2tr(internalKey, scripts?.hash())
+    fun pay2tr(internalKey: XonlyPublicKey, scripts: ScriptTree?): List<ScriptElt> = pay2tr(internalKey, scripts?.hash())
 
     /**
      * @param internalKey internal public key that will be tweaked with the [scriptsRoot] provided.
      * @param scriptsRoot optional merkle root of the spending scripts that can be used instead of key-path spending.
      */
     @JvmStatic
-    public fun pay2tr(internalKey: XonlyPublicKey, scriptsRoot: ByteVector32?): List<ScriptElt> {
+    fun pay2tr(internalKey: XonlyPublicKey, scriptsRoot: ByteVector32?): List<ScriptElt> {
         val tweak = when (scriptsRoot) {
             null -> Crypto.TaprootTweak.NoScriptTweak
             else -> Crypto.TaprootTweak.ScriptTweak(scriptsRoot)
@@ -494,7 +494,7 @@ object Script {
 
     /** NB: callers must ensure that they use the correct [Crypto.TaprootTweak] when generating their signature. */
     @JvmStatic
-    public fun witnessKeyPathPay2tr(sig: ByteVector64, sighash: Int = SigHash.SIGHASH_DEFAULT): ScriptWitness = when (sighash) {
+    fun witnessKeyPathPay2tr(sig: ByteVector64, sighash: Int = SigHash.SIGHASH_DEFAULT): ScriptWitness = when (sighash) {
         SigHash.SIGHASH_DEFAULT -> ScriptWitness(listOf(sig))
         else -> ScriptWitness(listOf(sig.concat(sighash.toByte())))
     }
@@ -506,7 +506,7 @@ object Script {
      * @param scriptTree tapscript tree.
      */
     @JvmStatic
-    public fun witnessScriptPathPay2tr(internalKey: XonlyPublicKey, script: ScriptTree.Leaf, witness: ScriptWitness, scriptTree: ScriptTree): ScriptWitness {
+    fun witnessScriptPathPay2tr(internalKey: XonlyPublicKey, script: ScriptTree.Leaf, witness: ScriptWitness, scriptTree: ScriptTree): ScriptWitness {
         val controlBlock = ControlBlock.build(internalKey, scriptTree, script)
         return ScriptWitness(witness.stack + script.script + controlBlock)
     }
@@ -628,7 +628,7 @@ object Script {
      * @param tx         transaction that is being verified
      * @param inputIndex 0-based index of the tx input that is being processed
      */
-    public data class Context(val tx: Transaction, val inputIndex: Int, val amount: Satoshi, val prevouts: List<TxOut>) {
+    data class Context(val tx: Transaction, val inputIndex: Int, val amount: Satoshi, val prevouts: List<TxOut>) {
         internal var executionData: ExecutionData = ExecutionData.empty
 
         init {
@@ -636,13 +636,13 @@ object Script {
         }
     }
 
-    public data class ExecutionData(val annex: ByteVector?, val tapleafHash: ByteVector32?, val validationWeightLeft: Int? = null, val codeSeparatorPos: Long = 0xFFFFFFFFL) {
+    data class ExecutionData(val annex: ByteVector?, val tapleafHash: ByteVector32?, val validationWeightLeft: Int? = null, val codeSeparatorPos: Long = 0xFFFFFFFFL) {
         companion object {
-            public val empty: ExecutionData = ExecutionData(null, null, null, 0xFFFFFFFFL)
+            val empty: ExecutionData = ExecutionData(null, null, null, 0xFFFFFFFFL)
         }
     }
 
-    public object ControlBlock {
+    object ControlBlock {
         /**
          * Build a control block to add to the witness of a taproot transaction when spending with the script path.
          * It includes information to re-compute the merkle root from the script you are using.
@@ -663,7 +663,7 @@ object Script {
          * @param spendingScript script leaf we're spending (must exist in the [scriptTree]).
          */
         @JvmStatic
-        public fun build(internalPubKey: XonlyPublicKey, scriptTree: ScriptTree, spendingScript: ScriptTree.Leaf): ByteVector {
+        fun build(internalPubKey: XonlyPublicKey, scriptTree: ScriptTree, spendingScript: ScriptTree.Leaf): ByteVector {
             val merkleProof = scriptTree.merkleProof(spendingScript.hash())
             require(merkleProof != null) { "cannot build control block: the spending script leaf cannot be found in the script tree provided" }
             return build(internalPubKey, scriptTree.hash(), merkleProof, spendingScript.leafVersion)
@@ -676,18 +676,18 @@ object Script {
          * @param leafVersion script version of the spent script leaf.
          */
         @JvmStatic
-        public fun build(internalPubKey: XonlyPublicKey, merkleRoot: ByteVector32, merkleProof: ByteArray, leafVersion: Int): ByteVector {
+        fun build(internalPubKey: XonlyPublicKey, merkleRoot: ByteVector32, merkleProof: ByteArray, leafVersion: Int): ByteVector {
             val (_, parity) = internalPubKey.outputKey(merkleRoot)
             val controlByte = (leafVersion + (if (parity) 1 else 0)).toByte()
             return ByteVector.empty.concat(controlByte).concat(internalPubKey.value).concat(merkleProof)
         }
     }
 
-    public class Runner(
-        public val context: Context,
-        public val scriptFlag: Int = ScriptFlags.MANDATORY_SCRIPT_VERIFY_FLAGS,
+    class Runner(
+        val context: Context,
+        val scriptFlag: Int = ScriptFlags.MANDATORY_SCRIPT_VERIFY_FLAGS,
     ) {
-        public companion object {
+        companion object {
             /**
              * This class represents the state of the script execution engine
              *
@@ -696,7 +696,7 @@ object Script {
              * @param opCount    initial op count
              * @param scriptCode initial script (can be modified by OP_CODESEPARATOR for example)
              */
-            public data class State(
+            data class State(
                 val conditions: List<Boolean>,
                 val altstack: List<ByteVector>,
                 val opCount: Int,
@@ -704,7 +704,7 @@ object Script {
             )
         }
 
-        public fun checkSignatureEcdsa(pubKey: ByteArray, sigBytes: ByteArray, scriptCode: ByteArray, signatureVersion: Int): Boolean {
+        fun checkSignatureEcdsa(pubKey: ByteArray, sigBytes: ByteArray, scriptCode: ByteArray, signatureVersion: Int): Boolean {
             return when {
                 sigBytes.isEmpty() -> false
                 !Crypto.checkSignatureEncoding(sigBytes, scriptFlag) -> throw RuntimeException("invalid signature encoding")
@@ -727,7 +727,7 @@ object Script {
             }
         }
 
-        public fun checkSignatureSchnorr(pubKey: ByteArray, sigBytes: ByteArray, signatureVersion: Int): Boolean {
+        fun checkSignatureSchnorr(pubKey: ByteArray, sigBytes: ByteArray, signatureVersion: Int): Boolean {
             require(signatureVersion == SigVersion.SIGVERSION_TAPSCRIPT)
             if (sigBytes.isNotEmpty()) {
                 require(context.executionData.validationWeightLeft != null)
@@ -754,7 +754,7 @@ object Script {
                     )
                     val result = Secp256k1.verifySchnorr(sigBytes.take(64).toByteArray(), hash.toByteArray(), pubKey)
                     require(result) { "Invalid Schnorr signature" }
-                    result
+                    true
                 }
 
                 else -> {
@@ -771,7 +771,7 @@ object Script {
          * @param signatureVersion version (legacy or segwit)
          * @return true if the signature is valid
          */
-        public fun checkSignature(pubKey: ByteArray, sigBytes: ByteArray, scriptCode: ByteArray, signatureVersion: Int): Boolean {
+        fun checkSignature(pubKey: ByteArray, sigBytes: ByteArray, scriptCode: ByteArray, signatureVersion: Int): Boolean {
             return when (signatureVersion) {
                 SigVersion.SIGVERSION_BASE, SigVersion.SIGVERSION_WITNESS_V0 -> checkSignatureEcdsa(pubKey, sigBytes, scriptCode, signatureVersion)
                 SigVersion.SIGVERSION_TAPROOT -> false // Key path spending in Taproot has no script, so this is unreachable.
@@ -780,10 +780,10 @@ object Script {
             }
         }
 
-        public fun checkSignature(pubKey: ByteVector, sigBytes: ByteVector, scriptCode: ByteVector, signatureVersion: Int): Boolean =
+        fun checkSignature(pubKey: ByteVector, sigBytes: ByteVector, scriptCode: ByteVector, signatureVersion: Int): Boolean =
             checkSignature(pubKey.toByteArray(), sigBytes.toByteArray(), scriptCode.toByteArray(), signatureVersion)
 
-        public tailrec fun checkSignatures(pubKeys: List<ByteVector>, sigs: List<ByteVector>, scriptCode: ByteVector, signatureVersion: Int): Boolean {
+        tailrec fun checkSignatures(pubKeys: List<ByteVector>, sigs: List<ByteVector>, scriptCode: ByteVector, signatureVersion: Int): Boolean {
             return when {
                 sigs.isEmpty() -> true
                 sigs.count() > pubKeys.count() -> false
@@ -793,35 +793,30 @@ object Script {
             }
         }
 
-        public fun checkMinimalEncoding(): Boolean = (scriptFlag and ScriptFlags.SCRIPT_VERIFY_MINIMALDATA) != 0
+        fun checkMinimalEncoding(): Boolean = (scriptFlag and ScriptFlags.SCRIPT_VERIFY_MINIMALDATA) != 0
 
-        public fun decodeNumber(input: ByteVector, maximumSize: Int = 4): Long =
+        fun decodeNumber(input: ByteVector, maximumSize: Int = 4): Long =
             decodeNumber(input.toByteArray(), checkMinimalEncoding(), maximumSize)
 
-        public fun decodeNumber(input: ByteArray, maximumSize: Int = 4): Long =
+        fun decodeNumber(input: ByteArray, maximumSize: Int = 4): Long =
             decodeNumber(input, checkMinimalEncoding(), maximumSize)
 
-        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-        public fun run(script: ByteArray, signatureVersion: Int): List<ByteVector> {
+        fun run(script: ByteArray, signatureVersion: Int): List<ByteVector> {
             return run(script, listOf(), signatureVersion)
         }
 
-        public fun run(script: List<ScriptElt>, signatureVersion: Int): List<ByteVector> =
-            run(script, listOf(), signatureVersion)
-
-        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-        public fun run(script: ByteArray, stack: List<ByteVector>, signatureVersion: Int): List<ByteVector> {
+        fun run(script: ByteArray, stack: List<ByteVector>, signatureVersion: Int): List<ByteVector> {
             if (signatureVersion == SigVersion.SIGVERSION_BASE || signatureVersion == SigVersion.SIGVERSION_WITNESS_V0) {
                 require(script.size <= MAX_SCRIPT_SIZE) { "Script is too large" }
             }
             return run(parse(script), stack, signatureVersion)
         }
 
-        public fun run(script: ByteVector, stack: List<ByteVector>, signatureVersion: Int): List<ByteVector> =
+        fun run(script: ByteVector, stack: List<ByteVector>, signatureVersion: Int): List<ByteVector> =
             run(script.toByteArray(), stack, signatureVersion)
 
-        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-        public fun run(
+
+        fun run(
             script: List<ScriptElt>,
             stack: List<ByteVector>,
             signatureVersion: Int
@@ -833,7 +828,6 @@ object Script {
         /**
          * internal script execution loop.
          */
-        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
         private fun runInternal(
             script: List<ScriptElt>,
             inputStack: List<ByteVector>,
@@ -947,24 +941,24 @@ object Script {
 
                     op == OP_ADD && stack.size < 2 -> throw RuntimeException("cannot run OP_ADD on a stack with less than 2 elements")
                     op == OP_ADD -> {
-                        val x = decodeNumber(stack.removeFirst())
-                        val y = decodeNumber(stack.removeFirst())
+                        val x = decodeNumber(stack.removeAt(0))
+                        val y = decodeNumber(stack.removeAt(0))
                         val result = x + y
                         stack.add(0, encodeNumber(result))
                     }
 
                     op == OP_BOOLAND && stack.size < 2 -> throw RuntimeException("cannot run OP_BOOLAND on a stack with less than 2 elements")
                     op == OP_BOOLAND -> {
-                        val x = decodeNumber(stack.removeFirst())
-                        val y = decodeNumber(stack.removeFirst())
+                        val x = decodeNumber(stack.removeAt(0))
+                        val y = decodeNumber(stack.removeAt(0))
                         val result = if (x != 0L && y != 0L) 1L else 0L
                         stack.add(0, encodeNumber(result))
                     }
 
                     op == OP_BOOLOR && stack.size < 2 -> throw RuntimeException("cannot run OP_BOOLOR on a stack with less than 2 elements")
                     op == OP_BOOLOR -> {
-                        val x = decodeNumber(stack.removeFirst())
-                        val y = decodeNumber(stack.removeFirst())
+                        val x = decodeNumber(stack.removeAt(0))
+                        val y = decodeNumber(stack.removeAt(0))
                         val result = if (x != 0L || y != 0L) 1L else 0L
                         stack.add(0, encodeNumber(result))
                     }
@@ -1018,8 +1012,8 @@ object Script {
 
                     op == OP_CHECKSIG && stack.size < 2 -> throw RuntimeException("Cannot perform OP_CHECKSIG on a stack with less than 2 elements")
                     op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY -> {
-                        val pubKey = stack.removeFirst()
-                        val sigBytes = stack.removeFirst()
+                        val pubKey = stack.removeAt(0)
+                        val sigBytes = stack.removeAt(0)
                         // remove signature from script
                         val scriptCode1 = if (signatureVersion == SigVersion.SIGVERSION_BASE) {
                             val scriptCode1 = removeSignature(scriptCode, sigBytes)
@@ -1045,9 +1039,9 @@ object Script {
                         // OP_CHECKSIGADD is only available in Tapscript
                         require(signatureVersion != SigVersion.SIGVERSION_BASE && signatureVersion != SigVersion.SIGVERSION_WITNESS_V0) { "invalid opcode" }
                         require(stack.size >= 3) { "Cannot perform OP_CHECKSIGADD on a stack with less than 3 elements" }
-                        val pubKey = stack.removeFirst()
-                        val num = decodeNumber(stack.removeFirst())
-                        val sigBytes = stack.removeFirst()
+                        val pubKey = stack.removeAt(0)
+                        val num = decodeNumber(stack.removeAt(0))
+                        val sigBytes = stack.removeAt(0)
                         val success = checkSignature(pubKey.toByteArray(), sigBytes.toByteArray(), write(scriptCode), signatureVersion)
                         stack.add(0, encodeNumber(num + (if (success) 1 else 0)))
                     }
@@ -1055,20 +1049,20 @@ object Script {
                     op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY -> {
                         require(signatureVersion != SigVersion.SIGVERSION_TAPSCRIPT) { "invalid OP_CHECKMULTISIG operation" }
                         // pop public keys
-                        val m = decodeNumber(stack.removeFirst()).toInt()
+                        val m = decodeNumber(stack.removeAt(0)).toInt()
                         if (m !in 0..20) throw RuntimeException("OP_CHECKMULTISIG: invalid number of public keys")
                         opCount += m
                         if (opCount > MAX_OPS_PER_SCRIPT) throw RuntimeException("operation count is over the limit")
-                        val pubKeys = (1..m).map { stack.removeFirst() }
+                        val pubKeys = (1..m).map { stack.removeAt(0) }
 
                         // pop signatures
-                        val n = decodeNumber(stack.removeFirst()).toInt()
+                        val n = decodeNumber(stack.removeAt(0)).toInt()
                         if (n !in 0..m) throw RuntimeException("OP_CHECKMULTISIG: invalid number of signatures")
                         // check that we have at least n + 1 items on the stack (+1 because of a bug in the reference client)
                         require(stack.size >= n + 1) { "invalid stack operation" }
-                        val sigs = (1..n).map { stack.removeFirst() }
+                        val sigs = (1..n).map { stack.removeAt(0) }
                         if ((scriptFlag and ScriptFlags.SCRIPT_VERIFY_NULLDUMMY) != 0) require(stack.first().size() == 0) { "multisig dummy is not empty" }
-                        stack.removeFirst()
+                        stack.removeAt(0)
 
                         // Drop the signature in pre-segwit scripts but not segwit scripts
                         val scriptCode1 = if (signatureVersion == SigVersion.SIGVERSION_BASE) {
@@ -1106,12 +1100,12 @@ object Script {
                     }
 
                     op == OP_DROP -> {
-                        stack.removeFirst()
+                        stack.removeAt(0)
                     }
 
                     op == OP_2DROP -> {
-                        stack.removeFirst()
-                        stack.removeFirst()
+                        stack.removeAt(0)
+                        stack.removeAt(0)
                     }
 
                     op == OP_DUP -> {
@@ -1135,20 +1129,20 @@ object Script {
 
                     op == OP_EQUAL && stack.size < 2 -> throw RuntimeException("Cannot perform OP_EQUAL on a stack with less than 2 elements")
                     op == OP_EQUAL -> {
-                        val x1 = stack.removeFirst()
-                        val x2 = stack.removeFirst()
+                        val x1 = stack.removeAt(0)
+                        val x2 = stack.removeAt(0)
                         stack.add(0, if (x1 != x2) False else True)
                     }
 
                     op == OP_EQUALVERIFY && stack.size < 2 -> throw RuntimeException("Cannot perform OP_EQUALVERIFY on a stack with less than 2 elements")
                     op == OP_EQUALVERIFY -> {
-                        val x1 = stack.removeFirst()
-                        val x2 = stack.removeFirst()
+                        val x1 = stack.removeAt(0)
+                        val x2 = stack.removeAt(0)
                         require(x1 == x2) { "OP_EQUALVERIFY failed: elements are different" }
                     }
 
                     op == OP_FROMALTSTACK -> {
-                        stack.add(0, altstack.removeFirst())
+                        stack.add(0, altstack.removeAt(0))
                     }
 
                     op == OP_HASH160 -> {
@@ -1166,48 +1160,48 @@ object Script {
 
                     op == OP_LESSTHAN && stack.size < 2 -> throw RuntimeException("Cannot perform OP_LESSTHAN on a stack with less than 2 elements")
                     op == OP_LESSTHAN -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = if (x2 < x1) 1 else 0
                         stack.add(0, encodeNumber(result))
                     }
 
                     op == OP_LESSTHANOREQUAL && stack.size < 2 -> throw RuntimeException("Cannot perform OP_LESSTHANOREQUAL on a stack with less than 2 elements")
                     op == OP_LESSTHANOREQUAL -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = if (x2 <= x1) 1 else 0
                         stack.add(0, encodeNumber(result))
                     }
 
                     op == OP_GREATERTHAN && stack.size < 2 -> throw RuntimeException("Cannot perform OP_GREATERTHAN on a stack with less than 2 elements")
                     op == OP_GREATERTHAN -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = if (x2 > x1) 1 else 0
                         stack.add(0, encodeNumber(result))
                     }
 
                     op == OP_GREATERTHANOREQUAL && stack.size < 2 -> throw RuntimeException("Cannot perform OP_GREATERTHANOREQUAL on a stack with less than 2 elements")
                     op == OP_GREATERTHANOREQUAL -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = if (x2 >= x1) 1 else 0
                         stack.add(0, encodeNumber(result))
                     }
 
                     op == OP_MAX && stack.size < 2 -> throw RuntimeException("Cannot perform OP_MAX on a stack with less than 2 elements")
                     op == OP_MAX -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = if (x2 > x1) x2 else x1
                         stack.add(0, encodeNumber(result))
                     }
 
                     op == OP_MIN && stack.size < 2 -> throw RuntimeException("Cannot perform OP_MIN on a stack with less than 2 elements")
                     op == OP_MIN -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = if (x2 < x1) x2 else x1
                         stack.add(0, encodeNumber(result))
                     }
@@ -1234,23 +1228,23 @@ object Script {
 
                     op == OP_NUMEQUAL && stack.size < 2 -> throw RuntimeException("Cannot perform OP_NUMEQUAL on a stack with less than 2 elements")
                     op == OP_NUMEQUAL -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = if (x1 == x2) 1 else 0
                         stack.add(0, encodeNumber(result))
                     }
 
                     op == OP_NUMEQUALVERIFY && stack.size < 2 -> throw RuntimeException("Cannot perform OP_NUMEQUALVERIFY on a stack with less than 2 elements")
                     op == OP_NUMEQUALVERIFY -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         require(x1 == x2) { "OP_NUMEQUALVERIFY failed" }
                     }
 
                     op == OP_NUMNOTEQUAL && stack.size < 2 -> throw RuntimeException("Cannot perform OP_NUMNOTEQUAL on a stack with less than 2 elements")
                     op == OP_NUMNOTEQUAL -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = if (x1 != x2) 1 else 0
                         stack.add(0, encodeNumber(result))
                     }
@@ -1267,7 +1261,7 @@ object Script {
 
                     op == OP_PICK && stack.isEmpty() -> throw RuntimeException("Cannot perform OP_PICK on an empty stack")
                     op == OP_PICK -> {
-                        val n = decodeNumber(stack.removeFirst()).toInt()
+                        val n = decodeNumber(stack.removeAt(0)).toInt()
                         require(stack.size > n) { "Cannot perform OP_PICK on a stack with less than ${n + 1} elements" }
                         stack.add(0, stack[n])
                     }
@@ -1277,7 +1271,7 @@ object Script {
 
                     op == OP_ROLL && stack.isEmpty() -> throw RuntimeException("Cannot perform OP_ROLL on an empty stack")
                     op == OP_ROLL -> {
-                        val n = decodeNumber(stack.removeFirst()).toInt()
+                        val n = decodeNumber(stack.removeAt(0)).toInt()
                         require(stack.size > n) { "Cannot perform OP_ROLL on a stack with less than ${n + 1} elements" }
                         val xn = stack.removeAt(n)
                         stack.add(0, xn)
@@ -1323,8 +1317,8 @@ object Script {
 
                     op == OP_SUB && stack.size < 2 -> throw RuntimeException("Cannot perform OP_SUB on a stack with less than 2 elements")
                     op == OP_SUB -> {
-                        val x1 = decodeNumber(stack.removeFirst())
-                        val x2 = decodeNumber(stack.removeFirst())
+                        val x1 = decodeNumber(stack.removeAt(0))
+                        val x2 = decodeNumber(stack.removeAt(0))
                         val result = x2 - x1
                         stack.add(0, encodeNumber(result))
                     }
@@ -1350,7 +1344,7 @@ object Script {
                     }
 
                     op == OP_TOALTSTACK -> {
-                        altstack.add(0, stack.removeFirst())
+                        altstack.add(0, stack.removeAt(0))
                     }
 
                     op == OP_TUCK && stack.size < 2 -> throw RuntimeException("Cannot perform OP_TUCK on a stack with less than 2 elements")
@@ -1364,15 +1358,15 @@ object Script {
 
                     op == OP_VERIFY && stack.isEmpty() -> throw RuntimeException("Cannot perform OP_VERIFY on an empty stack")
                     op == OP_VERIFY -> {
-                        val x = stack.removeFirst()
+                        val x = stack.removeAt(0)
                         require(castToBoolean(x)) { "OP_VERIFY failed" }
                     }
 
                     op == OP_WITHIN && stack.size < 3 -> throw RuntimeException("Cannot perform OP_WITHIN on a stack with less than 3 elements")
                     op == OP_WITHIN -> {
-                        val max = decodeNumber(stack.removeFirst())
-                        val min = decodeNumber(stack.removeFirst())
-                        val n = decodeNumber(stack.removeFirst())
+                        val max = decodeNumber(stack.removeAt(0))
+                        val min = decodeNumber(stack.removeAt(0))
+                        val n = decodeNumber(stack.removeAt(0))
                         val result = if (n in min until max) 1 else 0
                         stack.add(0, encodeNumber(result))
                     }
@@ -1388,7 +1382,7 @@ object Script {
             return stack
         }
 
-        public fun verifyWitnessProgram(witness: ScriptWitness, witnessVersion: Long, program: ByteArray, isP2sh: Boolean = false) {
+        fun verifyWitnessProgram(witness: ScriptWitness, witnessVersion: Long, program: ByteArray, isP2sh: Boolean = false) {
 
             // check that the input stack contains a single "1" element, as it should be if script execution was correct
             fun checkFinalStack(stack: List<ByteVector>) {
@@ -1495,10 +1489,10 @@ object Script {
             }
         }
 
-        public fun verifyScripts(scriptSig: ByteArray, scriptPubKey: ByteArray): Boolean =
+        fun verifyScripts(scriptSig: ByteArray, scriptPubKey: ByteArray): Boolean =
             verifyScripts(scriptSig, scriptPubKey, ScriptWitness.empty)
 
-        public fun verifyScripts(scriptSig: ByteVector, scriptPubKey: ByteVector, witness: ScriptWitness): Boolean =
+        fun verifyScripts(scriptSig: ByteVector, scriptPubKey: ByteVector, witness: ScriptWitness): Boolean =
             verifyScripts(scriptSig.toByteArray(), scriptPubKey.toByteArray(), witness)
 
         /**
@@ -1514,7 +1508,7 @@ object Script {
          * @param scriptPubKey public key script
          * @return true if the scripts were successfully verified
          */
-        public fun verifyScripts(scriptSig: ByteArray, scriptPubKey: ByteArray, witness: ScriptWitness): Boolean {
+        fun verifyScripts(scriptSig: ByteArray, scriptPubKey: ByteArray, witness: ScriptWitness): Boolean {
             fun checkStack(stack: List<ByteVector>): Boolean = when {
                 stack.isEmpty() -> false
                 !castToBoolean(stack.first()) -> false

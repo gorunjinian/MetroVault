@@ -26,9 +26,6 @@ data class XonlyPublicKey(@JvmField val value: ByteVector32) {
      */
     fun outputKey(tapTweak: Crypto.TaprootTweak): Pair<XonlyPublicKey, Boolean> = this + PrivateKey(tweak(tapTweak)).publicKey()
 
-    /** Tweak this key with the merkle root of the given script tree. */
-    fun outputKey(scriptTree: ScriptTree): Pair<XonlyPublicKey, Boolean> = outputKey(Crypto.TaprootTweak.ScriptTweak(scriptTree))
-
     /** Tweak this key with the merkle root provided. */
     fun outputKey(merkleRoot: ByteVector32): Pair<XonlyPublicKey, Boolean> = outputKey(Crypto.TaprootTweak.ScriptTweak(merkleRoot))
 

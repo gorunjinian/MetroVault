@@ -72,6 +72,7 @@ object Descriptor {
         else -> error("invalid chain hash $chainHash")
     }
 
+    @Suppress("FunctionName")
     @JvmStatic
     fun BIP84Descriptors(chainHash: BlockHash, master: DeterministicWallet.ExtendedPrivateKey): Pair<String, String> {
         val (keyPath, _) = getBIP84KeyPath(chainHash)
@@ -79,7 +80,7 @@ object Descriptor {
         val fingerprint = DeterministicWallet.fingerprint(master) and 0xFFFFFFFFL
         return BIP84Descriptors(chainHash, fingerprint, accountPub)
     }
-
+    @Suppress("FunctionName")
     @JvmStatic
     fun BIP84Descriptors(chainHash: BlockHash, fingerprint: Long, accountPub: DeterministicWallet.ExtendedPublicKey): Pair<String, String> {
         val (keyPath, prefix) = getBIP84KeyPath(chainHash)

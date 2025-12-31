@@ -690,7 +690,7 @@ data class Transaction(
         auxrand32: ByteVector32? = null
     ): ByteVector64 {
         val data = hashForSigningTaprootScriptPath(inputIndex, inputs, sighashType, tapleaf, annex)
-        return Crypto.signSchnorr(data, privateKey, Crypto.SchnorrTweak.NoTweak, auxrand32)
+        return Crypto.signSchnorr(data, privateKey, null, auxrand32)
     }
 
     fun correctlySpends(previousOutputs: Map<OutPoint, TxOut>, scriptFlags: Int) {

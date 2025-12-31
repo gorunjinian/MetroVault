@@ -1,429 +1,66 @@
 package com.gorunjinian.metrovault.lib.bitcoin
 
-import com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayInput
-import com.gorunjinian.metrovault.lib.bitcoin.io.Input
-import com.gorunjinian.metrovault.lib.bitcoin.io.Output
-import fr.acinq.secp256k1.Hex
-import kotlin.experimental.and
 import kotlin.jvm.JvmField
-import kotlin.jvm.JvmStatic
 
-/** This is the double hash of a serialized block header. */
+/**
+ * Double SHA-256 hash of a serialized block header.
+ * Used as network identifier - the genesis block hash identifies which chain we're on.
+ */
 data class BlockHash(@JvmField val value: ByteVector32) {
     constructor(hash: ByteArray) : this(hash.byteVector32())
     constructor(hash: String) : this(ByteVector32(hash))
-    constructor(blockId: BlockId) : this(blockId.value.reversed())
-
-    override fun toString(): String = value.toString()
-}
-
-/** This contains the same data as [BlockHash], but encoded with the opposite endianness. */
-data class BlockId(@JvmField val value: ByteVector32) {
-    constructor(blockId: ByteArray) : this(blockId.byteVector32())
-    constructor(blockId: String) : this(ByteVector32(blockId))
-    constructor(hash: BlockHash) : this(hash.value.reversed())
 
     override fun toString(): String = value.toString()
 }
 
 /**
- * @param version           Block version information, based upon the software version creating this block
- * @param hashPreviousBlock The hash value of the previous block this particular block references.
- * @param hashMerkleRoot    The reference to a Merkle tree collection which is a hash of all transactions related to this block
- * @param time              A timestamp recording when this block was created (Will overflow in 2106[2])
- * @param bits              The calculated difficulty target being used for this block
- * @param nonce             The nonce used to generate this block… to allow variations of the header and compute different hashes
+ * Pre-computed genesis block hashes for supported Bitcoin networks.
+ * Used for address generation (determining prefixes) and chain validation.
+ *
+ * Hash values are stored in little-endian format (as returned by double SHA-256).
  */
-data class BlockHeader(
-    @JvmField val version: Long,
-    @JvmField val hashPreviousBlock: BlockHash,
-    @JvmField val hashMerkleRoot: ByteVector32,
-    @JvmField val time: Long,
-    @JvmField val bits: Long,
-    @JvmField val nonce: Long
-) : BtcSerializable<BlockHeader> {
+object Block {
+    /** Bitcoin Mainnet genesis block hash */
     @JvmField
-    val hash: BlockHash = BlockHash(Crypto.hash256(write(this)))
+    val LivenetGenesisBlock = GenesisBlockHash(
+        // Block 0: 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
+        "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"
+    )
 
+    /** Bitcoin Testnet3 genesis block hash */
     @JvmField
-    val blockId: BlockId = BlockId(hash)
+    val Testnet3GenesisBlock = GenesisBlockHash(
+        // Block 0: 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
+        "43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000"
+    )
 
-    fun setVersion(input: Long): BlockHeader = this.copy(version = input)
+    /** Bitcoin Testnet4 genesis block hash */
+    @JvmField
+    val Testnet4GenesisBlock = GenesisBlockHash(
+        // Block 0: 00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043
+        "43f08bdab050e35b567c864b91f47f50ae722ae5de53bcfbbaf284da00000000"
+    )
 
-    fun setHashPreviousBlock(input: BlockHash): BlockHeader = this.copy(hashPreviousBlock = input)
+    /** Bitcoin Regtest genesis block hash */
+    @JvmField
+    val RegtestGenesisBlock = GenesisBlockHash(
+        // Block 0: 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206
+        "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"
+    )
 
-    fun setHashMerkleRoot(input: ByteVector32): BlockHeader = this.copy(hashMerkleRoot = input)
-
-    fun setTime(input: Long): BlockHeader = this.copy(time = input)
-
-    fun setBits(input: Long): BlockHeader = this.copy(bits = input)
-
-    fun setNonce(input: Long): BlockHeader = this.copy(nonce = input)
-
-    fun difficulty(): UInt256 {
-        val (diff, neg, _) = UInt256.decodeCompact(bits)
-        return if (neg) -diff else diff
-    }
+    /** Bitcoin Signet genesis block hash */
+    @JvmField
+    val SignetGenesisBlock = GenesisBlockHash(
+        // Block 0: 00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3264d9f94a5
+        "a5949f4d26a380a477a063af32b2bbc97c9ff9f01f2c4225e973988108000000"
+    )
 
     /**
-     *
-     * @return the amount of work represented by this block's difficulty target, as displayed by bitcoin core
+     * Minimal wrapper providing just the hash property needed for chain identification.
+     * Replaces full Block construction which is unnecessary for an offline signing device.
      */
-    fun blockProof(): UInt256 = blockProof(bits)
-
-    /**
-     * Proof of work: hash(header) <= target difficulty
-     *
-     * @return true if this block header validates its expected proof of work
-     */
-    fun checkProofOfWork(): Boolean {
-        val (target, _, _) = UInt256.decodeCompact(bits)
-        val hash = UInt256(blockId.value.toByteArray())
-        return hash <= target
-    }
-
-    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
-    companion object : BtcSerializer<BlockHeader>() {
-        override fun read(input: Input, protocolVersion: Long): BlockHeader {
-            val version = uint32(input)
-            val hashPreviousBlock = BlockHash(hash(input))
-            val hashMerkleRoot = hash(input)
-            val time = uint32(input)
-            val bits = uint32(input)
-            val nonce = uint32(input)
-            return BlockHeader(
-                version.toLong(),
-                hashPreviousBlock,
-                hashMerkleRoot.byteVector32(),
-                time.toLong(),
-                bits.toLong(),
-                nonce.toLong()
-            )
-        }
-
-        @JvmStatic
-        override fun read(input: String): BlockHeader {
-            return super.read(input)
-        }
-
-        @JvmStatic
-        override fun read(input: ByteArray): BlockHeader {
-            return super.read(input)
-        }
-
-        override fun write(message: BlockHeader, output: Output, protocolVersion: Long) {
-            writeUInt32(message.version.toUInt(), output)
-            writeBytes(message.hashPreviousBlock.value, output)
-            writeBytes(message.hashMerkleRoot, output)
-            writeUInt32(message.time.toUInt(), output)
-            writeUInt32(message.bits.toUInt(), output)
-            writeUInt32(message.nonce.toUInt(), output)
-        }
-
-        @JvmStatic
-        override fun write(message: BlockHeader): ByteArray {
-            return super.write(message)
-        }
-
-        @JvmStatic
-        fun getDifficulty(header: BlockHeader): UInt256 = header.difficulty()
-
-        /**
-         *
-         * @param bits difficulty target
-         * @return the amount of work represented by this difficulty target, as displayed
-         *         by bitcoin core
-         */
-        @JvmStatic
-        fun blockProof(bits: Long): UInt256 {
-            val (target, negative, overflow) = UInt256.decodeCompact(bits)
-            return if (target == UInt256.Zero || negative || overflow) UInt256.Zero else {
-                //  (~bnTarget / (bnTarget + 1)) + 1;
-                val work = target.inv()
-                work /= target.inc()
-                work.inc()
-            }
-        }
-
-        @JvmStatic
-        fun blockProof(header: BlockHeader): UInt256 = blockProof(header.bits)
-
-        /**
-         * Proof of work: hash(header) <= target difficulty
-         *
-         * @param header block header
-         * @return true if the input block header validates its expected proof of work
-         */
-        @JvmStatic
-        fun checkProofOfWork(header: BlockHeader): Boolean = header.checkProofOfWork()
-
-        @JvmStatic
-        fun calculateNextWorkRequired(lastHeader: BlockHeader, lastRetargetTime: Long): Long {
-            var actualTimespan = lastHeader.time - lastRetargetTime
-            val targetTimespan = 14 * 24 * 60 * 60L // two weeks
-            if (actualTimespan < targetTimespan / 4) actualTimespan = targetTimespan / 4
-            if (actualTimespan > targetTimespan * 4) actualTimespan = targetTimespan * 4
-
-            var (target, isnegative, overflow) = UInt256.decodeCompact(lastHeader.bits)
-            require(!isnegative)
-            require(!overflow)
-            target *= UInt256(actualTimespan)
-            target /= UInt256(targetTimespan)
-
-            val powLimit = UInt256(Hex.decode("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))
-            if (target > powLimit) target = powLimit
-            return target.encodeCompact(false)
-        }
-    }
-
-    override fun serializer(): BtcSerializer<BlockHeader> = Companion
-}
-
-/**
- * see https://en.bitcoin.it/wiki/Protocol_specification#Merkle_Trees
- */
-object MerkleTree {
-    @JvmStatic
-    tailrec fun computeRoot(tree: List<ByteVector32>): ByteVector32 {
-        return when {
-            tree.size == 1 -> tree[0]
-            (tree.size % 2) != 0 -> computeRoot(tree + listOf(tree.last())) // append last element again
-            else -> {
-                val tree1 = mutableListOf<ByteVector32>()
-                for (i in 0 until (tree.size / 2)) {
-                    val hash = Crypto.hash256(tree[2 * i].toByteArray() + tree[2 * i + 1].toByteArray())
-                    tree1.add(hash.byteVector32())
-                }
-                computeRoot(tree1.toList())
-            }
-        }
-    }
-}
-
-data class Block(@JvmField val header: BlockHeader, @JvmField val tx: List<Transaction>) {
-    @JvmField
-    val hash: BlockHash = header.hash
-
-    @JvmField
-    val blockId: BlockId = header.blockId
-
-    /**
-     * Proof of work: hash(block) <= target difficulty
-     *
-     * @return true if the input block validates its expected proof of work
-     */
-    fun checkProofOfWork(): Boolean = BlockHeader.checkProofOfWork(header)
-
-    companion object : BtcSerializer<Block>() {
-        override fun write(message: Block, out: Output, protocolVersion: Long) {
-            BlockHeader.write(message.header, out)
-            writeCollection(message.tx, out, Transaction, protocolVersion)
-        }
-
-        @JvmStatic
-        override fun write(message: Block): ByteArray {
-            return super.write(message)
-        }
-
-        override fun read(input: Input, protocolVersion: Long): Block {
-            val raw = bytes(input, 80)
-            val header = BlockHeader.read(raw)
-            return Block(header, readCollection(input, Transaction, protocolVersion))
-        }
-
-        @JvmStatic
-        override fun read(input: String): Block {
-            return super.read(input)
-        }
-
-        @JvmStatic
-        override fun read(input: ByteArray): Block {
-            return super.read(input)
-        }
-
-        @JvmStatic
-        override fun validate(message: Block) {
-            BlockHeader.validate(message.header)
-            require(message.header.hashMerkleRoot == MerkleTree.computeRoot(message.tx.map { it.hash.value })) { "invalid block:  merkle root mismatch" }
-            require(message.tx.map { it.hash }.toSet().size == message.tx.size) { "invalid block: duplicate transactions" }
-            message.tx.map { Transaction.validate(it) }
-        }
-
-        /**
-         * Proof of work: hash(block) <= target difficulty
-         *
-         * @param block
-         * @return true if the input block validates its expected proof of work
-         */
-        @JvmStatic
-        fun checkProofOfWork(block: Block): Boolean = block.checkProofOfWork()
-
-        /**
-         * Verify a tx inclusion proof (a merkle proof that a set of transactions are included in a given block)
-         * Note that this method doesn't validate the header's proof of work.
-         *
-         * @param proof tx inclusion proof, in the format used by bitcoin core's 'verifytxoutproof' RPC call
-         * @return a (block header, matched tx ids and positions in the block) tuple
-         */
-        @JvmStatic
-        fun verifyTxOutProof(proof: ByteArray): Pair<BlockHeader, List<Pair<ByteVector32, Int>>> {
-            // a txout proof is generated for a given block and a given list of transactions, and contains a merkle proof that these transactions
-            // were indeed in the block. The format of a proof is:
-            // block header | number of transactions in the block | merkle node hashes | flag bits
-            // a flag bit is set if the current node is one of the leaf tx for which this proof was generated or one of its ancestors
-            // see https://en.bitcoin.it/wiki/BIP_0037#Partial_Merkle_branch_format for more details
-            val header = BlockHeader.read(proof.take(80).toByteArray())
-            val inputStream = ByteArrayInput(proof.drop(80).toByteArray())
-            val txCount = uint32(inputStream).toInt()
-            val hashes = readCollection(inputStream, { i, _ -> hash(i).byteVector32() }, null, Protocol.PROTOCOL_VERSION)
-            val bits = script(inputStream)
-
-            /**
-             * @param bits array of bytes
-             * @param pos position
-             * @return the bit value in the input byte array at position `pos`
-             */
-            fun bit(bits: ByteArray, pos: Int): Boolean {
-                val elt = bits[pos / 8]
-                return (elt.and((1.shl(pos % 8)).toByte()) != 0.toByte())
-            }
-
-            /**
-             * @param height height for which we want to know the width of the tree (0 is the bottom of the tree)
-             * @return the width of a merkle tree at a given height
-             */
-            fun calcTreeWidth(height: Int): Int = (txCount + (1.shl(height)) - 1).shr(height)
-
-            var bitsUsed = 0 // number of bits that we've used so far
-            var hashUsed = 0 // number of hashes that we've used so far
-            var matched: List<Pair<ByteVector32, Int>> = listOf() // list of (txids, index) that we've matched so far
-            var height = 0 // current height
-
-            // find the height of the tree (leaves are at height = 0)
-            while (calcTreeWidth(height) > 1) {
-                height++
-            }
-
-            // traverse the tree and update the list of matched txids and positions
-            // return the hash of the node at (height, pos)
-            fun traverseAndExtract(height: Int, pos: Int): ByteVector32 {
-                // check if the current node is a tx for which we have a proof or one of its ancestors
-                val parentOfMatch = bit(bits, bitsUsed++)
-                return when {
-                    height == 0 -> {
-                        val hash = hashes[hashUsed++]
-                        if (parentOfMatch) matched = matched + Pair(hash, pos)
-                        hash
-                    }
-                    !parentOfMatch -> hashes[hashUsed++]
-                    else -> {
-                        // otherwise, descend into the subtrees to extract matched txids and hashes
-                        val left = traverseAndExtract(height - 1, pos * 2)
-                        val right = if ((pos * 2 + 1) < calcTreeWidth(height - 1)) {
-                            val hash = traverseAndExtract(height - 1, pos * 2 + 1)
-                            // The left and right branches should never be identical, as the transaction
-                            // hashes covered by them must each be unique.
-                            require(hash != left) { "invalid leaf hash" }
-                            hash
-                        } else {
-                            // if we don't have enough leaves we duplicate the last one
-                            left
-                        }
-                        // and combine them before returning
-                        left.concat(right).sha256().sha256()
-                    }
-                }
-            }
-
-            val root = traverseAndExtract(height, 0)
-            require(root == header.hashMerkleRoot) { "invalid merkle root: expected ${header.hashMerkleRoot.toHex()}, got ${root.toHex()}" }
-            return Pair(header, matched)
-        }
-
-        // genesis blocks
+    class GenesisBlockHash(hashHex: String) {
         @JvmField
-        val LivenetGenesisBlock: Block = run {
-            val script = listOf(
-                OP_PUSHDATA(writeUInt32(486604799u)),
-                OP_PUSHDATA(ByteVector("04")),
-                OP_PUSHDATA("The Times 03/Jan/2009 Chancellor on brink of second bailout for banks".encodeToByteArray())
-            )
-            val scriptPubKey = listOf(
-                OP_PUSHDATA(ByteVector("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f")),
-                OP_CHECKSIG
-            )
-            Block(
-                BlockHeader(
-                    version = 1,
-                    hashPreviousBlock = BlockHash(ByteVector32.Zeroes),
-                    hashMerkleRoot = ByteVector32("3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"),
-                    time = 1231006505,
-                    bits = 0x1d00ffff,
-                    nonce = 2083236893
-                ),
-                listOf(
-                    Transaction(
-                        version = 1,
-                        txIn = listOf(TxIn.coinbase(script)),
-                        txOut = listOf(TxOut(amount = 5000000000.toSatoshi(), publicKeyScript = scriptPubKey)),
-                        lockTime = 0
-                    )
-                )
-            )
-        }
-
-        @JvmField
-        val Testnet3GenesisBlock: Block = LivenetGenesisBlock.copy(
-            header = LivenetGenesisBlock.header.copy(time = 1296688602, nonce = 414098458)
-        )
-
-        @JvmField
-        val Testnet4GenesisBlock: Block = run {
-            val script = listOf(
-                OP_PUSHDATA(writeUInt32(486604799u)),
-                OP_PUSHDATA(ByteVector("04")),
-                OP_PUSHDATA("03/May/2024 000000000000000000001ebd58c244970b3aa9d783bb001011fbe8ea8e98e00e".encodeToByteArray())
-            )
-            val scriptPubKey = listOf(
-                OP_PUSHDATA(ByteVector("000000000000000000000000000000000000000000000000000000000000000000")),
-                OP_CHECKSIG
-            )
-            Block(
-                BlockHeader(
-                    version = 1,
-                    hashPreviousBlock = BlockHash(ByteVector32.Zeroes),
-                    hashMerkleRoot = ByteVector32("7aa0a7ae1e223414cb807e40cd57e667b718e42aaf9306db9102fe28912b7b4e").reversed(),
-                    time = 1714777860,
-                    bits = 0x1d00ffff,
-                    nonce = 393743547
-                ),
-                listOf(
-                    Transaction(
-                        version = 1,
-                        txIn = listOf(TxIn.coinbase(script)),
-                        txOut = listOf(TxOut(amount = 5000000000.toSatoshi(), publicKeyScript = scriptPubKey)),
-                        lockTime = 0
-                    )
-                )
-            )
-        }
-
-        @JvmField
-        val RegtestGenesisBlock: Block = LivenetGenesisBlock.copy(
-            header = LivenetGenesisBlock.header.copy(
-                bits = 0x207fffffL,
-                nonce = 2,
-                time = 1296688602
-            )
-        )
-
-        @JvmField
-        val SignetGenesisBlock: Block = LivenetGenesisBlock.copy(
-            header = LivenetGenesisBlock.header.copy(
-                bits = 503543726,
-                time = 1598918400,
-                nonce = 52613770
-            )
-        )
+        val hash: BlockHash = BlockHash(hashHex)
     }
 }

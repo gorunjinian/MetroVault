@@ -160,7 +160,6 @@ class WalletSigningService(
                 failedKeys.add(keyId)
                 continue
             }
-            Log.d(TAG, "Loaded key: fingerprint=${key.fingerprint}, seedLen=${key.bip39Seed.length}")
 
             // Try loaded wallet state first
             val matchingState = findMatchingWalletState(keyId, walletStates, isDecoyMode)

@@ -3,6 +3,7 @@ package com.gorunjinian.metrovault.lib.bitcoin
 import com.gorunjinian.metrovault.lib.bitcoin.crypto.Pack
 import kotlin.jvm.JvmStatic
 
+@Suppress("ConstPropertyName")
 object Base58 {
     object Prefix {
         const val PubkeyAddress: Byte = 0.toByte()

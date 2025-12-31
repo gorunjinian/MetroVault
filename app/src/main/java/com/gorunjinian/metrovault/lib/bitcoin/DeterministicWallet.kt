@@ -11,6 +11,7 @@ import kotlin.jvm.JvmStatic
 /**
  * see https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
  */
+@Suppress("LocalVariableName", "ConstPropertyName")
 object DeterministicWallet {
     const val hardenedKeyIndex: Long = 0x80000000L
 
@@ -249,40 +250,6 @@ object DeterministicWallet {
      */
     @JvmStatic
     fun fingerprint(input: ExtendedPrivateKey): Long = fingerprint(publicKey(input))
-
-    /**
-     * @param parent extended private key
-     * @param index  index of the child key
-     * @return the derived private key at the specified index
-     */
-    @JvmStatic
-    fun derivePrivateKey(parent: ExtendedPrivateKey, index: Long): ExtendedPrivateKey = parent.derivePrivateKey(index)
-
-    /**
-     * @param parent extended public key
-     * @param index  index of the child key
-     * @return the derived public key at the specified index
-     */
-    @JvmStatic
-    fun derivePublicKey(parent: ExtendedPublicKey, index: Long): ExtendedPublicKey = parent.derivePublicKey(index)
-
-    @JvmStatic
-    fun derivePrivateKey(parent: ExtendedPrivateKey, chain: List<Long>): ExtendedPrivateKey = parent.derivePrivateKey(chain)
-
-    @JvmStatic
-    fun derivePrivateKey(parent: ExtendedPrivateKey, keyPath: KeyPath): ExtendedPrivateKey = parent.derivePrivateKey(keyPath.path)
-
-    @JvmStatic
-    fun derivePrivateKey(parent: ExtendedPrivateKey, keyPath: String): ExtendedPrivateKey = parent.derivePrivateKey(KeyPath.fromPath(keyPath))
-
-    @JvmStatic
-    fun derivePublicKey(parent: ExtendedPublicKey, chain: List<Long>): ExtendedPublicKey = parent.derivePublicKey(chain)
-
-    @JvmStatic
-    fun derivePublicKey(parent: ExtendedPublicKey, keyPath: KeyPath): ExtendedPublicKey = parent.derivePublicKey(keyPath.path)
-
-    @JvmStatic
-    public fun derivePublicKey(parent: ExtendedPublicKey, keyPath: String): ExtendedPublicKey = parent.derivePublicKey(KeyPath.fromPath(keyPath))
 
     // p2pkh mainnet
     const val xprv: Int = 0x0488ade4

@@ -10,11 +10,7 @@ data class Satoshi(val sat: Long) : Comparable<Satoshi> {
     operator fun div(d: Int): Satoshi = Satoshi(sat / d)
     operator fun div(d: Long): Satoshi = Satoshi(sat / d)
     operator fun unaryMinus(): Satoshi = Satoshi(-sat)
-
     override fun compareTo(other: Satoshi): Int = sat.compareTo(other.sat)
-
-    fun max(other: Satoshi): Satoshi = if (this > other) this else other
-    fun min(other: Satoshi): Satoshi = if (this < other) this else other
 
     fun toLong(): Long = sat
 
@@ -28,7 +24,4 @@ data class Satoshi(val sat: Long) : Comparable<Satoshi> {
     }
 }
 
-fun Long.sat(): Satoshi = Satoshi(this)
 fun Long.toSatoshi(): Satoshi = Satoshi(this)
-fun Int.sat(): Satoshi = Satoshi(this.toLong())
-public fun Int.toSatoshi(): Satoshi = Satoshi(this.toLong())

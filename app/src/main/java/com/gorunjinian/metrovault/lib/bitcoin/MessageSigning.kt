@@ -32,9 +32,7 @@ object MessageSigning {
         ELECTRUM("Electrum"),
         BIP137("BIP-137")
     }
-    
-    // Header byte base values for BIP137
-    private const val HEADER_UNCOMPRESSED_P2PKH = 27
+
     private const val HEADER_COMPRESSED_P2PKH = 31
     private const val HEADER_P2SH_P2WPKH = 35
     private const val HEADER_P2WPKH = 39
@@ -163,7 +161,7 @@ object MessageSigning {
             val header = sigBytes[0].toInt() and 0xFF
             
             // Determine if compressed and extract recovery ID
-            val (compressed, recoveryId) = when (header) {
+            val (_, recoveryId) = when (header) {
                 in 27..30 -> false to (header - 27)
                 in 31..34 -> true to (header - 31)
                 else -> return false // Invalid header

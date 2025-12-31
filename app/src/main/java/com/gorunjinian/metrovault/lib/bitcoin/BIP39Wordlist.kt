@@ -54,25 +54,6 @@ object BIP39Wordlist {
     }
 
     /**
-     * Clears the cached wordlist to free memory.
-     * Call this if memory is constrained.
-     */
-    fun clearCache() {
-        cachedEnglishWords = null
-    }
-
-    /**
-     * Validates if a word exists in the BIP39 English wordlist.
-     *
-     * @param context Android context
-     * @param word Word to validate
-     * @return true if word exists in wordlist
-     */
-    fun isValidWord(context: Context, word: String): Boolean {
-        return getEnglishWordlist(context).contains(word.lowercase())
-    }
-
-    /**
      * Gets words that match a given prefix (useful for autocomplete).
      *
      * @param context Android context

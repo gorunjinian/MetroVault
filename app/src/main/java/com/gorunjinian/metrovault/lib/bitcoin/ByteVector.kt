@@ -25,10 +25,6 @@ open class ByteVector(internal val bytes: ByteArray, internal val offset: Int, p
 
     fun drop(n: Int): ByteVector = ByteVector(bytes, offset + n, size - n)
 
-    fun takeRight(n: Int): ByteVector = drop(size - n)
-
-    fun dropRight(n: Int): ByteVector = take(size - n)
-
     fun slice(from: Int, to: Int): ByteVector = drop(from).take(to - from)
 
     open fun update(i: Int, b: Byte): ByteVector {
@@ -133,8 +129,6 @@ class ByteVector32(bytes: ByteArray, offset: Int) : ByteVector(bytes, offset, 32
         @JvmField
         val One: ByteVector32 = ByteVector32("0100000000000000000000000000000000000000000000000000000000000000")
 
-        @JvmStatic
-        fun fromValidHex(input: String): ByteVector32 = ByteVector32(input)
     }
 }
 
@@ -146,18 +140,9 @@ class ByteVector64(bytes: ByteArray, offset: Int) : ByteVector(bytes, offset, 64
     override fun update(i: Int, b: Byte): ByteVector64 = ByteVector64(super.update(i, b))
 
     override fun reversed(): ByteVector64 = ByteVector64(super.toByteArray().reversedArray())
-
-    companion object {
-        @JvmField
-        val Zeroes: ByteVector64 = ByteVector64("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
-
-        @JvmStatic
-        fun fromValidHex(input: String): ByteVector64 = ByteVector64(input)
-    }
 }
 
 fun ByteArray.byteVector(): ByteVector = ByteVector(this)
 
 fun ByteArray.byteVector32(): ByteVector32 = ByteVector32(this)
-
 fun ByteArray.byteVector64(): ByteVector64 = ByteVector64(this)

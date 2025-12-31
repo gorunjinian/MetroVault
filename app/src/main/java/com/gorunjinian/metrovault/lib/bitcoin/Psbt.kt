@@ -1,6 +1,5 @@
-package com.gorunjinian.metrovault.lib.bitcoin.psbt
+package com.gorunjinian.metrovault.lib.bitcoin
 
-import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.crypto.Pack
 import com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayInput
 import com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayOutput
@@ -17,286 +16,12 @@ import kotlin.jvm.JvmStatic
  * @param inputs signing data for each input of the transaction to be signed (order matches the unsigned tx).
  * @param outputs signing data for each output of the transaction to be signed (order matches the unsigned tx).
  */
+@Suppress("unused")
 data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>, @JvmField val outputs: List<Output>) {
 
     init {
         require(global.tx.txIn.size == inputs.size) { "there must be one partially signed input per input of the unsigned tx" }
         require(global.tx.txOut.size == outputs.size) { "there must be one partially signed output per output of the unsigned tx" }
-    }
-
-    /**
-     * Implements the PSBT creator role; initializes a PSBT for the given unsigned transaction.
-     *
-     * @param tx unsigned transaction skeleton.
-     * @return the psbt with empty inputs and outputs.
-     */
-    constructor(tx: Transaction) : this(
-        Global(Version, tx.copy(txIn = tx.txIn.map { it.copy(signatureScript = ByteVector.empty, witness = ScriptWitness.empty) }), listOf(), listOf()),
-        tx.txIn.map { Input.PartiallySignedInputWithoutUtxo(null, mapOf(), setOf(), setOf(), setOf(), setOf(), null, mapOf(), null, listOf()) },
-        tx.txOut.map { Output.UnspecifiedOutput(mapOf(), null, mapOf(), listOf()) }
-    )
-
-    /**
-     * Implements the PSBT updater role; adds information about a given segwit utxo.
-     * When you have access to the complete input transaction, you should prefer [[updateWitnessInputTx]].
-     *
-     * @param outPoint utxo being spent.
-     * @param txOut transaction output for the provided outPoint.
-     * @param redeemScript redeem script if known and applicable (when using p2sh-embedded segwit).
-     * @param witnessScript witness script if known and applicable (when using p2wsh).
-     * @param sighashType sighash type if one should be specified.
-     * @param derivationPaths derivation paths for keys used by this utxo.
-     * @return psbt with the matching input updated.
-     */
-    fun updateWitnessInput(
-        outPoint: OutPoint,
-        txOut: TxOut,
-        redeemScript: List<ScriptElt>? = null,
-        witnessScript: List<ScriptElt>? = null,
-        sighashType: Int? = null,
-        derivationPaths: Map<PublicKey, KeyPathWithMaster> = mapOf(),
-        taprootKeySignature: ByteVector? = null,
-        taprootInternalKey: XonlyPublicKey? = null,
-        taprootDerivationPaths: Map<XonlyPublicKey, TaprootBip32DerivationPath> = mapOf()
-    ): Either<UpdateFailure, Psbt> {
-        val inputIndex = global.tx.txIn.indexOfFirst { it.outPoint == outPoint }
-        if (inputIndex < 0) return Either.Left(UpdateFailure.InvalidInput("psbt transaction does not spend the provided outpoint"))
-        val updatedInput = when (val input = inputs[inputIndex]) {
-            is Input.PartiallySignedInputWithoutUtxo -> Input.WitnessInput.PartiallySignedWitnessInput(
-                txOut,
-                input.nonWitnessUtxo,
-                sighashType ?: input.sighashType,
-                input.partialSigs,
-                input.derivationPaths + derivationPaths,
-                redeemScript,
-                witnessScript,
-                input.ripemd160,
-                input.sha256,
-                input.hash160,
-                input.hash256,
-                taprootKeySignature ?: input.taprootKeySignature,
-                input.taprootDerivationPaths + taprootDerivationPaths,
-                taprootInternalKey ?: input.taprootInternalKey,
-                input.unknown
-            )
-            is Input.WitnessInput.PartiallySignedWitnessInput -> input.copy(
-                txOut = txOut,
-                redeemScript = redeemScript ?: input.redeemScript,
-                witnessScript = witnessScript ?: input.witnessScript,
-                sighashType = sighashType ?: input.sighashType,
-                derivationPaths = input.derivationPaths + derivationPaths,
-                taprootInternalKey = taprootInternalKey ?: input.taprootInternalKey,
-                taprootDerivationPaths = input.taprootDerivationPaths + taprootDerivationPaths
-            )
-            is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update segwit input: it has already been updated with non-segwit data"))
-            is Input.FinalizedInputWithoutUtxo -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update segwit input: it has already been finalized"))
-            is Input.WitnessInput.FinalizedWitnessInput -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update segwit input: it has already been finalized"))
-            is Input.NonWitnessInput.FinalizedNonWitnessInput -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update segwit input: it has already been finalized"))
-        }
-        return Either.Right(this.copy(inputs = inputs.updated(inputIndex, updatedInput)))
-    }
-
-    /**
-     * Implements the PSBT updater role; adds information about a given segwit utxo.
-     * Note that we always fill the nonWitnessUtxo (see https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki#cite_note-7).
-     *
-     * @param inputTx transaction containing the utxo.
-     * @param outputIndex index of the utxo in the inputTx.
-     * @param redeemScript redeem script if known and applicable (when using p2sh-embedded segwit).
-     * @param witnessScript witness script if known and applicable (when using p2wsh).
-     * @param sighashType sighash type if one should be specified.
-     * @param derivationPaths derivation paths for keys used by this utxo.
-     * @param taprootInternalKey internal key used by this utxo.
-     * @param taprootDerivationPaths taproot derivation paths for keys used by this utxo.
-     * @return psbt with the matching input updated.
-     */
-    fun updateWitnessInputTx(
-        inputTx: Transaction,
-        outputIndex: Int,
-        redeemScript: List<ScriptElt>? = null,
-        witnessScript: List<ScriptElt>? = null,
-        sighashType: Int? = null,
-        derivationPaths: Map<PublicKey, KeyPathWithMaster> = mapOf(),
-        taprootKeySignature: ByteVector? = null,
-        taprootInternalKey: XonlyPublicKey? = null,
-        taprootDerivationPaths: Map<XonlyPublicKey, TaprootBip32DerivationPath> = mapOf()
-    ): Either<UpdateFailure, Psbt> {
-        if (outputIndex >= inputTx.txOut.size) return Either.Left(UpdateFailure.InvalidInput("output index must exist in the input tx"))
-        val outpoint = OutPoint(inputTx, outputIndex.toLong())
-        val inputIndex = global.tx.txIn.indexOfFirst { it.outPoint == outpoint }
-        if (inputIndex < 0) return Either.Left(UpdateFailure.InvalidInput("psbt transaction does not spend the provided outpoint"))
-        val updatedInput = when (val input = inputs[inputIndex]) {
-            is Input.PartiallySignedInputWithoutUtxo -> Input.WitnessInput.PartiallySignedWitnessInput(
-                inputTx.txOut[outputIndex],
-                inputTx,
-                sighashType ?: input.sighashType,
-                input.partialSigs,
-                input.derivationPaths + derivationPaths,
-                redeemScript,
-                witnessScript,
-                input.ripemd160,
-                input.sha256,
-                input.hash160,
-                input.hash256,
-                taprootKeySignature ?: input.taprootKeySignature,
-                input.taprootDerivationPaths + taprootDerivationPaths,
-                taprootInternalKey ?: input.taprootInternalKey,
-                input.unknown
-            )
-            is Input.WitnessInput.PartiallySignedWitnessInput -> input.copy(
-                txOut = inputTx.txOut[outputIndex],
-                nonWitnessUtxo = inputTx,
-                redeemScript = redeemScript ?: input.redeemScript,
-                witnessScript = witnessScript ?: input.witnessScript,
-                sighashType = sighashType ?: input.sighashType,
-                derivationPaths = input.derivationPaths + derivationPaths,
-                taprootInternalKey = taprootInternalKey ?: input.taprootInternalKey,
-                taprootDerivationPaths = input.taprootDerivationPaths + taprootDerivationPaths
-            )
-            is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update segwit input: it has already been updated with non-segwit data"))
-            is Input.FinalizedInputWithoutUtxo -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update segwit input: it has already been finalized"))
-            is Input.WitnessInput.FinalizedWitnessInput -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update segwit input: it has already been finalized"))
-            is Input.NonWitnessInput.FinalizedNonWitnessInput -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update segwit input: it has already been finalized"))
-        }
-        return Either.Right(this.copy(inputs = inputs.updated(inputIndex, updatedInput)))
-    }
-
-    /**
-     * Implements the PSBT updater role; adds information about a given non-segwit utxo.
-     *
-     * @param inputTx transaction containing the utxo.
-     * @param outputIndex index of the utxo in the inputTx.
-     * @param redeemScript redeem script if known and applicable (when using p2sh).
-     * @param sighashType sighash type if one should be specified.
-     * @param derivationPaths derivation paths for keys used by this utxo.
-     * @return psbt with the matching input updated.
-     */
-    fun updateNonWitnessInput(
-        inputTx: Transaction,
-        outputIndex: Int,
-        redeemScript: List<ScriptElt>? = null,
-        sighashType: Int? = null,
-        derivationPaths: Map<PublicKey, KeyPathWithMaster> = mapOf()
-    ): Either<UpdateFailure, Psbt> {
-        if (outputIndex >= inputTx.txOut.size) return Either.Left(UpdateFailure.InvalidInput("output index must exist in the input tx"))
-        val outpoint = OutPoint(inputTx, outputIndex.toLong())
-        val inputIndex = global.tx.txIn.indexOfFirst { it.outPoint == outpoint }
-        if (inputIndex < 0) return Either.Left(UpdateFailure.InvalidInput("psbt transaction does not spend the provided outpoint"))
-        val updatedInput = when (val input = inputs[inputIndex]) {
-            is Input.PartiallySignedInputWithoutUtxo -> Input.NonWitnessInput.PartiallySignedNonWitnessInput(
-                inputTx,
-                outputIndex,
-                sighashType ?: input.sighashType,
-                input.partialSigs,
-                input.derivationPaths + derivationPaths,
-                redeemScript,
-                input.ripemd160,
-                input.sha256,
-                input.hash160,
-                input.hash256,
-                input.unknown
-            )
-            is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> input.copy(
-                inputTx = inputTx,
-                outputIndex = outputIndex,
-                redeemScript = redeemScript ?: input.redeemScript,
-                sighashType = sighashType ?: input.sighashType,
-                derivationPaths = input.derivationPaths + derivationPaths
-            )
-            is Input.WitnessInput.PartiallySignedWitnessInput -> input.copy(
-                nonWitnessUtxo = inputTx,
-                redeemScript = redeemScript ?: input.redeemScript,
-                sighashType = sighashType ?: input.sighashType,
-                derivationPaths = input.derivationPaths + derivationPaths
-            )
-            is Input.FinalizedInputWithoutUtxo -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update non-segwit input: it has already been finalized"))
-            is Input.WitnessInput.FinalizedWitnessInput -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update non-segwit input: it has already been finalized"))
-            is Input.NonWitnessInput.FinalizedNonWitnessInput -> return Either.Left(UpdateFailure.CannotUpdateInput(inputIndex, "cannot update non-segwit input: it has already been finalized"))
-        }
-        return Either.Right(this.copy(inputs = inputs.updated(inputIndex, updatedInput)))
-    }
-
-    fun updatePreimageChallenges(outPoint: OutPoint, ripemd160: Set<ByteVector>, sha256: Set<ByteVector>, hash160: Set<ByteVector>, hash256: Set<ByteVector>): Either<UpdateFailure, Psbt> {
-        val inputIndex = global.tx.txIn.indexOfFirst { it.outPoint == outPoint }
-        if (inputIndex < 0) return Either.Left(UpdateFailure.InvalidInput("psbt transaction does not spend the provided outpoint"))
-        return updatePreimageChallenges(inputIndex, ripemd160, sha256, hash160, hash256)
-    }
-
-    fun updatePreimageChallenges(inputIndex: Int, ripemd160: Set<ByteVector>, sha256: Set<ByteVector>, hash160: Set<ByteVector>, hash256: Set<ByteVector>): Either<UpdateFailure, Psbt> {
-        if (inputIndex >= inputs.size) return Either.Left(UpdateFailure.InvalidInput("input index must exist in the input tx"))
-        val updatedInput = when (val input = inputs[inputIndex]) {
-            is Input.PartiallySignedInputWithoutUtxo -> input.copy(ripemd160 = ripemd160 + input.ripemd160, sha256 = sha256 + input.sha256, hash160 = hash160 + input.hash160, hash256 = hash256 + input.hash256)
-            is Input.WitnessInput.PartiallySignedWitnessInput -> input.copy(ripemd160 = ripemd160 + input.ripemd160, sha256 = sha256 + input.sha256, hash160 = hash160 + input.hash160, hash256 = hash256 + input.hash256)
-            is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> input.copy(ripemd160 = ripemd160 + input.ripemd160, sha256 = sha256 + input.sha256, hash160 = hash160 + input.hash160, hash256 = hash256 + input.hash256)
-            is Input.WitnessInput.FinalizedWitnessInput -> input.copy(ripemd160 = ripemd160 + input.ripemd160, sha256 = sha256 + input.sha256, hash160 = hash160 + input.hash160, hash256 = hash256 + input.hash256)
-            is Input.NonWitnessInput.FinalizedNonWitnessInput -> input.copy(ripemd160 = ripemd160 + input.ripemd160, sha256 = sha256 + input.sha256, hash160 = hash160 + input.hash160, hash256 = hash256 + input.hash256)
-            is Input.FinalizedInputWithoutUtxo -> input.copy(ripemd160 = ripemd160 + input.ripemd160, sha256 = sha256 + input.sha256, hash160 = hash160 + input.hash160, hash256 = hash256 + input.hash256)
-        }
-        return Either.Right(this.copy(inputs = inputs.updated(inputIndex, updatedInput)))
-    }
-
-    /**
-     * Add details for a segwit output.
-     *
-     * @param outputIndex index of the output in the psbt.
-     * @param witnessScript witness script if known and applicable (when using p2wsh).
-     * @param redeemScript redeem script if known and applicable (when using p2sh-embedded segwit).
-     * @param derivationPaths derivation paths for keys used by this output.
-     * @return psbt with the matching output updated.
-     */
-    fun updateWitnessOutput(
-        outputIndex: Int,
-        witnessScript: List<ScriptElt>? = null,
-        redeemScript: List<ScriptElt>? = null,
-        derivationPaths: Map<PublicKey, KeyPathWithMaster> = mapOf(),
-        taprootInternalKey: XonlyPublicKey? = null,
-        taprootDerivationPaths: Map<XonlyPublicKey, TaprootBip32DerivationPath> = mapOf()
-    ): Either<UpdateFailure, Psbt> {
-        if (outputIndex >= global.tx.txOut.size) return Either.Left(UpdateFailure.InvalidInput("output index must exist in the global tx"))
-        val updatedOutput = when (val output = outputs[outputIndex]) {
-            is Output.NonWitnessOutput -> return Either.Left(UpdateFailure.CannotUpdateOutput(outputIndex, "cannot update segwit output: it has already been updated with non-segwit data"))
-            is Output.WitnessOutput -> output.copy(
-                witnessScript = witnessScript ?: output.witnessScript,
-                redeemScript = redeemScript ?: output.redeemScript,
-                derivationPaths = output.derivationPaths + derivationPaths,
-                taprootInternalKey = taprootInternalKey ?: output.taprootInternalKey,
-                taprootDerivationPaths = output.taprootDerivationPaths + taprootDerivationPaths
-            )
-            is Output.UnspecifiedOutput -> Output.WitnessOutput(
-                witnessScript,
-                redeemScript,
-                output.derivationPaths + derivationPaths,
-                taprootInternalKey ?: output.taprootInternalKey,
-                output.taprootDerivationPaths + taprootDerivationPaths,
-                output.unknown
-            )
-        }
-        return Either.Right(this.copy(outputs = outputs.updated(outputIndex, updatedOutput)))
-    }
-
-    /**
-     * Add details for a non-segwit output.
-     *
-     * @param outputIndex index of the output in the psbt.
-     * @param redeemScript redeem script if known and applicable (when using p2sh).
-     * @param derivationPaths derivation paths for keys used by this output.
-     * @return psbt with the matching output updated.
-     */
-    fun updateNonWitnessOutput(
-        outputIndex: Int,
-        redeemScript: List<ScriptElt>? = null,
-        derivationPaths: Map<PublicKey, KeyPathWithMaster> = mapOf()
-    ): Either<UpdateFailure, Psbt> {
-        if (outputIndex >= global.tx.txOut.size) return Either.Left(UpdateFailure.InvalidInput("output index must exist in the global tx"))
-        val updatedOutput = when (val output = outputs[outputIndex]) {
-            is Output.NonWitnessOutput -> output.copy(
-                redeemScript = redeemScript ?: output.redeemScript,
-                derivationPaths = output.derivationPaths + derivationPaths
-            )
-            is Output.WitnessOutput -> return Either.Left(UpdateFailure.CannotUpdateOutput(outputIndex, "cannot update non-segwit output: it has already been updated with segwit data"))
-            is Output.UnspecifiedOutput -> Output.NonWitnessOutput(redeemScript, output.derivationPaths + derivationPaths, output.unknown)
-        }
-        return Either.Right(this.copy(outputs = outputs.updated(outputIndex, updatedOutput)))
     }
 
     /**
@@ -567,15 +292,7 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
         }
     }
 
-    fun getInput(outPoint: OutPoint): Input? {
-        val inputIndex = global.tx.txIn.indexOfFirst { it.outPoint == outPoint }
-        return if (inputIndex >= 0) inputs[inputIndex] else null
-    }
-
-    public fun getInput(inputIndex: Int): Input? {
-        return if (0 <= inputIndex && inputIndex < inputs.size) inputs[inputIndex] else null
-    }
-
+    @Suppress("ConstPropertyName")
     companion object {
 
         /** Only version 0 is supported for now. */
@@ -1487,8 +1204,6 @@ sealed class UpdateFailure {
     data class InvalidWitnessUtxo(val reason: String) : UpdateFailure()
     data class CannotCombine(val reason: String) : UpdateFailure()
     data class CannotJoin(val reason: String) : UpdateFailure()
-    data class CannotUpdateInput(val index: Int, val reason: String) : UpdateFailure()
-    data class CannotUpdateOutput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotSignInput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotFinalizeInput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotExtractTx(val reason: String) : UpdateFailure()

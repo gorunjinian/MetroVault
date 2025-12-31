@@ -2,7 +2,6 @@ package com.gorunjinian.metrovault.domain.service.psbt
 
 import android.util.Log
 import com.gorunjinian.metrovault.lib.bitcoin.*
-import com.gorunjinian.metrovault.lib.bitcoin.psbt.*
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.data.model.PsbtDetails
@@ -11,7 +10,6 @@ import com.gorunjinian.metrovault.data.model.PsbtOutput
 import com.gorunjinian.metrovault.data.model.SigningResult
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
-import com.gorunjinian.metrovault.domain.service.util.ScriptUtils
 import com.gorunjinian.metrovault.domain.service.util.WalletConstants
 
 /**
@@ -353,8 +351,8 @@ class PsbtService {
             }
 
             // Find OP_m at start and OP_n before OP_CHECKMULTISIG
-            val m = ScriptUtils.opNumToInt(script.firstOrNull())
-            val n = ScriptUtils.opNumToInt(script.getOrNull(script.size - 2))
+            val m = opNumToInt(script.firstOrNull())
+            val n = opNumToInt(script.getOrNull(script.size - 2))
 
             if (m != null && n != null && m in 1..16 && n in 1..16 && m <= n) {
                 Triple(true, m, n)
@@ -366,7 +364,48 @@ class PsbtService {
         }
     }
 
+    /**
+     * Converts an OP_N script element to its integer value.
+     * Used when parsing multisig scripts to extract m and n values.
+     *
+     * @param op The script element (OP_0 through OP_16)
+     * @return The integer value (0-16), or null if not a valid OP_N
+     */
+    private fun opNumToInt(op: ScriptElt?): Int? {
+        if (op == null) return null
+        return if (Script.isSimpleValue(op)) {
+            Script.simpleValue(op).toInt()
+        } else {
+            null
+        }
+    }
+
     // ==================== Private Helpers ====================
+
+    /**
+     * Script type information for virtual size calculation.
+     * Contains input vBytes contribution, output script length, and whether it's segwit.
+     */
+    private data class ScriptSizeInfo(
+        val inputVBytes: Double,
+        val outputScriptLen: Int,
+        val isSegwit: Boolean
+    )
+
+    /**
+     * Determines size information for a parsed script.
+     * Centralizes script type detection to avoid duplication.
+     */
+    private fun getScriptSizeInfo(parsedScript: List<ScriptElt>): ScriptSizeInfo {
+        return when {
+            Script.isPay2pkh(parsedScript) -> ScriptSizeInfo(148.0, 25, false)   // P2PKH: 36 + 1 + 107 + 4
+            Script.isPay2sh(parsedScript) -> ScriptSizeInfo(91.0, 23, true)       // P2SH-P2WPKH nested segwit estimate
+            Script.isPay2wpkh(parsedScript) -> ScriptSizeInfo(68.0, 22, true)     // P2WPKH: 36 + 1 + 4 + (1 + 107)/4
+            Script.isPay2wsh(parsedScript) -> ScriptSizeInfo(104.0, 34, true)     // P2WSH 2-of-3 estimate
+            Script.isPay2tr(parsedScript) -> ScriptSizeInfo(58.0, 34, true)       // P2TR: 36 + 1 + 4 + (1 + 65)/4
+            else -> ScriptSizeInfo(68.0, 22, true)                                 // Default to P2WPKH
+        }
+    }
 
     /**
      * Calculates the virtual size (vBytes) of the transaction.
@@ -380,26 +419,9 @@ class PsbtService {
             if (scriptPubKey != null) {
                 try {
                     val parsedScript = Script.parse(scriptPubKey)
-                    inputVBytes += when {
-                        Script.isPay2pkh(parsedScript) -> 148.0     // P2PKH: 36 + 1 + 107 + 4
-                        Script.isPay2sh(parsedScript) -> {
-                            hasSegwit = true
-                            91.0  // P2SH-P2WPKH: nested segwit estimate
-                        }
-                        Script.isPay2wpkh(parsedScript) -> {
-                            hasSegwit = true
-                            68.0  // P2WPKH: 36 + 1 + 4 + (1 + 107)/4
-                        }
-                        Script.isPay2wsh(parsedScript) -> {
-                            hasSegwit = true
-                            104.0  // P2WSH 2-of-3 estimate
-                        }
-                        Script.isPay2tr(parsedScript) -> {
-                            hasSegwit = true
-                            58.0   // P2TR: 36 + 1 + 4 + (1 + 65)/4
-                        }
-                        else -> 68.0  // Default to P2WPKH
-                    }
+                    val sizeInfo = getScriptSizeInfo(parsedScript)
+                    inputVBytes += sizeInfo.inputVBytes
+                    if (sizeInfo.isSegwit) hasSegwit = true
                 } catch (_: Exception) {
                     inputVBytes += 68.0
                 }
@@ -413,15 +435,8 @@ class PsbtService {
         tx.txOut.forEach { txOut ->
             try {
                 val parsedScript = Script.parse(txOut.publicKeyScript)
-                val scriptLen = when {
-                    Script.isPay2pkh(parsedScript) -> 25   // P2PKH output
-                    Script.isPay2sh(parsedScript) -> 23    // P2SH output
-                    Script.isPay2wpkh(parsedScript) -> 22  // P2WPKH output
-                    Script.isPay2wsh(parsedScript) -> 34   // P2WSH output
-                    Script.isPay2tr(parsedScript) -> 34    // P2TR output
-                    else -> 22  // Default to P2WPKH
-                }
-                outputVBytes += 8 + 1 + scriptLen
+                val sizeInfo = getScriptSizeInfo(parsedScript)
+                outputVBytes += 8 + 1 + sizeInfo.outputScriptLen
             } catch (_: Exception) {
                 outputVBytes += 31.0
             }
@@ -463,8 +478,6 @@ class PsbtService {
                         .privateKey
 
                     val derivedPubKey = signingPrivateKey.publicKey()
-                    Log.d(TAG, "  Derived pubkey: ${derivedPubKey.value.toHex().take(20)}...")
-                    Log.d(TAG, "  PSBT pubkey:    ${publicKey.value.toHex().take(20)}...")
 
                     // Verify derived public key matches
                     if (derivedPubKey == publicKey) {

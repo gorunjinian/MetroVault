@@ -80,12 +80,6 @@ object Bitcoin {
     fun computeP2WpkhAddress(pub: PublicKey, chainHash: BlockHash): String = pub.p2wpkhAddress(chainHash)
 
     @JvmStatic
-    fun computeBIP84Address(pub: PublicKey, chainHash: BlockHash): String = computeP2WpkhAddress(pub, chainHash)
-
-    @JvmStatic
-    fun computeBIP86Address(pub: PublicKey, chainHash: BlockHash): String = pub.p2trAddress(chainHash)
-
-    @JvmStatic
     fun computeBIP86Address(pub: XonlyPublicKey, chainHash: BlockHash): String = pub.p2trAddress(chainHash)
 
     /**
@@ -118,28 +112,23 @@ object Bitcoin {
                 Script.isNativeWitnessScript(pubkeyScript) -> {
                     val hrp = Bech32.hrp(chainHash)
                     val witnessScript = (pubkeyScript[1] as OP_PUSHDATA).data.toByteArray()
-                    when (pubkeyScript[0]) {
-                        is OP_0 -> when {
-                            Script.isPay2wpkh(pubkeyScript) || Script.isPay2wsh(pubkeyScript) -> Either.Right(Bech32.encodeWitnessAddress(hrp, 0, witnessScript))
+                    val versionOp = pubkeyScript[0]
+
+                    // Use Script.isSimpleValue() and Script.simpleValue() to extract witness version
+                    when {
+                        versionOp == OP_0 -> when {
+                            Script.isPay2wpkh(pubkeyScript) || Script.isPay2wsh(pubkeyScript) ->
+                                Either.Right(Bech32.encodeWitnessAddress(hrp, 0, witnessScript))
                             else -> return Either.Left(BitcoinError.InvalidScript)
                         }
-
-                        is OP_1 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 1, witnessScript))
-                        is OP_2 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 2, witnessScript))
-                        is OP_3 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 3, witnessScript))
-                        is OP_4 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 4, witnessScript))
-                        is OP_5 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 5, witnessScript))
-                        is OP_6 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 6, witnessScript))
-                        is OP_7 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 7, witnessScript))
-                        is OP_8 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 8, witnessScript))
-                        is OP_9 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 9, witnessScript))
-                        is OP_10 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 10, witnessScript))
-                        is OP_11 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 11, witnessScript))
-                        is OP_12 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 12, witnessScript))
-                        is OP_13 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 13, witnessScript))
-                        is OP_14 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 14, witnessScript))
-                        is OP_15 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 15, witnessScript))
-                        is OP_16 -> Either.Right(Bech32.encodeWitnessAddress(hrp, 16, witnessScript))
+                        Script.isSimpleValue(versionOp) -> {
+                            val version = Script.simpleValue(versionOp).toInt()
+                            if (version in 1..16) {
+                                Either.Right(Bech32.encodeWitnessAddress(hrp, version.toByte(), witnessScript))
+                            } else {
+                                return Either.Left(BitcoinError.InvalidScript)
+                            }
+                        }
                         else -> return Either.Left(BitcoinError.InvalidScript)
                     }
                 }
@@ -165,26 +154,6 @@ object Bitcoin {
 
     @JvmStatic
     fun addressToPublicKeyScript(chainHash: BlockHash, address: String): Either<BitcoinError, List<ScriptElt>> {
-        val witnessVersions = mapOf(
-            0.toByte() to OP_0,
-            1.toByte() to OP_1,
-            2.toByte() to OP_2,
-            3.toByte() to OP_3,
-            4.toByte() to OP_4,
-            5.toByte() to OP_5,
-            6.toByte() to OP_6,
-            7.toByte() to OP_7,
-            8.toByte() to OP_8,
-            9.toByte() to OP_9,
-            10.toByte() to OP_10,
-            11.toByte() to OP_11,
-            12.toByte() to OP_12,
-            13.toByte() to OP_13,
-            14.toByte() to OP_14,
-            15.toByte() to OP_15,
-            16.toByte() to OP_16
-        )
-
         return runCatching { Base58Check.decode(address) }.fold(
             onSuccess = {
                 when (it.first) {
@@ -205,16 +174,22 @@ object Bitcoin {
             },
             onFailure = { _ ->
                 runCatching { Bech32.decodeWitnessAddress(address) }.fold(
-                    onSuccess = {
-                        val witnessVersion = witnessVersions[it.second]
+                    onSuccess = { decoded ->
+                        val versionByte = decoded.second
+                        // Use Script.fromSimpleValue() to convert witness version to OP code
+                        val witnessVersion = if (versionByte in 0..16) {
+                            Script.fromSimpleValue(versionByte)
+                        } else {
+                            return@fold Either.Left(BitcoinError.InvalidWitnessVersion(versionByte.toInt()))
+                        }
+
                         when {
-                            witnessVersion == null -> Either.Left(BitcoinError.InvalidWitnessVersion(it.second.toInt()))
-                            it.third.size != 20 && it.third.size != 32 -> Either.Left(BitcoinError.InvalidBech32Address)
-                            it.first == "bc" && chainHash == Block.LivenetGenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(it.third)))
-                            it.first == "tb" && chainHash == Block.Testnet4GenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(it.third)))
-                            it.first == "tb" && chainHash == Block.Testnet3GenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(it.third)))
-                            it.first == "tb" && chainHash == Block.SignetGenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(it.third)))
-                            it.first == "bcrt" && chainHash == Block.RegtestGenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(it.third)))
+                            decoded.third.size != 20 && decoded.third.size != 32 -> Either.Left(BitcoinError.InvalidBech32Address)
+                            decoded.first == "bc" && chainHash == Block.LivenetGenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(decoded.third)))
+                            decoded.first == "tb" && chainHash == Block.Testnet4GenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(decoded.third)))
+                            decoded.first == "tb" && chainHash == Block.Testnet3GenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(decoded.third)))
+                            decoded.first == "tb" && chainHash == Block.SignetGenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(decoded.third)))
+                            decoded.first == "bcrt" && chainHash == Block.RegtestGenesisBlock.hash -> Either.Right(listOf(witnessVersion, OP_PUSHDATA(decoded.third)))
                             else -> Either.Left(BitcoinError.ChainHashMismatch)
                         }
                     },
@@ -225,20 +200,4 @@ object Bitcoin {
             }
         )
     }
-}
-
-sealed class Chain(val name: String, private val genesis: Block) {
-    object Regtest : Chain("Regtest", Block.RegtestGenesisBlock)
-    object Testnet3 : Chain("Testnet3", Block.Testnet3GenesisBlock)
-    object Testnet4 : Chain("Testnet4", Block.Testnet4GenesisBlock)
-    object Signet : Chain("Signet", Block.SignetGenesisBlock)
-    object Mainnet : Chain("Mainnet", Block.LivenetGenesisBlock)
-
-    fun isMainnet(): Boolean = this is Mainnet
-    fun isTestnet3(): Boolean = this is Testnet3
-    fun isTestnet4(): Boolean = this is Testnet4
-
-    val chainHash: BlockHash get() = genesis.hash
-
-    override fun toString(): String = name
 }

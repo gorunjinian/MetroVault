@@ -11,6 +11,7 @@ import kotlin.jvm.JvmStatic
  * The validity of this public key is not checked by default, because when you create a public key from a private key it will always be valid.
  * However, if you receive a public key from an external, untrusted source, you should call `isValid()` before actually using it.
  */
+@Suppress("unused")
 data class PublicKey(@JvmField val value: ByteVector) {
     constructor(data: ByteArray) : this(ByteVector(data))
 

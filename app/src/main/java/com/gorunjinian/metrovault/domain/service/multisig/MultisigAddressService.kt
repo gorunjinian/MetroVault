@@ -11,7 +11,6 @@ import com.gorunjinian.metrovault.lib.bitcoin.io.readNBytes
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
 import com.gorunjinian.metrovault.domain.service.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
-import com.gorunjinian.metrovault.domain.service.util.ScriptUtils
 import com.gorunjinian.metrovault.domain.service.util.WalletConstants
 
 /**
@@ -21,6 +20,7 @@ import com.gorunjinian.metrovault.domain.service.util.WalletConstants
  * Uses sortedmulti semantics: public keys are sorted lexicographically before
  * building the witness script.
  */
+@Suppress("LocalVariableName")
 class MultisigAddressService {
 
     companion object {
@@ -301,17 +301,10 @@ class MultisigAddressService {
 
     /**
      * Builds a multisig script: OP_m <pubkey1> <pubkey2> ... OP_n OP_CHECKMULTISIG
+     * Delegates to Script.createMultiSigMofN() which provides validation and standardized output.
      */
     private fun buildMultisigScript(m: Int, sortedPubKeys: List<PublicKey>): List<ScriptElt> {
-        val n = sortedPubKeys.size
-        return buildList {
-            add(ScriptUtils.intToOpNum(m))
-            sortedPubKeys.forEach { pubKey ->
-                add(OP_PUSHDATA(pubKey.value))
-            }
-            add(ScriptUtils.intToOpNum(n))
-            add(OP_CHECKMULTISIG)
-        }
+        return Script.createMultiSigMofN(m, sortedPubKeys)
     }
 
     /**
