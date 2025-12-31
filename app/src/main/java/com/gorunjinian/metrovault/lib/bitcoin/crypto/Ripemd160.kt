@@ -1,5 +1,6 @@
 package com.gorunjinian.metrovault.lib.bitcoin.crypto
 
+@Suppress("PrivatePropertyName", "FunctionName")
 internal class Ripemd160 : Digest {
 
     private val DIGEST_SIZE = 20

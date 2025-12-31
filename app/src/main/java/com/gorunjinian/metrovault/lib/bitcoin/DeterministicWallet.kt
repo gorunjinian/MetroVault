@@ -251,6 +251,9 @@ object DeterministicWallet {
     @JvmStatic
     fun fingerprint(input: ExtendedPrivateKey): Long = fingerprint(publicKey(input))
 
+    @JvmStatic
+    fun derivePrivateKey(parent: ExtendedPrivateKey, keyPath: KeyPath): ExtendedPrivateKey = parent.derivePrivateKey(keyPath.path)
+
     // p2pkh mainnet
     const val xprv: Int = 0x0488ade4
     const val xpub: Int = 0x0488b21e

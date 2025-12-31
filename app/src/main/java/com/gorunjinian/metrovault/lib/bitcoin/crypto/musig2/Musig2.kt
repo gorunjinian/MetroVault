@@ -82,7 +82,7 @@ data class Session(private val data: ByteVector, private val keyAggCache: KeyAgg
      */
     fun verify(partialSig: ByteVector32, publicNonce: IndividualNonce, publicKey: PublicKey): Boolean = try {
         Secp256k1.musigPartialSigVerify(partialSig.toByteArray(), publicNonce.toByteArray(), publicKey.value.toByteArray(), keyAggCache.toByteArray(), this.toByteArray()) == 1
-    } catch (t: Throwable) {
+    } catch (_: Throwable) {
         false
     }
 
@@ -258,7 +258,7 @@ object Musig2 {
      * @param publicKeys public keys of all participants: callers must verify that all public keys are valid.
      */
     @JvmStatic
-    public fun aggregateKeys(publicKeys: List<PublicKey>): XonlyPublicKey = KeyAggCache.create(publicKeys).first
+    fun aggregateKeys(publicKeys: List<PublicKey>): XonlyPublicKey = KeyAggCache.create(publicKeys).first
 
     /**
      * @param sessionId a random, unique session ID.
