@@ -210,7 +210,9 @@ class PsbtService {
             var isMultisig = false
             var requiredSignatures = 1
             var totalSigners = 1
-            var totalCurrentSignatures = 0
+            // For multisig, we track the MINIMUM signature count across all multisig inputs
+            // (since all inputs need signatures from the same signers)
+            var minMultisigSignatures: Int? = null
             var allInputsSigned = true
 
             val inputs = tx.txIn.mapIndexed { index, txIn ->
@@ -237,9 +239,9 @@ class PsbtService {
                     isMultisig = true
                     requiredSignatures = inputM
                     totalSigners = inputN
+                    // Track minimum signature count across all multisig inputs
+                    minMultisigSignatures = minOf(minMultisigSignatures ?: sigCount, sigCount)
                 }
-
-                totalCurrentSignatures += sigCount
 
                 // Check if this input has sufficient signatures
                 val inputSigned = if (inputIsMultisig) {
@@ -258,6 +260,7 @@ class PsbtService {
                     isMultisig = inputIsMultisig
                 )
             }
+
 
             val outputs = tx.txOut.map { txOut ->
                 val address = extractAddressFromOutput(txOut, chainHash)
@@ -278,7 +281,7 @@ class PsbtService {
                 isMultisig = isMultisig,
                 requiredSignatures = requiredSignatures,
                 totalSigners = totalSigners,
-                currentSignatures = totalCurrentSignatures,
+                currentSignatures = minMultisigSignatures ?: 0,
                 isReadyToBroadcast = allInputsSigned
             )
         } catch (_: Exception) {
