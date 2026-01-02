@@ -1,3 +1,5 @@
+@file:Suppress("SpellCheckingInspection")
+
 package com.gorunjinian.metrovault.lib.bitcoin
 
  object ScriptFlags {

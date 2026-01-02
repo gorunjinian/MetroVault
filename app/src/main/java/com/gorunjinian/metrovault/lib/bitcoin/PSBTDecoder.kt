@@ -15,7 +15,7 @@ import java.util.zip.Deflater
  * - BC-UR: Blockchain Commons Uniform Resources (ur:psbt/ and ur:crypto-psbt/)
  * - Hex: Raw hex-encoded PSBT
  */
-@Suppress("KDocUnresolvedReference")
+@Suppress("KDocUnresolvedReference", "unused")
 object PSBTDecoder {
     
     private const val TAG = "PSBTDecoder"
@@ -467,7 +467,7 @@ object PSBTDecoder {
                 val chunkBase32 = encodeBase32(chunk)
                 val totalBase36 = totalParts.toString(36).padStart(2, '0').uppercase()
                 val partBase36 = index.toString(36).padStart(2, '0').uppercase()
-                "B\$${encoding}P${totalBase36}${partBase36}${chunkBase32}"
+                $$"B$$${encoding}P$${totalBase36}$${partBase36}$${chunkBase32}"
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to encode PSBT to BBQr: ${e.message}")
