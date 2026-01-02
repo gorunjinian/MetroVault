@@ -241,7 +241,7 @@ fun AboutScreen(
                         FeatureItem(
                             icon = R.drawable.ic_wallet,
                             title = "Multi-Wallet Support",
-                            description = "Manage multiple wallets with different address types"
+                            description = "Manage multiple wallets with different address types including Multi-Sig"
                         )
                         FeatureItem(
                             icon = R.drawable.ic_decoy,

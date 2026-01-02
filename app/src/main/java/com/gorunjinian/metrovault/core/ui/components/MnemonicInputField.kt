@@ -152,7 +152,7 @@ private fun WordChip(
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
             Icon(
-                painter = painterResource(R.drawable.ic_density),
+                painter = painterResource(R.drawable.ic_close),
                 contentDescription = "Remove word",
                 modifier = Modifier
                     .size(18.dp)
