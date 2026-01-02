@@ -87,12 +87,28 @@ fun WalletDetailsScreen(
                     // Testnet badge
                     if (isTestnet) {
                         Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Testnet",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    // Multi-Sig badge
+                    if (isMultisig) {
+                        Surface(
                             color = MaterialTheme.colorScheme.tertiaryContainer,
                             contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "Testnet",
+                                text = "Multi-Sig",
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold

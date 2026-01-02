@@ -556,8 +556,8 @@ fun WalletCard(
                             // Testnet badge
                             if (isTestnet) {
                                 Surface(
-                                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Text(
@@ -571,8 +571,8 @@ fun WalletCard(
                             // Multi-Sig badge
                             if (isMultisig) {
                                 Surface(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Text(
