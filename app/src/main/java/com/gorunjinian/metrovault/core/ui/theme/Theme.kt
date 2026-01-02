@@ -15,97 +15,134 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-// Bitcoin Orange
-private val BitcoinOrange = Color(0xFFF7931A)
-private val BitcoinOrangeLight = Color(0xFFFF9E2C)
-private val BitcoinOrangeDark = Color(0xFFE67E00)
-
-// Dark Background
-private val DarkBackground = Color(0xFF121212)
-private val DarkSurface = Color(0xFF1E1E1E)
-private val DarkSurfaceVariant = Color(0xFF2C2C2C)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = BitcoinOrange,
-    onPrimary = Color.Black,
-    primaryContainer = BitcoinOrangeDark,
-    onPrimaryContainer = Color.White,
+    // Primary colors
+    primary = Color(0xFFFCB975),
+    onPrimary = Color(0xFF4A2800),
+    primaryContainer = Color(0xFF693C00),
+    onPrimaryContainer = Color(0xFFFFDCBD),
 
-    secondary = Color(0xFFFFB74D),
-    onSecondary = Color.Black,
-    secondaryContainer = Color(0xFFF57C00),
-    onSecondaryContainer = Color.White,
+    // Secondary colors
+    secondary = Color(0xFFE1C1A4),
+    onSecondary = Color(0xFF402C18),
+    secondaryContainer = Color(0xFF59422C),
+    onSecondaryContainer = Color(0xFFFEDCBE),
 
-    tertiary = Color(0xFF81C784),
-    onTertiary = Color(0xFF003A00),
-    tertiaryContainer = Color(0xFF00530A),
-    onTertiaryContainer = Color(0xFF9DDB9D),
+    // Tertiary colors
+    tertiary = Color(0xFFBFCC9A),
+    onTertiary = Color(0xFF2A3410),
+    tertiaryContainer = Color(0xFF404B25),
+    onTertiaryContainer = Color(0xFFDBE8B5),
 
+    // Error colors
     error = Color(0xFFFFB4AB),
-    errorContainer = Color(0xFF93000A),
     onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
     onErrorContainer = Color(0xFFFFDAD6),
 
-    background = DarkBackground,
-    onBackground = Color(0xFFE6E1E5),
+    // Background & Surface colors
+    background = Color(0xFF19120C),
+    onBackground = Color(0xFFEFE0D5),
 
-    surface = DarkSurface,
-    onSurface = Color(0xFFE6E1E5),
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = Color(0xFFCAC4D0),
+    surface = Color(0xFF19120C),
+    onSurface = Color(0xFFEFE0D5),
+    surfaceVariant = Color(0xFF51453A),
+    onSurfaceVariant = Color(0xFFD5C3B5),
 
-    outline = Color(0xFF938F99),
-    outlineVariant = Color(0xFF49454F),
+    // Surface containers
+    surfaceTint = Color(0xFFFCB975),
+    surfaceContainerLowest = Color(0xFF130D07),
+    surfaceContainerLow = Color(0xFF211A14),
+    surfaceContainer = Color(0xFF261E18),
+    surfaceContainerHigh = Color(0xFF302921),
+    surfaceContainerHighest = Color(0xFF3C332C),
+    surfaceDim = Color(0xFF19120C),
+    surfaceBright = Color(0xFF403830),
 
-    inverseSurface = Color(0xFFE6E1E5),
-    inverseOnSurface = DarkBackground,
-    inversePrimary = Color(0xFF6750A4),
+    // Outline colors
+    outline = Color(0xFF9D8E81),
+    outlineVariant = Color(0xFF51453A),
 
-    surfaceTint = BitcoinOrange,
-    scrim = Color.Black
+    // Inverse colors
+    inverseSurface = Color(0xFFEFE0D5),
+    inverseOnSurface = Color(0xFF372F28),
+    inversePrimary = Color(0xFF855318),
+
+    // Scrim
+    scrim = Color(0xFF000000),
 )
 
 // AMOLED Black Theme - Same as Dark but with pure black backgrounds
 private val BlackColorScheme = DarkColorScheme.copy(
     background = Color.Black,
     surface = Color.Black,
-    surfaceVariant = Color(0xFF121212), // Slightly lighter than black to differentiate cards
+    surfaceVariant = Color(0xFF1A1A1A),
+    surfaceDim = Color.Black,
+    surfaceBright = Color(0xFF2A2A2A),
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0D0D0D),
+    surfaceContainer = Color(0xFF141414),
+    surfaceContainerHigh = Color(0xFF1A1A1A),
+    surfaceContainerHighest = Color(0xFF212121),
     inverseOnSurface = Color.Black
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = BitcoinOrange,
+    // Primary colors
+    primary = Color(0xFF855318),
     onPrimary = Color.White,
-    primaryContainer = BitcoinOrangeLight,
-    onPrimaryContainer = Color.Black,
+    primaryContainer = Color(0xFFFFDCBD),
+    onPrimaryContainer = Color(0xFF693C00),
 
-    secondary = Color(0xFFF57C00),
+    // Secondary colors
+    secondary = Color(0xFF725A42),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFFFB74D),
-    onSecondaryContainer = Color.Black,
+    secondaryContainer = Color(0xFFFEDCBE),
+    onSecondaryContainer = Color(0xFF59422C),
 
-    tertiary = Color(0xFF388E3C),
+    // Tertiary colors
+    tertiary = Color(0xFF58633A),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFF81C784),
-    onTertiaryContainer = Color.Black,
+    tertiaryContainer = Color(0xFFDBE8B5),
+    onTertiaryContainer = Color(0xFF404B25),
 
+    // Error colors
     error = Color(0xFFBA1A1A),
-    errorContainer = Color(0xFFFFDAD6),
     onError = Color.White,
-    onErrorContainer = Color(0xFF410002),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF93000A),
 
-    background = Color(0xFFFFFBFE),
-    onBackground = Color(0xFF1C1B1F),
+    // Background & Surface colors
+    background = Color(0xFFFFF8F5),
+    onBackground = Color(0xFF211A14),
 
-    surface = Color(0xFFFFFBFE),
-    onSurface = Color(0xFF1C1B1F),
-    surfaceVariant = Color(0xFFE7E0EC),
-    onSurfaceVariant = Color(0xFF49454F),
+    surface = Color(0xFFFFF8F5),
+    onSurface = Color(0xFF211A14),
+    surfaceVariant = Color(0xFFF4E6DB),
+    onSurfaceVariant = Color(0xFF51453A),
 
-    outline = Color(0xFF79747E),
-    inverseOnSurface = Color(0xFFF4EFF4),
-    inverseSurface = Color(0xFF313033),
-    inversePrimary = Color(0xFFFFB74D),
+    // Surface containers (using surfaceDim, surfaceBright mapped to available roles)
+    surfaceTint = Color(0xFF855318),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFFF1E7),
+    surfaceContainer = Color(0xFFFAEBE0),
+    surfaceContainerHigh = Color(0xFFF4E6DB),
+    surfaceContainerHighest = Color(0xFFEFE0D5),
+    surfaceDim = Color(0xFFE6D7CD),
+    surfaceBright = Color(0xFFFFF8F5),
+
+    // Outline colors
+    outline = Color(0xFF837468),
+    outlineVariant = Color(0xFFD5C3B5),
+
+    // Inverse colors
+    inverseSurface = Color(0xFF372F28),
+    inverseOnSurface = Color(0xFFFDEEE3),
+    inversePrimary = Color(0xFFFCB975),
+
+    // Scrim
+    scrim = Color(0xFF000000),
 )
 
 @Composable
