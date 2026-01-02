@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash Screen Colors (Dark Theme - overrides for night mode) -->
+    <color name="splash_background">#19120C</color>
+    <color name="splash_icon_tint">#FCB975</color>
+</resources>
