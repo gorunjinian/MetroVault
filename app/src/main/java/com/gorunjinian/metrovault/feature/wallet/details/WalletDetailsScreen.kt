@@ -227,7 +227,7 @@ fun WalletDetailsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (displayFingerprints.size > 1) "Local Keys" else "Master Fingerprint",
+                                    text = if (displayFingerprints.size > 1) "Local Master FP" else "Master Fingerprint",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                                 )

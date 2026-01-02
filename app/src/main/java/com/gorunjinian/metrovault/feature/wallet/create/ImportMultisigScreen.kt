@@ -9,8 +9,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -392,11 +390,13 @@ private fun ParsedDescriptorScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Icon(
-                        imageVector = when (addressVerified) {
-                            true -> Icons.Default.CheckCircle
-                            false -> Icons.Default.Warning
-                            null -> Icons.Default.CheckCircle
-                        },
+                        painter = painterResource(
+                            when (addressVerified) {
+                                true -> R.drawable.ic_check_circle
+                                false -> R.drawable.ic_warning
+                                null -> R.drawable.ic_check_circle
+                            }
+                        ),
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
                         tint = when (addressVerified) {
@@ -575,7 +575,7 @@ private fun ErrorScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = Icons.Default.Warning,
+            painter = painterResource(R.drawable.ic_warning),
             contentDescription = null,
             modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.error

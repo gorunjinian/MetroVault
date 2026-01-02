@@ -604,7 +604,7 @@ private fun Step2Entropy(
                     if (collectedEntropy.isNotEmpty()) {
                         TextButton(onClick = onResetEntropy) {
                             Icon(
-                                Icons.Default.Refresh,
+                                painter = painterResource(R.drawable.ic_refresh),
                                 contentDescription = "Reset",
                                 modifier = Modifier.size(16.dp)
                             )

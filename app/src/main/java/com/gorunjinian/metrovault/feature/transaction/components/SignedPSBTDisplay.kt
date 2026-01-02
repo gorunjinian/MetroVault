@@ -32,7 +32,9 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
  * Supports:
  * - Single-frame QR codes
  * - Animated multi-frame QR codes with playback controls
- * - Multiple output formats (BC-UR, BBQr, Base64)
+ * - Multiple output formats (BC-URv1, BBQr, BC-URv2)
+ * 
+ * Note: QR density is controlled via the TopAppBar in ScanPSBTScreen.
  */
 @Composable
 fun SignedPSBTDisplay(

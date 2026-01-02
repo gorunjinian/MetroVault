@@ -12,7 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.gorunjinian.metrovault.R
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.gorunjinian.metrovault.domain.Wallet
@@ -36,6 +38,7 @@ import kotlinx.coroutines.withContext
  * - Animated QR codes (large PSBTs with multiple frames)
  * - Both "p1/10 data" and "ur:bytes/1-10/data" formats
  */
+@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @SuppressLint("DefaultLocale")
@@ -63,6 +66,7 @@ fun ScanPSBTScreen(
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
     var selectedOutputFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.UR_LEGACY) }
+    var selectedDensity by remember { mutableStateOf(QRCodeUtils.QRDensity.HIGH) }
     var isQRPaused by remember { mutableStateOf(false) }
     var isRegeneratingQR by remember { mutableStateOf(false) }
     
@@ -127,7 +131,10 @@ fun ScanPSBTScreen(
         barcodeView?.resume()
     }
 
-    // ==================== UI ====================
+    // State for density dropdown menu in TopAppBar
+    var showDensityMenu by remember { mutableStateOf(false) }
+
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -135,6 +142,62 @@ fun ScanPSBTScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    // Only show density button when signed transaction is displayed
+                    if (signedPSBT != null && signedQRResult != null) {
+                        Box {
+                            IconButton(onClick = { showDensityMenu = true }) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_density),
+                                    contentDescription = "QR Density"
+                                )
+                            }
+                            
+                            DropdownMenu(
+                                expanded = showDensityMenu,
+                                onDismissRequest = { showDensityMenu = false }
+                            ) {
+                                QRCodeUtils.QRDensity.entries.forEach { density ->
+                                    DropdownMenuItem(
+                                        text = { Text(density.displayName) },
+                                        onClick = {
+                                            // Trigger density change
+                                            if (density != selectedDensity) {
+                                                selectedDensity = density
+                                                currentDisplayFrame = 0
+                                                isRegeneratingQR = true
+                                                val previousResult = signedQRResult
+                                                scope.launch {
+                                                    val newQR = withContext(Dispatchers.Default) {
+                                                        QRCodeUtils.generateSmartPSBTQR(
+                                                            signedPSBT!!,
+                                                            format = selectedOutputFormat,
+                                                            density = density
+                                                        )
+                                                    }
+                                                    if (newQR != null) {
+                                                        signedQRResult = newQR
+                                                    } else {
+                                                        signedQRResult = previousResult
+                                                        android.util.Log.w("ScanPSBTScreen", "QR generation failed for density $density, keeping previous")
+                                                    }
+                                                    isRegeneratingQR = false
+                                                }
+                                            }
+                                            showDensityMenu = false
+                                        },
+                                        leadingIcon = if (selectedDensity == density) {
+                                            { Icon(painterResource(
+                                                R.drawable.ic_check),
+                                                contentDescription = null)
+                                            }
+                                        } else null
+                                    )
+                                }
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -203,7 +266,8 @@ fun ScanPSBTScreen(
                                 val newQR = withContext(Dispatchers.Default) {
                                     QRCodeUtils.generateSmartPSBTQR(
                                         signedPSBT!!,
-                                        format = newFormat
+                                        format = newFormat,
+                                        density = selectedDensity
                                     )
                                 }
                                 // Only update if generation succeeded
@@ -248,7 +312,10 @@ fun ScanPSBTScreen(
 
                                             // Use smart QR generation for animated support
                                             val qrResult = withContext(Dispatchers.Default) {
-                                                QRCodeUtils.generateSmartPSBTQR(signed)
+                                                QRCodeUtils.generateSmartPSBTQR(
+                                                    signed,
+                                                    density = selectedDensity
+                                                )
                                             }
 
                                             signedPSBT = signed

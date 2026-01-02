@@ -5,15 +5,15 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.gorunjinian.metrovault.R
 
 /**
  * A composable that displays entered mnemonic words as chips with the current word being typed.
@@ -152,7 +152,7 @@ private fun WordChip(
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
             Icon(
-                imageVector = Icons.Default.Close,
+                painter = painterResource(R.drawable.ic_density),
                 contentDescription = "Remove word",
                 modifier = Modifier
                     .size(18.dp)

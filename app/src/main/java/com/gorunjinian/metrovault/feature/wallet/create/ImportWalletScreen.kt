@@ -13,8 +13,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -529,7 +527,7 @@ private fun Step2SeedPhrase(
                     }
                 ) {
                     Icon(
-                        imageVector = if (isKeyboardVisible) Icons.Default.KeyboardHide else Icons.Default.Keyboard,
+                        painter = painterResource(if (isKeyboardVisible) R.drawable.ic_keyboard_hide else R.drawable.ic_keyboard),
                         contentDescription = if (isKeyboardVisible) "Hide keyboard" else "Show keyboard"
                     )
                 }

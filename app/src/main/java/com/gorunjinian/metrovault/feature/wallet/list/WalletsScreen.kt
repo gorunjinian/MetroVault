@@ -13,8 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
@@ -184,15 +182,6 @@ fun WalletsListContent(
                     // Compute wallet type and testnet status
                     val isWalletTestnet = remember(walletItem.derivationPath) {
                         DerivationPaths.isTestnet(walletItem.derivationPath)
-                    }
-                    val walletType = remember(walletItem.derivationPath) {
-                        when (DerivationPaths.getPurpose(walletItem.derivationPath)) {
-                            86 -> "Taproot"
-                            84 -> "Native SegWit"
-                            49 -> "Nested SegWit"
-                            44 -> "Legacy"
-                            else -> "Unknown"
-                        }
                     }
 
                     WalletCard(
@@ -610,7 +599,7 @@ fun WalletCard(
                 if (!isEditMode) {
                     IconButton(onClick = onExpandClick) {
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
+                            painter = painterResource(R.drawable.ic_arrow_down),
                             contentDescription = if (isExpanded) "Collapse" else "Expand",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
