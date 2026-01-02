@@ -70,6 +70,9 @@ class UserPreferencesRepository(context: Context) {
     private val _customUnlockTitle = MutableStateFlow(prefs.getBoolean(KEY_CUSTOM_UNLOCK_TITLE, false))
     val customUnlockTitle: StateFlow<Boolean> = _customUnlockTitle.asStateFlow()
 
+    private val _blackThemeEnabled = MutableStateFlow(prefs.getBoolean(KEY_BLACK_THEME_ENABLED, false))
+    val blackThemeEnabled: StateFlow<Boolean> = _blackThemeEnabled.asStateFlow()
+
     fun setThemeMode(mode: String) {
         if (mode in listOf(THEME_LIGHT, THEME_DARK, THEME_SYSTEM)) {
             prefs.edit { putString(KEY_THEME_MODE, mode) }
@@ -155,6 +158,11 @@ class UserPreferencesRepository(context: Context) {
         _customUnlockTitle.value = enabled
     }
 
+    fun setBlackThemeEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_BLACK_THEME_ENABLED, enabled) }
+        _blackThemeEnabled.value = enabled
+    }
+
     companion object {
         private const val PREFS_NAME = "metrovault_settings"
         private const val KEY_THEME_MODE = "theme_mode"
@@ -168,6 +176,7 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_DIFFERENT_ACCOUNTS_ENABLED = "different_accounts_enabled"
         private const val KEY_BIP85_ENABLED = "bip85_enabled"
         private const val KEY_CUSTOM_UNLOCK_TITLE = "custom_unlock_title"
+        private const val KEY_BLACK_THEME_ENABLED = "black_theme_enabled"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
         const val THEME_SYSTEM = "system"

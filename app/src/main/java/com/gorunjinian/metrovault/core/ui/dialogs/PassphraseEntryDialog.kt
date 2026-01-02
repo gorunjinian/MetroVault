@@ -101,10 +101,7 @@ fun PassphraseEntryDialog(
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
-                                color = if (fingerprintMismatch) 
-                                    MaterialTheme.colorScheme.error
-                                else 
-                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         }
                     }

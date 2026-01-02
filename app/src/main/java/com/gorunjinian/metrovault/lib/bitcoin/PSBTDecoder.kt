@@ -420,8 +420,6 @@ object PSBTDecoder {
         return output.toByteArray()
     }
     
-    // ==================== BBQr Encoding (for output) ====================
-    
     /**
      * Encodes a Base64 PSBT to BBQr format.
      * Uses pure Base32 encoding ('2') for maximum compatibility.
@@ -433,6 +431,10 @@ object PSBTDecoder {
      * - All blocks except last must be same length
      * - All blocks must decode to integer number of bytes
      * - For Base32, this means mod8 character length (8 Base32 chars = 5 bytes)
+     * 
+     * For even visual distribution (like Sparrow), we:
+     * 1. Calculate minimum frames needed at max capacity
+     * 2. Distribute data evenly across all frames
      * 
      * @return List of BBQr frame strings, or null on error
      */
@@ -447,27 +449,51 @@ object PSBTDecoder {
             val headerSize = 8
             val maxDataChars = maxQrChars - headerSize
             
-            // For Base32: 8 chars = 5 bytes, so work in multiples of 5 bytes
-            // to ensure each chunk has mod8 characters
-            val bytesPerChunk = (maxDataChars / 8) * 5  // Each 8 Base32 chars = 5 bytes
+            // For Base32: 8 chars = 5 bytes
+            // Calculate max bytes per frame (aligned to 5-byte boundary for Base32)
+            val maxBytesPerFrame = (maxDataChars / 8) * 5
             
-            // Split raw bytes into chunks
-            val byteChunks = psbtBytes.toList().chunked(bytesPerChunk).map { it.toByteArray() }
-            val totalParts = byteChunks.size
+            // Calculate minimum number of frames needed
+            val totalBytes = psbtBytes.size
+            val numFrames = kotlin.math.ceil(totalBytes.toDouble() / maxBytesPerFrame).toInt()
+                .coerceAtLeast(1)
             
-            if (totalParts > 1295) {
-                Log.e(TAG, "PSBT too large for BBQr: $totalParts parts")
+            if (numFrames > 1295) {
+                Log.e(TAG, "PSBT too large for BBQr: $numFrames parts")
                 return null
             }
             
-            Log.d(TAG, "BBQr encoding: ${psbtBytes.size} bytes in $totalParts parts (${bytesPerChunk} bytes/chunk)")
+            // Distribute bytes evenly across frames
+            // Each frame gets approximately the same number of bytes
+            // but must be aligned to 5-byte boundary for proper Base32 encoding
+            val baseBytesPerFrame = totalBytes / numFrames
+            // Align to 5-byte boundary (for Base32 encoding without padding issues)
+            val alignedBytesPerFrame = ((baseBytesPerFrame + 4) / 5) * 5
+            
+            Log.d(TAG, "BBQr encoding: $totalBytes bytes in $numFrames frames (~$alignedBytesPerFrame bytes/frame)")
+            
+            // Split bytes into chunks with even distribution
+            val chunks = mutableListOf<ByteArray>()
+            var offset = 0
+            for (i in 0 until numFrames) {
+                val remaining = totalBytes - offset
+                val chunkSize = if (i == numFrames - 1) {
+                    // Last frame takes whatever is left
+                    remaining
+                } else {
+                    // Non-final frames: use aligned size, but don't exceed remaining
+                    alignedBytesPerFrame.coerceAtMost(remaining)
+                }
+                chunks.add(psbtBytes.copyOfRange(offset, offset + chunkSize))
+                offset += chunkSize
+            }
             
             // Encode each byte chunk to Base32 and prepend header
-            byteChunks.mapIndexed { index, chunk ->
+            chunks.mapIndexed { index, chunk ->
                 val chunkBase32 = encodeBase32(chunk)
-                val totalBase36 = totalParts.toString(36).padStart(2, '0').uppercase()
+                val totalBase36 = numFrames.toString(36).padStart(2, '0').uppercase()
                 val partBase36 = index.toString(36).padStart(2, '0').uppercase()
-                $$"B$$${encoding}P$${totalBase36}$${partBase36}$${chunkBase32}"
+                "B$${encoding}P${totalBase36}${partBase36}${chunkBase32}"
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to encode PSBT to BBQr: ${e.message}")

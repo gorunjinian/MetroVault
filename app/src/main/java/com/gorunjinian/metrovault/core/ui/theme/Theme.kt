@@ -65,6 +65,14 @@ private val DarkColorScheme = darkColorScheme(
     scrim = Color.Black
 )
 
+// AMOLED Black Theme - Same as Dark but with pure black backgrounds
+private val BlackColorScheme = DarkColorScheme.copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceVariant = Color(0xFF121212), // Slightly lighter than black to differentiate cards
+    inverseOnSurface = Color.Black
+)
+
 private val LightColorScheme = lightColorScheme(
     primary = BitcoinOrange,
     onPrimary = Color.White,
@@ -103,6 +111,7 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun MetroVaultTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    blackTheme: Boolean = false,
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
@@ -110,8 +119,20 @@ fun MetroVaultTheme(
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            val baseScheme = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            // Apply black backgrounds on top of dynamic colors if blackTheme is enabled
+            if (darkTheme && blackTheme) {
+                baseScheme.copy(
+                    background = Color.Black,
+                    surface = Color.Black,
+                    surfaceVariant = Color(0xFF121212),
+                    inverseOnSurface = Color.Black
+                )
+            } else {
+                baseScheme
+            }
         }
+        darkTheme && blackTheme -> BlackColorScheme
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }

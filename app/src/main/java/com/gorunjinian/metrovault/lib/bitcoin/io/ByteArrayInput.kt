@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.lib.bitcoin.io
 
-public class ByteArrayInput(private val array: ByteArray) : Input {
+class ByteArrayInput(private val array: ByteArray) : Input {
 
     private var position: Int = 0
     override val availableBytes: Int get() = array.size - position

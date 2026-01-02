@@ -49,6 +49,8 @@ class MainActivity : AppCompatActivity() {
             val prefs = userPreferencesRepository
             if (prefs != null) {
                 val themeMode by prefs.themeMode.collectAsState()
+                val blackThemeEnabled by prefs.blackThemeEnabled.collectAsState()
+                
                 val darkTheme = when (themeMode) {
                     UserPreferencesRepository.THEME_LIGHT -> false
                     UserPreferencesRepository.THEME_DARK -> true
@@ -60,6 +62,7 @@ class MainActivity : AppCompatActivity() {
 
                 MetroVaultTheme(
                     darkTheme = darkTheme,
+                    blackTheme = blackThemeEnabled,
                     dynamicColor = dynamicColor
                 ) {
                     Surface(

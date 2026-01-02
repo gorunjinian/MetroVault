@@ -549,6 +549,13 @@ class   Wallet(context: Context) {
         return DerivationPaths.isTestnet(path)
     }
 
+    /** Check if the active wallet is a multisig wallet */
+    fun isActiveWalletMultisig(): Boolean {
+        val walletId = activeWalletId ?: return false
+        val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return false
+        return metadata.isMultisig
+    }
+
     /**
      * Result of PSBT signing operation.
      */

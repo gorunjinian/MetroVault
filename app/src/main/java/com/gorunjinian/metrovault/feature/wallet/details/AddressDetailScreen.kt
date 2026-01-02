@@ -144,15 +144,17 @@ fun AddressDetailScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Sign Message button
-            Button(
-                onClick = { onSignMessage(address) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Sign Message")
+            // Sign Message button - hidden for Multisig
+            if (!wallet.isActiveWalletMultisig()) {
+                Button(
+                    onClick = { onSignMessage(address) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Sign Message")
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
             }
-            
-            Spacer(modifier = Modifier.height(8.dp))
 
             // Show Keys button
             OutlinedButton(

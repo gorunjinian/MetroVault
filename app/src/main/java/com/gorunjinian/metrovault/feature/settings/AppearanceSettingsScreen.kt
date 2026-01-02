@@ -1,5 +1,6 @@
 package com.gorunjinian.metrovault.feature.settings
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,6 +19,7 @@ import com.gorunjinian.metrovault.core.ui.components.ThemeOption
 import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
+@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceSettingsScreen(
@@ -25,6 +27,7 @@ fun AppearanceSettingsScreen(
     onBack: () -> Unit
 ) {
     val themeMode by userPreferencesRepository.themeMode.collectAsState()
+    val blackThemeEnabled by userPreferencesRepository.blackThemeEnabled.collectAsState()
     val quickShortcuts by userPreferencesRepository.quickShortcuts.collectAsState()
     val bip85Enabled by userPreferencesRepository.bip85Enabled.collectAsState()
     var shortcutToReplace by remember { mutableStateOf<Int?>(null) }
@@ -80,6 +83,35 @@ fun AppearanceSettingsScreen(
                         selected = themeMode == UserPreferencesRepository.THEME_SYSTEM,
                         onClick = { userPreferencesRepository.setThemeMode(UserPreferencesRepository.THEME_SYSTEM) },
                         modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            // Black Theme Toggle (AMOLED)
+            val isDarkEffective = themeMode == UserPreferencesRepository.THEME_DARK || 
+                                 (themeMode == UserPreferencesRepository.THEME_SYSTEM && isSystemInDarkTheme())
+            
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Black Theme",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Use pure black background",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = blackThemeEnabled,
+                        onCheckedChange = { userPreferencesRepository.setBlackThemeEnabled(it) },
+                        enabled = isDarkEffective
                     )
                 }
             }

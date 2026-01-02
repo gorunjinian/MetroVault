@@ -252,7 +252,7 @@ fun SecuritySettingsScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Delete all data after 3 wrong passwords",
+                            text = "Delete all data after 4 wrong passwords",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
