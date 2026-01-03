@@ -50,7 +50,6 @@ enum class ContentFormat(val displayName: String) {
 @Composable
 fun ExportMultiSigScreen(
     descriptor: String,
-    walletName: String,
     firstAddress: String,
     onBack: () -> Unit
 ) {
@@ -211,13 +210,6 @@ fun ExportMultiSigScreen(
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    Text(
-                        text = walletName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Multisig wallet configuration. Import this descriptor into your coordinator wallet to watch or spend from this wallet.",
                         style = MaterialTheme.typography.bodySmall,

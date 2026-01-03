@@ -477,14 +477,12 @@ fun AppNavigation(
                 secureStorage.loadWalletMetadata(id, wallet.isDecoyMode)
             }
             val descriptor = metadata?.multisigConfig?.rawDescriptor ?: ""
-            val walletName = wallet.getActiveWalletName()
             
             // Generate first receive address for BSMS format
             val firstAddress = wallet.generateAddresses(1, 0, isChange = false)?.firstOrNull()?.address ?: ""
             
             ExportMultiSigScreen(
                 descriptor = descriptor,
-                walletName = walletName,
                 firstAddress = firstAddress,
                 onBack = {
                     if (!navController.popBackStack()) {
