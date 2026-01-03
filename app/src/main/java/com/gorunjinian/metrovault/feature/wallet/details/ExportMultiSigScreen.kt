@@ -438,6 +438,10 @@ private fun generateDescriptorURv1(content: String): QRCodeUtils.AnimatedQRResul
  * - type: U=Unicode/UTF-8 text, P=PSBT, T=Transaction, J=JSON, C=CBOR
  * - total/part: 2-char base36 encoded (0-indexed for part)
  * For descriptors, we use "UU" = Uncompressed UTF-8 text
+ * 
+ * For even visual distribution (like Sparrow), we:
+ * 1. Calculate minimum frames needed at max capacity
+ * 2. Distribute data evenly across all frames
  */
 @Suppress("KDocUnresolvedReference")
 private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRResult? {
@@ -464,14 +468,31 @@ private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRRe
                 )
             }
         } else {
-            // Multi-frame BBQr encoding
-            val chunks = descriptor.chunked(maxPayload)
-            val total = chunks.size
+            // Multi-frame BBQr encoding with even distribution
+            // Calculate minimum number of frames needed
+            val totalChars = descriptor.length
+            val numFrames = kotlin.math.ceil(totalChars.toDouble() / maxPayload).toInt()
+                .coerceAtLeast(1)
+            
+            // Distribute characters evenly across frames
+            // Each frame gets approximately the same number of characters
+            val baseCharsPerFrame = totalChars / numFrames
+            val extraChars = totalChars % numFrames
+            
+            // Split into evenly-sized chunks
+            val chunks = mutableListOf<String>()
+            var offset = 0
+            for (i in 0 until numFrames) {
+                // First 'extraChars' frames get one extra character
+                val chunkSize = baseCharsPerFrame + if (i < extraChars) 1 else 0
+                chunks.add(descriptor.substring(offset, offset + chunkSize))
+                offset += chunkSize
+            }
             
             val frameContents = chunks.mapIndexed { index, chunk ->
                 // BBQr header format: B$UU[total:2 base36][part:2 base36][data]
                 // Part is 0-indexed per BBQr spec
-                val totalBase36 = total.toString(36).padStart(2, '0').uppercase()
+                val totalBase36 = numFrames.toString(36).padStart(2, '0').uppercase()
                 val partBase36 = index.toString(36).padStart(2, '0').uppercase()
                 $$"B$UU$${totalBase36}$${partBase36}$$chunk"
             }
