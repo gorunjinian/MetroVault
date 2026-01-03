@@ -27,6 +27,7 @@ import java.util.Arrays
  * - Uses Cleaner API on Android 13+ for reliable cleanup on GC
  * - Falls back to finalize() on older Android versions (with warning log)
  */
+@Suppress("KDocUnresolvedReference")
 class SecureByteArray(size: Int) : Closeable {
 
     companion object {

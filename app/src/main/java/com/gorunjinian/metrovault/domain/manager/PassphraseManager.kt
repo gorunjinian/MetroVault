@@ -153,29 +153,6 @@ class PassphraseManager(
     fun getSessionKeySeed(keyId: String): String? = sessionKeySeeds.get(keyId)
 
     /**
-     * Gets the mnemonic for a WalletKey by ID.
-     */
-    suspend fun getMnemonicForKey(keyId: String, isDecoyMode: Boolean): List<String>? = 
-        withContext(Dispatchers.IO) {
-            try {
-                val walletKey = secureStorage.loadWalletKey(keyId, isDecoyMode) ?: return@withContext null
-                walletKey.mnemonic.split(" ")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to get mnemonic for key: ${e.message}")
-                null
-            }
-        }
-
-    /**
-     * Checks if a multi-sig wallet needs passphrase input for any of its local keys.
-     */
-    fun multisigNeedsPassphraseInput(walletId: String, isDecoyMode: Boolean): Boolean {
-        val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return false
-        if (!metadata.isMultisig) return false
-        return metadata.keyIds.any { keyId -> keyNeedsPassphraseInput(keyId, isDecoyMode) }
-    }
-
-    /**
      * Data class representing a calculated fingerprint for a multi-sig local key.
      */
     data class CalculatedKeyFingerprint(

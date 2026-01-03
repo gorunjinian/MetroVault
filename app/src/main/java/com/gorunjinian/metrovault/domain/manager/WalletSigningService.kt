@@ -4,7 +4,7 @@ import android.util.Log
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigConfig
-import com.gorunjinian.metrovault.data.model.WalletKey
+import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
@@ -227,7 +227,7 @@ class WalletSigningService(
      */
     private fun signWithDirectDerivation(
         psbt: String,
-        key: WalletKey,
+        key: WalletKeys,
         config: MultisigConfig,
         sessionSeed: String?
     ): Pair<String, List<String>>? {

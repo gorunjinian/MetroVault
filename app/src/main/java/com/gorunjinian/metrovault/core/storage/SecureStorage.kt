@@ -15,7 +15,7 @@ import javax.crypto.spec.PBEKeySpec
 import androidx.core.content.edit
 import com.gorunjinian.metrovault.core.crypto.LoginAttemptManager
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
-import com.gorunjinian.metrovault.data.model.WalletKey
+import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletSecrets
 import org.json.JSONArray
@@ -105,7 +105,7 @@ class SecureStorage(private val context: Context) {
         private const val KEY_DECOY_PASSWORD_HASH = "decoy_password_hash"
         private const val KEY_WALLET_IDS = "wallet_ids"
         private const val KEY_WALLET_ORDER = "wallet_order"
-        private const val KEY_KEY_IDS = "wallet_key_ids"       // Index of all WalletKey IDs
+        private const val KEY_KEY_IDS = "wallet_key_ids"       // Index of all WalletKeys IDs
         private const val KEY_MIGRATION_VERSION = "migration_version"
         private const val CURRENT_MIGRATION_VERSION = 2        // v2 = WalletKeys refactoring
     }
@@ -359,12 +359,12 @@ class SecureStorage(private val context: Context) {
         sessionKeyManager.initializeSession(newPassword, newSalt)
 
         try {
-            for (walletKey in walletKeys) {
-                val plaintext = walletKey.toJson().toByteArray()
+            for (walletKeys in walletKeys) {
+                val plaintext = walletKeys.toJson().toByteArray()
                 try {
                     val encrypted = sessionKeyManager.encrypt(plaintext)
                     val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
-                    newEncryptedKeys[walletKey.keyId] = encoded
+                    newEncryptedKeys[walletKeys.keyId] = encoded
                 } finally {
                     plaintext.fill(0)  // Wipe sensitive plaintext from memory
                 }
@@ -488,14 +488,14 @@ class SecureStorage(private val context: Context) {
 
     // ============================================================================
     // WALLET SECRETS (DEPRECATED - Only for migration from old versions)
-    // All new code should use WalletKey instead.
+    // All new code should use WalletKeys instead.
     // These methods are kept only for the one-time migration (migrateWalletSecretsToKeys).
     // ============================================================================
 
     /**
-     * @deprecated Use WalletKey instead. This is only for migration support.
+     * @deprecated Use WalletKeys instead. This is only for migration support.
      */
-    @Deprecated("Use WalletKey instead - kept for migration only")
+    @Deprecated("Use WalletKeys instead - kept for migration only")
     fun saveWalletSecrets(walletId: String, secrets: WalletSecrets, isDecoy: Boolean): Boolean {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
@@ -520,10 +520,10 @@ class SecureStorage(private val context: Context) {
      * Loads wallet secrets, decrypting with the session key.
      * Automatically migrates old format (passphrase) to new format (bip39Seed) and persists.
      *
-     * @deprecated Use WalletKey instead. This is only for migration support.
+     * @deprecated Use WalletKeys instead. This is only for migration support.
      */
     @Suppress("DEPRECATION")
-    @Deprecated("Use WalletKey instead - kept for migration only")
+    @Deprecated("Use WalletKeys instead - kept for migration only")
     fun loadWalletSecrets(walletId: String, isDecoy: Boolean): WalletSecrets? {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
@@ -551,7 +551,7 @@ class SecureStorage(private val context: Context) {
 
     /**
      * Deletes wallet secrets from storage.
-     * Called after successful migration to WalletKey to remove redundant data.
+     * Called after successful migration to WalletKeys to remove redundant data.
      */
     private fun deleteWalletSecrets(walletId: String, isDecoy: Boolean) {
         val prefs = if (isDecoy) decoyPrefs else mainPrefs
@@ -566,7 +566,7 @@ class SecureStorage(private val context: Context) {
     /**
      * Saves a wallet key to the key store.
      */
-    fun saveWalletKey(key: WalletKey, isDecoy: Boolean): Boolean {
+    fun saveWalletKey(key: WalletKeys, isDecoy: Boolean): Boolean {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
         var plaintext: ByteArray? = null
@@ -590,7 +590,7 @@ class SecureStorage(private val context: Context) {
     /**
      * Loads a wallet key by ID.
      */
-    fun loadWalletKey(keyId: String, isDecoy: Boolean): WalletKey? {
+    fun loadWalletKey(keyId: String, isDecoy: Boolean): WalletKeys? {
         check(sessionKeyManager.isSessionActive.value) { "Session not active" }
 
         return try {
@@ -599,7 +599,7 @@ class SecureStorage(private val context: Context) {
             val encrypted = Base64.decode(encoded, Base64.NO_WRAP)
             val decrypted = sessionKeyManager.decrypt(encrypted)
             val json = String(decrypted)
-            WalletKey.fromJson(json)
+            WalletKeys.fromJson(json)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load wallet key $keyId: ${e.message}", e)
             null
@@ -609,7 +609,7 @@ class SecureStorage(private val context: Context) {
     /**
      * Loads all wallet keys.
      */
-    fun loadAllWalletKeys(isDecoy: Boolean): List<WalletKey> {
+    fun loadAllWalletKeys(isDecoy: Boolean): List<WalletKeys> {
         return getKeyIds(isDecoy).mapNotNull { loadWalletKey(it, isDecoy) }
     }
 
@@ -617,7 +617,7 @@ class SecureStorage(private val context: Context) {
      * Finds a key by fingerprint.
      * Used for matching cosigners during multisig import.
      */
-    fun findKeyByFingerprint(fingerprint: String, isDecoy: Boolean): WalletKey? {
+    fun findKeyByFingerprint(fingerprint: String, isDecoy: Boolean): WalletKeys? {
         return loadAllWalletKeys(isDecoy).find { 
             it.fingerprint.equals(fingerprint, ignoreCase = true) 
         }
@@ -793,7 +793,7 @@ class SecureStorage(private val context: Context) {
         Log.d(TAG, "Starting migration from v$currentVersion to v$CURRENT_MIGRATION_VERSION")
         
         return try {
-            // v1 -> v2: WalletSecrets to WalletKey migration
+            // v1 -> v2: WalletSecrets to WalletKeys migration
             migrateWalletSecretsToKeys(isDecoy)
             
             // Update version
@@ -807,10 +807,10 @@ class SecureStorage(private val context: Context) {
     }
 
     /**
-     * Migrates WalletSecrets to WalletKey format.
+     * Migrates WalletSecrets to WalletKeys format.
      *
      * SAFETY GUARANTEES:
-     * - WalletSecrets is NEVER deleted until WalletKey is verified readable
+     * - WalletSecrets is NEVER deleted until WalletKeys is verified readable
      * - Each step is verified before proceeding
      * - Partial migrations are cleaned up on subsequent runs
      * - Idempotent: safe to run multiple times
@@ -818,7 +818,7 @@ class SecureStorage(private val context: Context) {
      * For each wallet with WalletSecrets:
      * 1. Check if a WalletKey with same fingerprint already exists (deduplication)
      * 2. If not, create a new WalletKey with auto-generated label
-     * 3. VERIFY WalletKey can be loaded back (critical safety check)
+     * 3. VERIFY WalletKeys can be loaded back (critical safety check)
      * 4. Update WalletMetadata with keyIds reference
      * 5. VERIFY metadata has keyIds
      * 6. Only then delete old WalletSecrets
@@ -832,7 +832,7 @@ class SecureStorage(private val context: Context) {
         var migratedCount = 0
         var cleanedUpCount = 0
 
-        Log.d(TAG, "Migrating ${walletIds.size} wallets from WalletSecrets to WalletKey")
+        Log.d(TAG, "Migrating ${walletIds.size} wallets from WalletSecrets to WalletKeys")
 
         for (walletId in walletIds) {
             try {
@@ -891,7 +891,7 @@ class SecureStorage(private val context: Context) {
                     val label = "Key $keyCounter"
                     keyCounter++
 
-                    val walletKey = WalletKey(
+                    val walletKeys = WalletKeys(
                         keyId = keyId,
                         mnemonic = secrets.mnemonic,
                         bip39Seed = secrets.bip39Seed,
@@ -900,7 +900,7 @@ class SecureStorage(private val context: Context) {
                     )
 
                     // Step 1: Save the new WalletKey
-                    if (!saveWalletKey(walletKey, isDecoy)) {
+                    if (!saveWalletKey(walletKeys, isDecoy)) {
                         Log.e(TAG, "Failed to save wallet key for wallet $walletId - secrets preserved")
                         continue
                     }
@@ -948,20 +948,12 @@ class SecureStorage(private val context: Context) {
         Log.d(TAG, "Migration complete: $migratedCount wallets migrated, ${fingerprintToKeyId.size} unique keys, $cleanedUpCount leftover secrets cleaned")
     }
 
-    // ============================================================================
-    // SESSION MANAGEMENT
-    // ============================================================================
-
     /**
      * Clears the session key cache. Call on logout.
      */
     fun clearSession() {
         sessionKeyManager.clearSession()
     }
-
-    // ============================================================================
-    // DATA WIPE (Security Feature)
-    // ============================================================================
 
     /**
      * Gets the current number of failed login attempts.

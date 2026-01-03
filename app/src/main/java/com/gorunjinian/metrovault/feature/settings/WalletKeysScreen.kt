@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
-import com.gorunjinian.metrovault.data.model.WalletKey
+import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
 
@@ -41,17 +41,17 @@ fun WalletKeysScreen(
     val view = LocalView.current
     
     // Keys list - loaded immediately since authentication was done in AdvancedSettingsScreen
-    var keys by remember { mutableStateOf<List<WalletKey>>(emptyList()) }
+    var keys by remember { mutableStateOf<List<WalletKeys>>(emptyList()) }
     
     // Edit mode state
     var isEditMode by remember { mutableStateOf(false) }
     
     // Rename dialog state
-    var keyToRename by remember { mutableStateOf<WalletKey?>(null) }
+    var keyToRename by remember { mutableStateOf<WalletKeys?>(null) }
     var renameValue by remember { mutableStateOf("") }
     
     // Delete dialog state
-    var keyToDelete by remember { mutableStateOf<WalletKey?>(null) }
+    var keyToDelete by remember { mutableStateOf<WalletKeys?>(null) }
     var showDeleteWarning by remember { mutableStateOf(false) }
     var showDeletePasswordDialog by remember { mutableStateOf(false) }
     var deletePasswordError by remember { mutableStateOf("") }

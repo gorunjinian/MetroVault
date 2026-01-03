@@ -23,7 +23,7 @@ import org.json.JSONObject
  * @property fingerprint Master fingerprint (8 hex chars, e.g., "1a2b3c4d")
  * @property label User-facing label (e.g., "Key 1", "My Main Seed")
  */
-data class WalletKey(
+data class WalletKeys(
     val keyId: String,
     val mnemonic: String,
     val bip39Seed: String,
@@ -41,9 +41,9 @@ data class WalletKey(
     }
 
     companion object {
-        fun fromJson(json: String): WalletKey {
+        fun fromJson(json: String): WalletKeys {
             val obj = JSONObject(json)
-            return WalletKey(
+            return WalletKeys(
                 keyId = obj.getString("keyId"),
                 mnemonic = obj.getString("mnemonic"),
                 bip39Seed = obj.getString("bip39Seed"),

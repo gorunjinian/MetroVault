@@ -9,7 +9,7 @@ import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.data.model.WalletCreationError
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
-import com.gorunjinian.metrovault.data.model.WalletKey
+import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.DerivationPaths
@@ -243,7 +243,7 @@ class   Wallet(context: Context) {
                     keyId = java.util.UUID.randomUUID().toString()
                     val keyLabel = secureStorage.getNextKeyLabel(isDecoyMode)
                     
-                    val walletKey = WalletKey(
+                    val walletKeys = WalletKeys(
                         keyId = keyId,
                         mnemonic = mnemonicString,
                         bip39Seed = seedHex,
@@ -251,7 +251,7 @@ class   Wallet(context: Context) {
                         label = keyLabel
                     )
                     
-                    if (!secureStorage.saveWalletKey(walletKey, isDecoyMode)) {
+                    if (!secureStorage.saveWalletKey(walletKeys, isDecoyMode)) {
                         return@withContext WalletCreationResult.Error(WalletCreationError.STORAGE_FAILED)
                     }
                     Log.d(TAG, "Created new key $keyId ($keyLabel)")

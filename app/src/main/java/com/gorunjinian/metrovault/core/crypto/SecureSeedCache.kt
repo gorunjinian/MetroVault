@@ -73,7 +73,7 @@ class SecureSeedCache {
 
         return try {
             secureArray.asString(Charsets.UTF_8)
-        } catch (e: IllegalStateException) {
+        } catch (_: IllegalStateException) {
             // SecureByteArray was already closed
             Log.w(TAG, "Attempted to read closed seed for wallet: $walletId")
             cache.remove(walletId)

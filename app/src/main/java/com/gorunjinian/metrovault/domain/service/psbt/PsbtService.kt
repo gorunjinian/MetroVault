@@ -533,7 +533,6 @@ class PsbtService {
         return when {
             value < 0xFD -> 1
             value <= 0xFFFF -> 3
-            value <= 0xFFFFFFFF.toInt() -> 5
             else -> 9
         }
     }

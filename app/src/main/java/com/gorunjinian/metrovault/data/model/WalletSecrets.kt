@@ -6,7 +6,7 @@ import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
  * Wallet secrets - sensitive data (mnemonic, BIP39 seed).
  * Stored as plaintext JSON, encrypted by SessionKeyManager before storage.
  *
- * @deprecated This class is deprecated. Use [WalletKey] instead.
+ * @deprecated This class is deprecated. Use [WalletKeys] instead.
  * This class is kept only for one-time migration from older app versions.
  * All new code should use WalletKey which provides centralized key management.
  *
@@ -25,7 +25,7 @@ import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
  * - Migration happens transparently on first load after app update
  */
 @Suppress("DEPRECATION")
-@Deprecated("Use WalletKey instead - this class is kept only for migration from older versions")
+@Deprecated("Use WalletKeys instead - this class is kept only for migration from older versions")
 data class WalletSecrets(
     val mnemonic: String,
     val bip39Seed: String = ""  // Hex-encoded 64-byte (512-bit) BIP39 seed
