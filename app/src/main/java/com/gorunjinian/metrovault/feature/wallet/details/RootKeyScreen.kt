@@ -22,6 +22,7 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 /**
  * RootKeyScreen - Displays the wallet's BIP32 root private key (xprv/tprv).
@@ -31,10 +32,12 @@ import kotlinx.coroutines.withContext
 @Composable
 fun RootKeyScreen(
     wallet: Wallet,
+    userPreferencesRepository: UserPreferencesRepository,
     onBack: () -> Unit,
     onBackToExportOptions: () -> Unit
 ) {
     val context = LocalContext.current
+    val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
     
     // Get the BIP32 root key
     val rootKey = remember { wallet.getBIP32RootKey() }
@@ -121,15 +124,19 @@ fun RootKeyScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable {
-                                SecurityUtils.copyToClipboardWithAutoClear(
-                                    context = context,
-                                    label = "BIP32 Root Key",
-                                    text = rootKey,
-                                    delayMs = 20_000
-                                )
-                                Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
-                            }
+                            .then(
+                                if (tapToCopyEnabled) {
+                                    Modifier.clickable {
+                                        SecurityUtils.copyToClipboardWithAutoClear(
+                                            context = context,
+                                            label = "BIP32 Root Key",
+                                            text = rootKey,
+                                            delayMs = 20_000
+                                        )
+                                        Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else Modifier
+                            )
                     ) {
                         Image(
                             bitmap = currentQR!!.asImageBitmap(),
@@ -142,11 +149,13 @@ fun RootKeyScreen(
                 }
             }
 
-            Text(
-                text = "Tap QR code to copy",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (tapToCopyEnabled) {
+                Text(
+                    text = "Tap QR code to copy",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             // Key text display
             Card(

@@ -28,6 +28,7 @@ import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 /**
  * AccountKeysScreen - Displays extended public and private keys with QR codes.
@@ -40,6 +41,7 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 fun AccountKeysScreen(
     wallet: Wallet,
     secureStorage: SecureStorage,
+    userPreferencesRepository: UserPreferencesRepository,
     onBack: () -> Unit
 ) {
     // For keys view: false = public, true = private
@@ -125,6 +127,7 @@ fun AccountKeysScreen(
     }
     
     val context = LocalContext.current
+    val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
     
     Scaffold(
         topBar = {
@@ -242,15 +245,19 @@ fun AccountKeysScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable {
-                                SecurityUtils.copyToClipboardWithAutoClear(
-                                    context = context,
-                                    label = "Extended $keyType Key",
-                                    text = displayKey,
-                                    delayMs = 20_000
-                                )
-                                Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
-                            }
+                            .then(
+                                if (tapToCopyEnabled) {
+                                    Modifier.clickable {
+                                        SecurityUtils.copyToClipboardWithAutoClear(
+                                            context = context,
+                                            label = "Extended $keyType Key",
+                                            text = displayKey,
+                                            delayMs = 20_000
+                                        )
+                                        Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else Modifier
+                            )
                     ) {
                         Image(
                             bitmap = currentQR!!.asImageBitmap(),
@@ -263,11 +270,13 @@ fun AccountKeysScreen(
                 }
             }
 
-            Text(
-                text = "Tap QR code to copy",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (tapToCopyEnabled) {
+                Text(
+                    text = "Tap QR code to copy",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             // Key text display
             Card(

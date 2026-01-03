@@ -25,6 +25,7 @@ import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 /**
  * DescriptorsScreen - Displays wallet output descriptors with QR codes.
@@ -37,6 +38,7 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 fun DescriptorsScreen(
     wallet: Wallet,
     secureStorage: SecureStorage,
+    userPreferencesRepository: UserPreferencesRepository,
     onBack: () -> Unit
 ) {
     // For descriptors view: false = public, true = private
@@ -104,6 +106,7 @@ fun DescriptorsScreen(
     }
     
     val context = LocalContext.current
+    val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
     
     Scaffold(
         topBar = {
@@ -234,15 +237,19 @@ fun DescriptorsScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable {
-                                SecurityUtils.copyToClipboardWithAutoClear(
-                                    context = context,
-                                    label = "$descriptorType Descriptor",
-                                    text = displayDescriptor,
-                                    delayMs = 20_000
-                                )
-                                Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
-                            }
+                            .then(
+                                if (tapToCopyEnabled) {
+                                    Modifier.clickable {
+                                        SecurityUtils.copyToClipboardWithAutoClear(
+                                            context = context,
+                                            label = "$descriptorType Descriptor",
+                                            text = displayDescriptor,
+                                            delayMs = 20_000
+                                        )
+                                        Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else Modifier
+                            )
                     ) {
                         Image(
                             bitmap = currentQR!!.asImageBitmap(),
@@ -255,11 +262,13 @@ fun DescriptorsScreen(
                 }
             }
 
-            Text(
-                text = "Tap QR code to copy",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (tapToCopyEnabled) {
+                Text(
+                    text = "Tap QR code to copy",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             // Descriptor text display
             Card(

@@ -33,12 +33,14 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 @Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddressDetailScreen(
     wallet: Wallet,
+    userPreferencesRepository: UserPreferencesRepository,
     address: String,
     addressIndex: Int,
     isChange: Boolean,
@@ -56,6 +58,7 @@ fun AddressDetailScreen(
 
     val context = LocalContext.current
     val secureStorage = remember { SecureStorage(context) }
+    val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
 
 
 
@@ -99,13 +102,17 @@ fun AddressDetailScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable {
-                                // Copy address to clipboard
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("Bitcoin Address", address)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "Address copied to clipboard", Toast.LENGTH_SHORT).show()
-                            }
+                            .then(
+                                if (tapToCopyEnabled) {
+                                    Modifier.clickable {
+                                        // Copy address to clipboard
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val clip = ClipData.newPlainText("Bitcoin Address", address)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Address copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else Modifier
+                            )
                     ) {
                         Image(
                             bitmap = qrBitmap!!.asImageBitmap(),
@@ -120,11 +127,13 @@ fun AddressDetailScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(
-                text = "Tap QR code to copy address",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (tapToCopyEnabled) {
+                Text(
+                    text = "Tap QR code to copy address",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

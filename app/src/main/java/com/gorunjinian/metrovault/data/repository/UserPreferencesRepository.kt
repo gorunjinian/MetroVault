@@ -73,6 +73,9 @@ class UserPreferencesRepository(context: Context) {
     private val _blackThemeEnabled = MutableStateFlow(prefs.getBoolean(KEY_BLACK_THEME_ENABLED, false))
     val blackThemeEnabled: StateFlow<Boolean> = _blackThemeEnabled.asStateFlow()
 
+    private val _tapToCopyEnabled = MutableStateFlow(prefs.getBoolean(KEY_TAP_TO_COPY_ENABLED, false))
+    val tapToCopyEnabled: StateFlow<Boolean> = _tapToCopyEnabled.asStateFlow()
+
     fun setThemeMode(mode: String) {
         if (mode in listOf(THEME_LIGHT, THEME_DARK, THEME_SYSTEM)) {
             prefs.edit { putString(KEY_THEME_MODE, mode) }
@@ -163,6 +166,11 @@ class UserPreferencesRepository(context: Context) {
         _blackThemeEnabled.value = enabled
     }
 
+    fun setTapToCopyEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_TAP_TO_COPY_ENABLED, enabled) }
+        _tapToCopyEnabled.value = enabled
+    }
+
     companion object {
         private const val PREFS_NAME = "metrovault_settings"
         private const val KEY_THEME_MODE = "theme_mode"
@@ -177,6 +185,7 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_BIP85_ENABLED = "bip85_enabled"
         private const val KEY_CUSTOM_UNLOCK_TITLE = "custom_unlock_title"
         private const val KEY_BLACK_THEME_ENABLED = "black_theme_enabled"
+        private const val KEY_TAP_TO_COPY_ENABLED = "tap_to_copy_enabled"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
         const val THEME_SYSTEM = "system"

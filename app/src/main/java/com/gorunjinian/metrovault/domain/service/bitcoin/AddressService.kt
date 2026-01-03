@@ -119,7 +119,7 @@ class AddressService {
             // Check receive addresses
             for (i in 0 until scanRange) {
                 val addr = generateAddress(accountPublicKey, i, isChange = false, scriptType, isTestnet)
-                if (addr?.address == address) {
+                if (addr?.address?.equals(address, ignoreCase = true) == true) {
                     return AddressCheckResult(true, addr.derivationPath, i, false)
                 }
             }
@@ -127,7 +127,7 @@ class AddressService {
             // Check change addresses
             for (i in 0 until scanRange) {
                 val addr = generateAddress(accountPublicKey, i, isChange = true, scriptType, isTestnet)
-                if (addr?.address == address) {
+                if (addr?.address?.equals(address, ignoreCase = true) == true) {
                     return AddressCheckResult(true, addr.derivationPath, i, true)
                 }
             }

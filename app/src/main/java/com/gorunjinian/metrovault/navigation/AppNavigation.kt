@@ -434,6 +434,7 @@ fun AppNavigation(
             
             AddressDetailScreen(
                 wallet = wallet,
+                userPreferencesRepository = userPreferencesRepository,
                 address = address,
                 addressIndex = index,
                 isChange = isChange,
@@ -497,6 +498,7 @@ fun AppNavigation(
             AccountKeysScreen(
                 wallet = wallet,
                 secureStorage = secureStorage,
+                userPreferencesRepository = userPreferencesRepository,
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.ExportOptions.route)
@@ -509,6 +511,7 @@ fun AppNavigation(
             DescriptorsScreen(
                 wallet = wallet,
                 secureStorage = secureStorage,
+                userPreferencesRepository = userPreferencesRepository,
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.ExportOptions.route)
@@ -549,6 +552,7 @@ fun AppNavigation(
         composable(Screen.RootKey.route) {
             RootKeyScreen(
                 wallet = wallet,
+                userPreferencesRepository = userPreferencesRepository,
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.ExportOptions.route)

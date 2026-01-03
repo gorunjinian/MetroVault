@@ -129,7 +129,7 @@ class MultisigAddressService {
         // Check receive addresses
         for (i in 0 until scanRange) {
             val result = generateMultisigAddress(config, i, isChange = false, isTestnet)
-            if (result is Result.Success<*, *> && (result.value as BitcoinAddress).address == address) {
+            if (result is Result.Success<*, *> && (result.value as BitcoinAddress).address.equals(address, ignoreCase = true)) {
                 val bitcoinAddress = result.value
                 return AddressCheckResult(true, bitcoinAddress.derivationPath, i, false)
             }
@@ -138,7 +138,7 @@ class MultisigAddressService {
         // Check change addresses
         for (i in 0 until scanRange) {
             val result = generateMultisigAddress(config, i, isChange = true, isTestnet)
-            if (result is Result.Success<*, *> && (result.value as BitcoinAddress).address == address) {
+            if (result is Result.Success<*, *> && (result.value as BitcoinAddress).address.equals(address, ignoreCase = true)) {
                 val bitcoinAddress = result.value
                 return AddressCheckResult(true, bitcoinAddress.derivationPath, i, true)
             }

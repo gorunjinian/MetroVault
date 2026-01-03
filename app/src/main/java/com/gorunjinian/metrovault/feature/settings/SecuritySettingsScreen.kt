@@ -46,6 +46,7 @@ fun SecuritySettingsScreen(
     val biometricsEnabled by userPreferencesRepository.biometricsEnabled.collectAsState()
     val biometricTarget by userPreferencesRepository.biometricTarget.collectAsState()
     val wipeOnFailedAttempts by userPreferencesRepository.wipeOnFailedAttempts.collectAsState()
+    val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
 
     var showBiometricSetupDialog by remember { mutableStateOf(false) }
     var showBiometricPasswordDialog by remember { mutableStateOf(false) }
@@ -266,6 +267,45 @@ fun SecuritySettingsScreen(
                         } else {
                             userPreferencesRepository.setWipeOnFailedAttempts(false)
                         }
+                    }
+                )
+            }
+
+            // Tap to Copy Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_copy),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Enable Tap to Copy",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Tap QR codes to copy content",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = tapToCopyEnabled,
+                    onCheckedChange = { enabled ->
+                        userPreferencesRepository.setTapToCopyEnabled(enabled)
                     }
                 )
             }
