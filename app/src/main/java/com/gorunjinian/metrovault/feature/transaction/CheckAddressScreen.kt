@@ -389,7 +389,7 @@ private suspend fun scanForAddress(
             isChange = false
         )
 
-        val match = addresses?.find { it.address == targetAddress }
+        val match = addresses?.find { it.address.equals(targetAddress, ignoreCase = true) }
         if (match != null) {
             return match
         }
@@ -406,7 +406,7 @@ private suspend fun scanForAddress(
             isChange = true
         )
 
-        val match = addresses?.find { it.address == targetAddress }
+        val match = addresses?.find { it.address.equals(targetAddress, ignoreCase = true) }
         if (match != null) {
             return match
         }
