@@ -21,10 +21,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
+import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
 
 /**
  * Display component for signed PSBT QR codes.
@@ -33,21 +33,26 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
  * - Single-frame QR codes
  * - Animated multi-frame QR codes with playback controls
  * - Multiple output formats (BC-URv1, BBQr, BC-URv2)
+ * - Finalization for single-sig transactions
  * 
  * Note: QR density is controlled via the TopAppBar in ScanPSBTScreen.
  */
 @Composable
 fun SignedPSBTDisplay(
-    signedQRResult: QRCodeUtils.AnimatedQRResult,
+    signedQRResult: AnimatedQRResult,
     currentFrame: Int,
-    selectedFormat: QRCodeUtils.OutputFormat,
+    selectedFormat: OutputFormat,
     isPaused: Boolean,
     isLoading: Boolean = false,
     alternativePathsUsed: List<String> = emptyList(),
+    canFinalize: Boolean = false,
+    isFinalized: Boolean = false,
+    onFinalize: () -> Unit = {},
+    onToggleView: () -> Unit = {},
     onPauseToggle: (Boolean) -> Unit,
     onPreviousFrame: () -> Unit,
     onNextFrame: () -> Unit,
-    onFormatChange: (QRCodeUtils.OutputFormat) -> Unit,
+    onFormatChange: (OutputFormat) -> Unit,
     onScanAnother: () -> Unit,
     onDone: () -> Unit
 ) {
@@ -59,13 +64,77 @@ fun SignedPSBTDisplay(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        // Title at top center
-        Text(
-            text = "Transaction Signed",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
-        )
+        // Title row with finalization toggle
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Title
+            Text(
+                text = "Transaction Signed",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            
+            // Finalized toggle - only show if can finalize (single-sig)
+            if (canFinalize) {
+                Row(
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(6.dp)
+                        )
+                        .padding(3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Signed PSBT option
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                if (!isFinalized) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable(enabled = !isLoading && isFinalized) { 
+                                onToggleView() 
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Signed",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (!isFinalized) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    // Finalized option
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                if (isFinalized) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable(enabled = !isLoading && !isFinalized) { 
+                                onFinalize() 
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Finalized",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isFinalized) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
         
         // Alternative path warning card
         if (alternativePathsUsed.isNotEmpty()) {
@@ -109,7 +178,7 @@ fun SignedPSBTDisplay(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            QRCodeUtils.OutputFormat.entries.forEach { format ->
+            OutputFormat.entries.forEach { format ->
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -249,20 +318,6 @@ fun SignedPSBTDisplay(
         }
 
         Spacer(modifier = Modifier.height(12.dp))
-
-        Text(
-            text = if (signedQRResult.isAnimated) {
-                if (isPaused) "Paused - use arrows to step through frames"
-                else "Tap pause to step through frames manually"
-            } else {
-                "Scan this QR code with your online wallet to broadcast"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedButton(
             onClick = onScanAnother,

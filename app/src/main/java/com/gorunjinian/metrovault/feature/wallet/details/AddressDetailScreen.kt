@@ -173,6 +173,16 @@ fun AddressDetailScreen(
                 Text("Show Keys")
             }
             
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Back to Addresses button
+            OutlinedButton(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Back to Addresses")
+            }
+            
             // Address information
             Spacer(modifier = Modifier.height(16.dp))
             

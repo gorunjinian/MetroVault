@@ -307,6 +307,7 @@ object Script {
      *                as required signatures)
      * @return a multisig redeem script
      */
+    @Suppress("LocalVariableName")
     @JvmStatic
     fun createMultiSigMofN(m: Int, pubkeys: List<PublicKey>): List<ScriptElt> {
         require(m in 1..16) { "number of required signatures is $m, should be between 1 and 16" }

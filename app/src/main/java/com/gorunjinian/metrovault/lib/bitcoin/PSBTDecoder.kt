@@ -74,6 +74,8 @@ object PSBTDecoder {
         if (input.length < 8) return null
         
         val encoding = input[2]
+        @Suppress("UNUSED_VARIABLE") // fileType reserved for future use/documentation
+
         val fileType = input[3]
         
         // For single QR, we skip straight to data after 8-char header
@@ -130,6 +132,7 @@ object PSBTDecoder {
         try {
             // All frames should have same encoding and type
             val encoding = frames[0][2]
+            @Suppress("UNUSED_VARIABLE") // fileType reserved for future use/documentation
             val fileType = frames[0][3]
             
             // Sort frames by part number and extract data portions
@@ -217,7 +220,7 @@ object PSBTDecoder {
     fun parseURFrame(input: String): Triple<Int, Int, String>? {
         val lower = input.lowercase()
         
-        val (prefix, content) = when {
+        val (_, content) = when {
             lower.startsWith("ur:psbt/") -> "ur:psbt/" to lower.removePrefix("ur:psbt/")
             lower.startsWith("ur:crypto-psbt/") -> "ur:crypto-psbt/" to lower.removePrefix("ur:crypto-psbt/")
             else -> return null
@@ -532,7 +535,7 @@ object PSBTDecoder {
     /**
      * Encodes bytes to Base32 (RFC 4648, uppercase, no padding).
      */
-    private fun encodeBase32(data: ByteArray): String {
+    internal fun encodeBase32(data: ByteArray): String {
         val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
         val result = StringBuilder()
         

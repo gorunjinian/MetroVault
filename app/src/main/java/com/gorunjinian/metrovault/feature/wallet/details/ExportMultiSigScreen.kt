@@ -23,7 +23,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
-import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
+import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
+import com.gorunjinian.metrovault.lib.qrtools.QRCodeGenerator
 import com.gorunjinian.metrovault.lib.qrtools.UR
 import com.gorunjinian.metrovault.lib.qrtools.UREncoder
 import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
@@ -57,10 +59,10 @@ fun ExportMultiSigScreen(
     var selectedContentFormat by remember { mutableStateOf(ContentFormat.DESCRIPTOR) }
     
     // QR encoding format state
-    var selectedQRFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.BBQR) }
+    var selectedQRFormat by remember { mutableStateOf(OutputFormat.BBQR) }
     
     // QR code result state
-    var qrResult by remember { mutableStateOf<QRCodeUtils.AnimatedQRResult?>(null) }
+    var qrResult by remember { mutableStateOf<AnimatedQRResult?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     
     // Animation state for multi-frame QR
@@ -177,7 +179,7 @@ fun ExportMultiSigScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                QRCodeUtils.OutputFormat.entries.forEach { format ->
+                OutputFormat.entries.forEach { format ->
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -356,13 +358,13 @@ private fun formatAsBSMS(descriptor: String, firstAddress: String): String {
  */
 private fun generateDescriptorQR(
     content: String,
-    format: QRCodeUtils.OutputFormat,
+    format: OutputFormat,
     contentFormat: ContentFormat
-): QRCodeUtils.AnimatedQRResult? {
+): AnimatedQRResult? {
     return when (format) {
-        QRCodeUtils.OutputFormat.UR_LEGACY -> generateDescriptorURv1(content)
-        QRCodeUtils.OutputFormat.BBQR -> generateDescriptorBBQr(content)
-        QRCodeUtils.OutputFormat.UR_MODERN -> generateDescriptorURv2(content, contentFormat)
+        OutputFormat.UR_LEGACY -> generateDescriptorURv1(content)
+        OutputFormat.BBQR -> generateDescriptorBBQr(content)
+        OutputFormat.UR_MODERN -> generateDescriptorURv2(content, contentFormat)
     }
 }
 
@@ -371,7 +373,7 @@ private fun generateDescriptorQR(
  * Uses ur:bytes/ encoding for broad compatibility with legacy wallets.
  * This format wraps raw UTF-8 bytes in CBOR and encodes with fountain codes.
  */
-private fun generateDescriptorURv1(content: String): QRCodeUtils.AnimatedQRResult? {
+private fun generateDescriptorURv1(content: String): AnimatedQRResult? {
     return try {
         // For BC-UR v1, we use ur:bytes encoding
         val contentBytes = content.toByteArray(Charsets.UTF_8)
@@ -381,13 +383,13 @@ private fun generateDescriptorURv1(content: String): QRCodeUtils.AnimatedQRResul
         
         if (encoder.isSinglePart) {
             val urString = encoder.nextPart()
-            val bitmap = QRCodeUtils.generateQRCode(urString.uppercase(), size = 512)
+            val bitmap = QRCodeGenerator.generateQRCode(urString.uppercase(), size = 512)
             bitmap?.let {
-                QRCodeUtils.AnimatedQRResult(
+                AnimatedQRResult(
                     frames = listOf(it),
                     totalParts = 1,
                     isAnimated = false,
-                    format = QRCodeUtils.OutputFormat.UR_LEGACY
+                    format = OutputFormat.UR_LEGACY
                 )
             }
         } else {
@@ -397,27 +399,27 @@ private fun generateDescriptorURv1(content: String): QRCodeUtils.AnimatedQRResul
                 frameStrings.add(encoder.nextPart().uppercase())
             }
             
-            val bitmaps = QRCodeUtils.generateConsistentQRCodes(frameStrings, size = 512)
+            val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameStrings, size = 512)
             bitmaps?.let {
-                QRCodeUtils.AnimatedQRResult(
+                AnimatedQRResult(
                     frames = it,
                     totalParts = it.size,
                     isAnimated = true,
                     recommendedFrameDelayMs = 500,
-                    format = QRCodeUtils.OutputFormat.UR_LEGACY
+                    format = OutputFormat.UR_LEGACY
                 )
             }
         }
     } catch (e: Exception) {
         android.util.Log.e("ExportMultiSigScreen", "BC-UR v1 generation failed: ${e.message}")
         // Fall back to plain text
-        val bitmap = QRCodeUtils.generateQRCode(content, size = 512)
+        val bitmap = QRCodeGenerator.generateQRCode(content, size = 512)
         bitmap?.let {
-            QRCodeUtils.AnimatedQRResult(
+            AnimatedQRResult(
                 frames = listOf(it),
                 totalParts = 1,
                 isAnimated = false,
-                format = QRCodeUtils.OutputFormat.UR_LEGACY
+                format = OutputFormat.UR_LEGACY
             )
         }
     }
@@ -436,7 +438,7 @@ private fun generateDescriptorURv1(content: String): QRCodeUtils.AnimatedQRResul
  * 2. Distribute data evenly across all frames
  */
 @Suppress("KDocUnresolvedReference")
-private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRResult? {
+private fun generateDescriptorBBQr(descriptor: String): AnimatedQRResult? {
     return try {
         val maxQrChars = 500
         // BBQr header overhead: "B$UU" + 2 char total + 2 char part = 8 chars
@@ -450,13 +452,13 @@ private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRRe
             val totalBase36 = 1.toString(36).padStart(2, '0').uppercase()
             val partBase36 = 0.toString(36).padStart(2, '0').uppercase()
             val bbqrContent = $$"B$UU$${totalBase36}$${partBase36}$$descriptor"
-            val bitmap = QRCodeUtils.generateQRCode(bbqrContent, size = 512)
+            val bitmap = QRCodeGenerator.generateQRCode(bbqrContent, size = 512)
             bitmap?.let {
-                QRCodeUtils.AnimatedQRResult(
+                AnimatedQRResult(
                     frames = listOf(it),
                     totalParts = 1,
                     isAnimated = false,
-                    format = QRCodeUtils.OutputFormat.BBQR
+                    format = OutputFormat.BBQR
                 )
             }
         } else {
@@ -489,14 +491,14 @@ private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRRe
                 $$"B$UU$${totalBase36}$${partBase36}$$chunk"
             }
             
-            val bitmaps = QRCodeUtils.generateConsistentQRCodes(frameContents, size = 512)
+            val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameContents, size = 512)
             bitmaps?.let {
-                QRCodeUtils.AnimatedQRResult(
+                AnimatedQRResult(
                     frames = it,
                     totalParts = it.size,
                     isAnimated = it.size > 1,
                     recommendedFrameDelayMs = 500,
-                    format = QRCodeUtils.OutputFormat.BBQR
+                    format = OutputFormat.BBQR
                 )
             }
         }
@@ -515,7 +517,7 @@ private fun generateDescriptorBBQr(descriptor: String): QRCodeUtils.AnimatedQRRe
  * @param content The content to encode
  * @param contentFormat The content format (affects UR type selection)
  */
-private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat): QRCodeUtils.AnimatedQRResult? {
+private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat): AnimatedQRResult? {
     return try {
         val ur = when (contentFormat) {
             ContentFormat.DESCRIPTOR -> {
@@ -532,13 +534,13 @@ private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat
 
         if (encoder.isSinglePart) {
             val urString = encoder.nextPart()
-            val bitmap = QRCodeUtils.generateQRCode(urString.uppercase(), size = 512)
+            val bitmap = QRCodeGenerator.generateQRCode(urString.uppercase(), size = 512)
             bitmap?.let {
-                QRCodeUtils.AnimatedQRResult(
+                AnimatedQRResult(
                     frames = listOf(it),
                     totalParts = 1,
                     isAnimated = false,
-                    format = QRCodeUtils.OutputFormat.UR_MODERN
+                    format = OutputFormat.UR_MODERN
                 )
             }
         } else {
@@ -548,27 +550,27 @@ private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat
                 frameStrings.add(encoder.nextPart().uppercase())
             }
 
-            val bitmaps = QRCodeUtils.generateConsistentQRCodes(frameStrings, size = 512)
+            val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameStrings, size = 512)
             bitmaps?.let {
-                QRCodeUtils.AnimatedQRResult(
+                AnimatedQRResult(
                     frames = it,
                     totalParts = it.size,
                     isAnimated = true,
                     recommendedFrameDelayMs = 500,
-                    format = QRCodeUtils.OutputFormat.UR_MODERN
+                    format = OutputFormat.UR_MODERN
                 )
             }
         }
     } catch (e: Exception) {
         android.util.Log.e("ExportMultiSigScreen", "BC-UR v2 generation failed: ${e.message}")
         // Fall back to plain text
-        val bitmap = QRCodeUtils.generateQRCode(content, size = 512)
+        val bitmap = QRCodeGenerator.generateQRCode(content, size = 512)
         bitmap?.let {
-            QRCodeUtils.AnimatedQRResult(
+            AnimatedQRResult(
                 frames = listOf(it),
                 totalParts = 1,
                 isAnimated = false,
-                format = QRCodeUtils.OutputFormat.UR_MODERN
+                format = OutputFormat.UR_MODERN
             )
         }
     }

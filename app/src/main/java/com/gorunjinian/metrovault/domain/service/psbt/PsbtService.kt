@@ -11,11 +11,13 @@ import com.gorunjinian.metrovault.data.model.SigningResult
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.metrovault.domain.service.util.WalletConstants
+import fr.acinq.secp256k1.Hex
 
 /**
  * Service responsible for PSBT (Partially Signed Bitcoin Transaction) operations.
  * Handles PSBT parsing, signing, and details extraction.
  */
+@Suppress("KDocUnresolvedReference")
 class PsbtService {
 
     companion object {
@@ -153,6 +155,156 @@ class PsbtService {
         } catch (_: Exception) {
             Log.e(TAG, "Failed to check PSBT signatures")
             false
+        }
+    }
+
+    /**
+     * Checks if a PSBT can be finalized as a single-sig transaction.
+     * A PSBT is finalizable if:
+     * - All inputs have exactly 1 partial signature (single-sig), OR
+     * - All inputs have a taproot key signature (P2TR single-sig), OR
+     * - All inputs are already finalized
+     *
+     * @param psbtBase64 Base64 encoded PSBT
+     * @return true if the PSBT is a fully-signed single-sig transaction that can be finalized
+     */
+    fun canFinalizeSingleSig(psbtBase64: String): Boolean {
+        return try {
+            val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
+            val psbt = when (val psbtResult = Psbt.read(psbtBytes)) {
+                is Either.Right -> psbtResult.value
+                is Either.Left -> return false
+            }
+
+            psbt.inputs.all { input ->
+                when (input) {
+                    is Input.WitnessInput.PartiallySignedWitnessInput -> {
+                        // Single-sig: exactly 1 partial sig, OR taproot key sig present
+                        // Must NOT have a witnessScript (that would indicate multisig P2WSH)
+                        val isSingleSigWitness = input.witnessScript == null && input.partialSigs.size == 1
+                        val isTaprootSigned = input.taprootKeySignature != null
+                        isSingleSigWitness || isTaprootSigned
+                    }
+                    is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> {
+                        // Single-sig: exactly 1 partial sig
+                        // Check redeemScript is NOT a multisig script
+                        val redeemScript = input.redeemScript
+                        val isMultisig = redeemScript?.let { parseMultisigScript(it).first } ?: false
+                        !isMultisig && input.partialSigs.size == 1
+                    }
+                    // Already finalized inputs are fine
+                    is Input.WitnessInput.FinalizedWitnessInput -> true
+                    is Input.NonWitnessInput.FinalizedNonWitnessInput -> true
+                    is Input.FinalizedInputWithoutUtxo -> true
+                    // Missing UTXO data - can't finalize
+                    is Input.PartiallySignedInputWithoutUtxo -> false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to check if PSBT can be finalized: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Result of PSBT finalization.
+     */
+    sealed class FinalizePsbtResult {
+        data class Success(val txHex: String) : FinalizePsbtResult()
+        data class Failure(val message: String) : FinalizePsbtResult()
+    }
+
+    /**
+     * Finalizes a single-sig PSBT and extracts the raw transaction.
+     * This assumes canFinalizeSingleSig() has returned true.
+     *
+     * For each input:
+     * - P2WPKH: Creates witness with [signature, pubkey]
+     * - P2TR: Creates witness with [schnorr_signature]
+     * - P2PKH: Creates scriptSig with [signature] [pubkey]
+     * - P2SH-P2WPKH: Creates witness + scriptSig with redeem script
+     *
+     * @param psbtBase64 Base64 encoded signed PSBT
+     * @return FinalizePsbtResult with raw transaction hex on success
+     */
+    fun finalizePsbt(psbtBase64: String): FinalizePsbtResult {
+        return try {
+            val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
+            var psbt = when (val psbtResult = Psbt.read(psbtBytes)) {
+                is Either.Right -> psbtResult.value
+                is Either.Left -> return FinalizePsbtResult.Failure("Failed to parse PSBT: ${psbtResult.value}")
+            }
+
+            // Finalize each input
+            for (inputIndex in psbt.inputs.indices) {
+                when (val input = psbt.inputs[inputIndex]) {
+                    is Input.WitnessInput.PartiallySignedWitnessInput -> {
+                        val scriptPubKey = runCatching { Script.parse(input.txOut.publicKeyScript) }.getOrNull()
+                            ?: return FinalizePsbtResult.Failure("Failed to parse scriptPubKey for input $inputIndex")
+
+                        val witness: ScriptWitness = when {
+                            // P2TR (Taproot)
+                            Script.isPay2tr(scriptPubKey) -> {
+                                val sig = input.taprootKeySignature
+                                    ?: return FinalizePsbtResult.Failure("Missing taproot signature for input $inputIndex")
+                                ScriptWitness(listOf(sig))
+                            }
+                            // P2WPKH (Native SegWit)
+                            Script.isPay2wpkh(scriptPubKey) -> {
+                                val (pubKey, sig) = input.partialSigs.entries.firstOrNull()
+                                    ?: return FinalizePsbtResult.Failure("Missing signature for input $inputIndex")
+                                ScriptWitness(listOf(sig, pubKey.value))
+                            }
+                            // P2SH-P2WPKH (Nested SegWit) - redeemScript points to P2WPKH
+                            Script.isPay2sh(scriptPubKey) && input.redeemScript != null -> {
+                                val (pubKey, sig) = input.partialSigs.entries.firstOrNull()
+                                    ?: return FinalizePsbtResult.Failure("Missing signature for input $inputIndex")
+                                ScriptWitness(listOf(sig, pubKey.value))
+                            }
+                            else -> return FinalizePsbtResult.Failure("Unsupported script type for input $inputIndex")
+                        }
+
+                        when (val result = psbt.finalizeWitnessInput(inputIndex, witness)) {
+                            is Either.Right -> psbt = result.value
+                            is Either.Left -> return FinalizePsbtResult.Failure("Failed to finalize input $inputIndex: ${result.value}")
+                        }
+                    }
+                    is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> {
+                        // P2PKH (Legacy)
+                        val (pubKey, sig) = input.partialSigs.entries.firstOrNull()
+                            ?: return FinalizePsbtResult.Failure("Missing signature for input $inputIndex")
+                        
+                        val scriptSig = listOf(OP_PUSHDATA(sig), OP_PUSHDATA(pubKey.value))
+                        
+                        when (val result = psbt.finalizeNonWitnessInput(inputIndex, scriptSig)) {
+                            is Either.Right -> psbt = result.value
+                            is Either.Left -> return FinalizePsbtResult.Failure("Failed to finalize input $inputIndex: ${result.value}")
+                        }
+                    }
+                    // Already finalized - skip
+                    is Input.WitnessInput.FinalizedWitnessInput,
+                    is Input.NonWitnessInput.FinalizedNonWitnessInput,
+                    is Input.FinalizedInputWithoutUtxo -> { /* Already finalized */ }
+                    
+                    is Input.PartiallySignedInputWithoutUtxo -> 
+                        return FinalizePsbtResult.Failure("Input $inputIndex missing UTXO data")
+                }
+            }
+
+            // Extract the final transaction
+            when (val extractResult = psbt.extract()) {
+                is Either.Right -> {
+                    val tx = extractResult.value
+                    val txBytes = Transaction.write(tx)
+                    val txHex = Hex.encode(txBytes)
+                    Log.d(TAG, "Successfully finalized PSBT, tx size: ${txBytes.size} bytes")
+                    FinalizePsbtResult.Success(txHex)
+                }
+                is Either.Left -> FinalizePsbtResult.Failure("Failed to extract transaction: ${extractResult.value}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during PSBT finalization: ${e.message}", e)
+            FinalizePsbtResult.Failure("Finalization error: ${e.message}")
         }
     }
 

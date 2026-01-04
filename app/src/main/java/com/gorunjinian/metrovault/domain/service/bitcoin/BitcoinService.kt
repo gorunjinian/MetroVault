@@ -170,14 +170,6 @@ class BitcoinService {
         isTestnet: Boolean = false
     ): Pair<String, String>? = keyEncodingService.getWalletDescriptors(masterPrivateKey, isTestnet)
 
-    fun getWalletDescriptor(
-        fingerprint: String,
-        accountPath: String,
-        accountPublicKey: DeterministicWallet.ExtendedPublicKey,
-        scriptType: ScriptType,
-        isTestnet: Boolean = false
-    ): String = keyEncodingService.getWalletDescriptor(fingerprint, accountPath, accountPublicKey, scriptType, isTestnet)
-
     fun getPrivateWalletDescriptor(
         fingerprint: String,
         accountPath: String,
@@ -215,4 +207,10 @@ class BitcoinService {
 
     fun getPsbtDetails(psbtBase64: String, isTestnet: Boolean = false): PsbtDetails? =
         psbtService.getPsbtDetails(psbtBase64, isTestnet)
+
+    fun canFinalizeSingleSig(psbtBase64: String): Boolean =
+        psbtService.canFinalizeSingleSig(psbtBase64)
+
+    fun finalizePsbt(psbtBase64: String): PsbtService.FinalizePsbtResult =
+        psbtService.finalizePsbt(psbtBase64)
 }

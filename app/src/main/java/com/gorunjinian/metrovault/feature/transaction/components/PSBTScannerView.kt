@@ -12,7 +12,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRScanner
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -30,14 +30,13 @@ import kotlinx.coroutines.withContext
 @Composable
 fun PSBTScannerView(
     hasCameraPermission: Boolean,
-    animatedScanner: QRCodeUtils.AnimatedQRScanner,
+    animatedScanner: AnimatedQRScanner,
     scanProgress: Int,
     isAnimatedScan: Boolean,
     errorMessage: String,
     onRequestPermission: () -> Unit,
     onScanProgress: (progress: Int, isAnimated: Boolean) -> Unit,
     onScanComplete: (psbt: String) -> Unit,
-    onScanError: (message: String) -> Unit,
     onBarcodeViewCreated: (CompoundBarcodeView) -> Unit,
     modifier: Modifier = Modifier
 ) {

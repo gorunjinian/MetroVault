@@ -11,7 +11,7 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
-import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.lib.qrtools.DescriptorQRScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -64,7 +64,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
     
     // Scanner for animated QR codes - exposed for UI access
-    val descriptorScanner = QRCodeUtils.DescriptorQRScanner()
+    val descriptorScanner = DescriptorQRScanner()
 
     // ========== Events ==========
 

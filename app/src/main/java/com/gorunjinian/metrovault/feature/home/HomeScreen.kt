@@ -214,6 +214,16 @@ fun HomeScreen(
                         fontWeight = FontWeight.Bold
                     )
                 },
+                navigationIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_metrovault),
+                        contentDescription = "Metro Vault",
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .size(28.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
                 actions = {
                     // Edit button - only on Wallets tab
                     if (pagerState.currentPage == 0) {

@@ -22,6 +22,7 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import com.gorunjinian.metrovault.domain.service.bitcoin.KeyEncodingService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
+import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
 import com.gorunjinian.metrovault.domain.manager.WalletSigningService
 import com.gorunjinian.metrovault.data.repository.WalletRepository
 import kotlinx.coroutines.Dispatchers
@@ -619,6 +620,22 @@ class   Wallet(context: Context) {
     fun getPsbtDetails(psbtString: String): PsbtDetails? {
         val isTestnet = isActiveWalletTestnet()
         return bitcoinService.getPsbtDetails(psbtString, isTestnet)
+    }
+
+    /**
+     * Checks if a PSBT can be finalized as a single-sig transaction.
+     * A PSBT is finalizable if all inputs have exactly 1 signature.
+     */
+    fun canFinalizeSingleSig(psbtString: String): Boolean {
+        return bitcoinService.canFinalizeSingleSig(psbtString)
+    }
+
+    /**
+     * Finalizes a single-sig PSBT and extracts the raw transaction.
+     * @return FinalizePsbtResult with raw tx hex on success, or error message on failure
+     */
+    fun finalizePsbt(psbtString: String): PsbtService.FinalizePsbtResult {
+        return bitcoinService.finalizePsbt(psbtString)
     }
 
     fun generateAddresses(

@@ -23,7 +23,11 @@ import com.gorunjinian.metrovault.feature.transaction.components.OutputWithType
 import com.gorunjinian.metrovault.feature.transaction.components.PSBTScannerView
 import com.gorunjinian.metrovault.feature.transaction.components.SignedPSBTDisplay
 import com.gorunjinian.metrovault.feature.transaction.components.TransactionConfirmation
+import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
+import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRScanner
+import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.lib.qrtools.QRDensity
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -51,24 +55,29 @@ fun ScanPSBTScreen(
     var psbtDetails by remember { mutableStateOf<PsbtDetails?>(null) }
     var outputsWithType by remember { mutableStateOf<List<OutputWithType>?>(null) }
     var signedPSBT by remember { mutableStateOf<String?>(null) }
-    var signedQRResult by remember { mutableStateOf<QRCodeUtils.AnimatedQRResult?>(null) }
+    var signedQRResult by remember { mutableStateOf<AnimatedQRResult?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     var hasCameraPermission by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
     var alternativePathsUsed by remember { mutableStateOf<List<String>>(emptyList()) }  // Track alternative paths
     
     // Animated QR scanning state
-    val animatedScanner = remember { QRCodeUtils.AnimatedQRScanner() }
+    val animatedScanner = remember { AnimatedQRScanner() }
     var scanProgress by remember { mutableIntStateOf(0) }
     var isAnimatedScan by remember { mutableStateOf(false) }
     var isParsingPSBT by remember { mutableStateOf(false) }
     
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
-    var selectedOutputFormat by remember { mutableStateOf(QRCodeUtils.OutputFormat.UR_LEGACY) }
-    var selectedDensity by remember { mutableStateOf(QRCodeUtils.QRDensity.HIGH) }
+    var selectedOutputFormat by remember { mutableStateOf(OutputFormat.UR_LEGACY) }
+    var selectedDensity by remember { mutableStateOf(QRDensity.HIGH) }
     var isQRPaused by remember { mutableStateOf(false) }
     var isRegeneratingQR by remember { mutableStateOf(false) }
+    
+    // Finalization state (single-sig only)
+    var canFinalize by remember { mutableStateOf(false) }
+    var isFinalized by remember { mutableStateOf(false) }
+    var finalizedTxHex by remember { mutableStateOf<String?>(null) }
     
     val scope = rememberCoroutineScope()
 
@@ -128,6 +137,9 @@ fun ScanPSBTScreen(
         scanProgress = 0
         isAnimatedScan = false
         currentDisplayFrame = 0
+        canFinalize = false
+        isFinalized = false
+        finalizedTxHex = null
         barcodeView?.resume()
     }
 
@@ -147,6 +159,23 @@ fun ScanPSBTScreen(
                 actions = {
                     // Only show density button when signed transaction is displayed
                     if (signedPSBT != null && signedQRResult != null) {
+                        // Finalized badge
+                        if (isFinalized) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "Finalized",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        
                         Box {
                             IconButton(onClick = { showDensityMenu = true }) {
                                 Icon(
@@ -159,7 +188,7 @@ fun ScanPSBTScreen(
                                 expanded = showDensityMenu,
                                 onDismissRequest = { showDensityMenu = false }
                             ) {
-                                QRCodeUtils.QRDensity.entries.forEach { density ->
+                                QRDensity.entries.forEach { density ->
                                     DropdownMenuItem(
                                         text = { Text(density.displayName) },
                                         onClick = {
@@ -171,11 +200,20 @@ fun ScanPSBTScreen(
                                                 val previousResult = signedQRResult
                                                 scope.launch {
                                                     val newQR = withContext(Dispatchers.Default) {
-                                                        QRCodeUtils.generateSmartPSBTQR(
-                                                            signedPSBT!!,
-                                                            format = selectedOutputFormat,
-                                                            density = density
-                                                        )
+                                                        // Generate appropriate QR based on finalization state
+                                                        if (isFinalized && finalizedTxHex != null) {
+                                                            QRCodeUtils.generateRawTxQR(
+                                                                finalizedTxHex!!,
+                                                                format = selectedOutputFormat,
+                                                                density = density
+                                                            )
+                                                        } else {
+                                                            QRCodeUtils.generateSmartPSBTQR(
+                                                                signedPSBT!!,
+                                                                format = selectedOutputFormat,
+                                                                density = density
+                                                            )
+                                                        }
                                                     }
                                                     if (newQR != null) {
                                                         signedQRResult = newQR
@@ -247,6 +285,69 @@ fun ScanPSBTScreen(
                         isPaused = isQRPaused,
                         isLoading = isRegeneratingQR,
                         alternativePathsUsed = alternativePathsUsed,
+                        canFinalize = canFinalize,
+                        isFinalized = isFinalized,
+                        onFinalize = {
+                            // Finalize the PSBT and generate raw tx QR
+                            isRegeneratingQR = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.Default) {
+                                    wallet.finalizePsbt(signedPSBT!!)
+                                }
+                                when (result) {
+                                    is com.gorunjinian.metrovault.domain.service.psbt.PsbtService.FinalizePsbtResult.Success -> {
+                                        finalizedTxHex = result.txHex
+                                        val txQR = withContext(Dispatchers.Default) {
+                                            QRCodeUtils.generateRawTxQR(
+                                                result.txHex,
+                                                format = selectedOutputFormat,
+                                                density = selectedDensity
+                                            )
+                                        }
+                                        if (txQR != null) {
+                                            signedQRResult = txQR
+                                            isFinalized = true
+                                            currentDisplayFrame = 0
+                                        }
+                                    }
+                                    is com.gorunjinian.metrovault.domain.service.psbt.PsbtService.FinalizePsbtResult.Failure -> {
+                                        android.util.Log.e("ScanPSBTScreen", "Finalization failed: ${result.message}")
+                                    }
+                                }
+                                isRegeneratingQR = false
+                            }
+                        },
+                        onToggleView = {
+                            // Toggle between finalized tx and signed PSBT view
+                            isRegeneratingQR = true
+                            scope.launch {
+                                val newQR = withContext(Dispatchers.Default) {
+                                    if (isFinalized) {
+                                        // Switch to signed PSBT view
+                                        QRCodeUtils.generateSmartPSBTQR(
+                                            signedPSBT!!,
+                                            format = selectedOutputFormat,
+                                            density = selectedDensity
+                                        )
+                                    } else {
+                                        // Switch to finalized tx view
+                                        finalizedTxHex?.let {
+                                            QRCodeUtils.generateRawTxQR(
+                                                it,
+                                                format = selectedOutputFormat,
+                                                density = selectedDensity
+                                            )
+                                        }
+                                    }
+                                }
+                                if (newQR != null) {
+                                    signedQRResult = newQR
+                                    isFinalized = !isFinalized
+                                    currentDisplayFrame = 0
+                                }
+                                isRegeneratingQR = false
+                            }
+                        },
                         onPauseToggle = { isQRPaused = it },
                         onPreviousFrame = {
                             val totalFrames = signedQRResult!!.frames.size
@@ -264,11 +365,20 @@ fun ScanPSBTScreen(
                             val previousResult = signedQRResult
                             scope.launch {
                                 val newQR = withContext(Dispatchers.Default) {
-                                    QRCodeUtils.generateSmartPSBTQR(
-                                        signedPSBT!!,
-                                        format = newFormat,
-                                        density = selectedDensity
-                                    )
+                                    // Generate appropriate QR based on finalization state
+                                    if (isFinalized && finalizedTxHex != null) {
+                                        QRCodeUtils.generateRawTxQR(
+                                            finalizedTxHex!!,
+                                            format = newFormat,
+                                            density = selectedDensity
+                                        )
+                                    } else {
+                                        QRCodeUtils.generateSmartPSBTQR(
+                                            signedPSBT!!,
+                                            format = newFormat,
+                                            density = selectedDensity
+                                        )
+                                    }
                                 }
                                 // Only update if generation succeeded
                                 if (newQR != null) {
@@ -309,6 +419,11 @@ fun ScanPSBTScreen(
 
                                             // Track alternative paths used
                                             alternativePathsUsed = signingResult.alternativePathsUsed
+
+                                            // Check if this single-sig PSBT can be finalized
+                                            canFinalize = withContext(Dispatchers.Default) {
+                                                wallet.canFinalizeSingleSig(signed)
+                                            }
 
                                             // Use smart QR generation for animated support
                                             val qrResult = withContext(Dispatchers.Default) {
