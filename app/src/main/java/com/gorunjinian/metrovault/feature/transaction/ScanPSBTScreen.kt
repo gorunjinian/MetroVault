@@ -508,9 +508,6 @@ fun ScanPSBTScreen(
                                 }
                             }
                         },
-                        onScanError = { message ->
-                            errorMessage = message
-                        },
                         onBarcodeViewCreated = { view ->
                             barcodeView = view
                         },

@@ -1,3 +1,5 @@
+@file:Suppress("AssignedValueIsNeverRead")
+
 package com.gorunjinian.metrovault.core.ui.dialogs
 
 import androidx.compose.foundation.clickable

@@ -45,10 +45,6 @@ fun PassphraseEntryDialog(
         isCalculating = false
     }
 
-    // Mismatch if: fingerprint calculated AND doesn't match original
-    // OR if still calculating/empty (initial state = mismatch since empty passphrase != original)
-    val fingerprintMismatch = currentFingerprint.isEmpty() || currentFingerprint != originalFingerprint
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Enter Passphrase") },
