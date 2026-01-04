@@ -105,11 +105,6 @@ android {
                 "META-INF/notice.txt",
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
             )
-            // Merge BouncyCastle duplicate files
-            pickFirsts += setOf(
-                "org/bouncycastle/x509/CertPathReviewerMessages.properties",
-                "org/bouncycastle/x509/CertPathReviewerMessages_de.properties"
-            )
         }
     }
 }

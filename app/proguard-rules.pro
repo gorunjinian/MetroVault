@@ -2,16 +2,18 @@
 # By default, the flags in this file are appended to flags specified
 # in /usr/local/Cellar/android-sdk/24.3.3/tools/proguard/proguard-android.txt
 
-# Keep Bouncycastle
--keep class org.bouncycastle.** { *; }
--dontwarn org.bouncycastle.**
 
 # Keep security-crypto
 -keep class androidx.security.crypto.** { *; }
 -dontwarn androidx.security.crypto.**
 
-# Keep ZXing
--keep class com.google.zxing.** { *; }
+# Keep ZXing (only QR code generation classes we actually use)
+-keep class com.google.zxing.BarcodeFormat { *; }
+-keep class com.google.zxing.EncodeHintType { *; }
+-keep class com.google.zxing.qrcode.QRCodeWriter { *; }
+-keep class com.google.zxing.qrcode.decoder.ErrorCorrectionLevel { *; }
+-keep class com.google.zxing.qrcode.encoder.** { *; }
+-keep class com.google.zxing.common.BitMatrix { *; }
 -dontwarn com.google.zxing.**
 
 # Keep our crypto classes

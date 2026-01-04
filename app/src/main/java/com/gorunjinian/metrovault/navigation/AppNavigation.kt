@@ -48,6 +48,7 @@ import com.gorunjinian.metrovault.feature.settings.AppearanceSettingsScreen
 import com.gorunjinian.metrovault.feature.settings.SecuritySettingsScreen
 import com.gorunjinian.metrovault.feature.settings.AdvancedSettingsScreen
 import com.gorunjinian.metrovault.feature.settings.WalletKeysScreen
+import com.gorunjinian.metrovault.feature.settings.LibUsedScreen
 
 // Optimized animation parameters for smoother performance
 private const val ANIMATION_DURATION = 250
@@ -97,6 +98,7 @@ sealed class Screen(val route: String) {
     object SeedQR : Screen("seed_qr")
     object RootKey : Screen("root_key")
     object WalletKeys : Screen("wallet_keys")
+    object LibUsed : Screen("lib_used")
 }
 
 @Suppress("AssignedValueIsNeverRead")
@@ -635,6 +637,19 @@ fun AppNavigation(
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)
+                    }
+                },
+                onLibUsed = {
+                    navController.navigate(Screen.LibUsed.route)
+                }
+            )
+        }
+
+        composable(Screen.LibUsed.route) {
+            LibUsedScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.About.route)
                     }
                 }
             )
