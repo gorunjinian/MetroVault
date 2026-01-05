@@ -286,6 +286,14 @@ class   Wallet(context: Context) {
                     _walletMetadataList.add(metadata)
                     _wallets.value = _walletMetadataList.toList()
                 }
+                
+                // Refresh multisig key bindings in case this new key matches a cosigner
+                val updatedMultisigs = secureStorage.refreshMultisigKeyBindings(isDecoyMode)
+                if (updatedMultisigs > 0) {
+                    // Reload wallet list to reflect updated multisig bindings
+                    loadWalletList()
+                }
+                
                 WalletCreationResult.Success(metadata)
             } finally {
                 // Securely wipe seed bytes from memory

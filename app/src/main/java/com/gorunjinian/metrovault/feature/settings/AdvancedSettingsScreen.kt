@@ -246,7 +246,7 @@ fun AdvancedSettingsScreen(
             SettingsItem(
                 icon = R.drawable.ic_key,
                 title = "View All Saved Keys",
-                description = "Manage seed phrases stored in the vault",
+                description = "Manage the keys stored in the vault",
                 onClick = { 
                     keysPasswordError = ""
                     showKeysPasswordDialog = true

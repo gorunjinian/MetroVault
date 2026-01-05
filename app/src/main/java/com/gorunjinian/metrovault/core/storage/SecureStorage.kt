@@ -697,6 +697,89 @@ class SecureStorage(private val context: Context) {
         return "Key $nextNumber"
     }
 
+    /**
+     * Refreshes key bindings for all multisig wallets based on current local keys.
+     * 
+     * Call this after importing a new wallet/key to ensure multisig wallets
+     * discover any newly available signing keys.
+     * 
+     * For each multisig wallet:
+     * 1. Scans all local keys for fingerprint matches with cosigners
+     * 2. Updates keyIds list with matching key IDs
+     * 3. Updates cosigner.isLocal and cosigner.keyId flags
+     * 4. Persists changes only if bindings actually changed
+     * 
+     * @param isDecoy Whether to refresh in decoy mode
+     * @return Number of multisig wallets that were updated
+     */
+    fun refreshMultisigKeyBindings(isDecoy: Boolean): Int {
+        val allKeys = loadAllWalletKeys(isDecoy)
+        val allMetadata = loadAllWalletMetadata(isDecoy)
+        var updatedCount = 0
+        
+        for (metadata in allMetadata) {
+            if (!metadata.isMultisig || metadata.multisigConfig == null) continue
+            
+            val config = metadata.multisigConfig
+            val newKeyIds = mutableListOf<String>()
+            
+            // Map each cosigner to check for local key matches
+            val updatedCosigners = config.cosigners.map { cosigner ->
+                val matchingKey = allKeys.find { 
+                    it.fingerprint.equals(cosigner.fingerprint, ignoreCase = true) 
+                }
+                if (matchingKey != null) {
+                    newKeyIds.add(matchingKey.keyId)
+                    cosigner.copy(isLocal = true, keyId = matchingKey.keyId)
+                } else {
+                    cosigner.copy(isLocal = false, keyId = null)
+                }
+            }
+            
+            // Only update if bindings changed
+            if (newKeyIds.toSet() != metadata.keyIds.toSet()) {
+                val updatedConfig = config.copy(
+                    cosigners = updatedCosigners,
+                    localKeyFingerprints = allKeys
+                        .filter { key -> newKeyIds.contains(key.keyId) }
+                        .map { it.fingerprint.lowercase() }
+                )
+                val updatedMetadata = metadata.copy(
+                    keyIds = newKeyIds,
+                    multisigConfig = updatedConfig
+                )
+                saveWalletMetadata(updatedMetadata, isDecoy)
+                updatedCount++
+                Log.d(TAG, "Refreshed multisig ${metadata.id} (${metadata.name}): ${metadata.keyIds.size} -> ${newKeyIds.size} local key(s)")
+            }
+        }
+        
+        if (updatedCount > 0) {
+            Log.d(TAG, "Refreshed $updatedCount multisig wallet(s) with updated key bindings")
+        }
+        return updatedCount
+    }
+
+    /**
+     * Gets all multisig wallets that reference a given key by fingerprint.
+     * This includes multisig wallets where the key matches a cosigner fingerprint,
+     * regardless of whether the key was present at import time.
+     * 
+     * @param fingerprint The key fingerprint to check
+     * @param isDecoy Whether to check in decoy mode
+     * @return List of wallet names that use this key as a cosigner
+     */
+    fun getMultisigWalletsUsingFingerprint(fingerprint: String, isDecoy: Boolean): List<String> {
+        return loadAllWalletMetadata(isDecoy)
+            .filter { metadata ->
+                metadata.isMultisig && 
+                metadata.multisigConfig?.cosigners?.any { 
+                    it.fingerprint.equals(fingerprint, ignoreCase = true) 
+                } == true
+            }
+            .map { it.name }
+    }
+
     // ============================================================================
     // WALLET INDEX & ORDER
     // ============================================================================

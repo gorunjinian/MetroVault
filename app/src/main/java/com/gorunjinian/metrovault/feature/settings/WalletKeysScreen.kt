@@ -1,6 +1,5 @@
 package com.gorunjinian.metrovault.feature.settings
 
-import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -15,8 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
@@ -27,7 +26,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Screen for viewing and managing all saved wallet keys.
- * Allows renaming and deleting keys (with cascade delete of dependent wallets).
+ * Allows renaming, viewing details (with password confirmation), and deleting keys.
  */
 @Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -38,7 +37,6 @@ fun WalletKeysScreen(
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val view = LocalView.current
     
     // Keys list - loaded immediately since authentication was done in AdvancedSettingsScreen
     var keys by remember { mutableStateOf<List<WalletKeys>>(emptyList()) }
@@ -50,6 +48,13 @@ fun WalletKeysScreen(
     var keyToRename by remember { mutableStateOf<WalletKeys?>(null) }
     var renameValue by remember { mutableStateOf("") }
     
+    // Key details dialog state
+    var keyToView by remember { mutableStateOf<WalletKeys?>(null) }
+    var showKeyDetailsDialog by remember { mutableStateOf(false) }
+    var showSeedPasswordDialog by remember { mutableStateOf(false) }
+    var seedPasswordError by remember { mutableStateOf("") }
+    var isMnemonicVisible by remember { mutableStateOf(false) }
+    
     // Delete dialog state
     var keyToDelete by remember { mutableStateOf<WalletKeys?>(null) }
     var showDeleteWarning by remember { mutableStateOf(false) }
@@ -57,6 +62,7 @@ fun WalletKeysScreen(
     var deletePasswordError by remember { mutableStateOf("") }
     var isDeleting by remember { mutableStateOf(false) }
     var walletsToDelete by remember { mutableStateOf<List<String>>(emptyList()) }
+    var multisigWalletsUsingKey by remember { mutableStateOf<List<String>>(emptyList()) }
     
     // Load keys on composition
     fun loadKeys() {
@@ -154,7 +160,8 @@ fun WalletKeysScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = if (isEditMode) "Tap to rename, use trash icon to delete." else "Long-press a key to delete it.",
+                        text = if (isEditMode) "Tap to rename, use trash icon to delete." 
+                               else "Tap to view details, long-press to delete.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
@@ -172,15 +179,24 @@ fun WalletKeysScreen(
                                 enabled = !isDeleting,
                                 onClick = {
                                     if (isEditMode) {
+                                        // In edit mode: tap to rename
                                         keyToRename = key
                                         renameValue = key.label
+                                    } else {
+                                        // Normal mode: tap to view details (no password needed here)
+                                        keyToView = key
+                                        isMnemonicVisible = false
+                                        showKeyDetailsDialog = true
                                     }
                                 },
                                 onLongClick = {
                                     if (!isEditMode) {
-                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                         keyToDelete = key
                                         walletsToDelete = referencingWallets
+                                        // Get multisig wallets that reference this key by fingerprint
+                                        multisigWalletsUsingKey = secureStorage.getMultisigWalletsUsingFingerprint(
+                                            key.fingerprint, wallet.isDecoyMode
+                                        )
                                         showDeleteWarning = true
                                     }
                                 }
@@ -220,9 +236,11 @@ fun WalletKeysScreen(
                             if (isEditMode) {
                                 IconButton(
                                     onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                                         keyToDelete = key
                                         walletsToDelete = referencingWallets
+                                        multisigWalletsUsingKey = secureStorage.getMultisigWalletsUsingFingerprint(
+                                            key.fingerprint, wallet.isDecoyMode
+                                        )
                                         deletePasswordError = ""
                                         showDeletePasswordDialog = true
                                     }
@@ -233,6 +251,12 @@ fun WalletKeysScreen(
                                         tint = MaterialTheme.colorScheme.error
                                     )
                                 }
+                            } else {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_chevron_right),
+                                    contentDescription = "View details",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -241,7 +265,9 @@ fun WalletKeysScreen(
         }
     }
     
+    // ========================================
     // Rename Dialog
+    // ========================================
     if (keyToRename != null) {
         AlertDialog(
             onDismissRequest = { keyToRename = null },
@@ -275,10 +301,231 @@ fun WalletKeysScreen(
         )
     }
     
+    // ========================================
+    // Seed Phrase Password Dialog (triggered by Show button)
+    // ========================================
+    if (showSeedPasswordDialog && keyToView != null) {
+        ConfirmPasswordDialog(
+            onDismiss = {
+                showSeedPasswordDialog = false
+                seedPasswordError = ""
+            },
+            onConfirm = { password ->
+                val isDecoy = wallet.isDecoyMode
+                val isValidPassword = if (isDecoy) {
+                    secureStorage.isDecoyPassword(password)
+                } else {
+                    secureStorage.verifyPasswordSimple(password) && !secureStorage.isDecoyPassword(password)
+                }
+                
+                if (isValidPassword) {
+                    showSeedPasswordDialog = false
+                    seedPasswordError = ""
+                    isMnemonicVisible = true
+                } else {
+                    seedPasswordError = "Incorrect password"
+                }
+            },
+            errorMessage = seedPasswordError
+        )
+    }
+    
+    // ========================================
+    // Key Details Dialog
+    // ========================================
+    if (showKeyDetailsDialog && keyToView != null) {
+        val key = keyToView!!
+        val referencingWalletIds = secureStorage.getWalletsReferencingKey(key.keyId, wallet.isDecoyMode)
+        val referencingWalletNames = referencingWalletIds.mapNotNull { walletId ->
+            secureStorage.loadWalletMetadata(walletId, wallet.isDecoyMode)?.name
+        }
+        val mnemonicWords = key.mnemonic.split(" ")
+        val wordCount = mnemonicWords.size
+        val is24Words = wordCount == 24
+        
+        AlertDialog(
+            onDismissRequest = { 
+                showKeyDetailsDialog = false
+                keyToView = null
+                isMnemonicVisible = false
+            },
+            title = { 
+                Text(key.label.ifEmpty { "Key Details" }) 
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Fingerprint
+                    Column {
+                        Text(
+                            text = "Master Fingerprint",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = key.fingerprint.uppercase(),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontFamily = FontFamily.Monospace
+                            )
+                        )
+                    }
+                    
+                    HorizontalDivider()
+                    
+                    // Seed Phrase
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Seed Phrase ($wordCount words)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(
+                                onClick = { 
+                                    if (isMnemonicVisible) {
+                                        // Hide directly
+                                        isMnemonicVisible = false
+                                    } else {
+                                        // Show requires password confirmation
+                                        seedPasswordError = ""
+                                        showSeedPasswordDialog = true
+                                    }
+                                }
+                            ) {
+                                Text(if (isMnemonicVisible) "Hide" else "Show")
+                            }
+                        }
+                        
+                        if (isMnemonicVisible) {
+                            // Warning message
+                            Text(
+                                text = "Keep this secret!",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            // Two-column numbered seed display (matching SeedPhraseScreen)
+                            val wordsPerColumn = wordCount / 2
+                            val column1 = mnemonicWords.take(wordsPerColumn)
+                            val column2 = mnemonicWords.drop(wordsPerColumn)
+                            
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(if (is24Words) 6.dp else 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(if (is24Words) 4.dp else 6.dp)
+                                ) {
+                                    // First column
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(if (is24Words) 2.dp else 4.dp)
+                                    ) {
+                                        column1.forEachIndexed { index, word ->
+                                            val wordNumber = index + 1
+                                            Card(
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                            ) {
+                                                Text(
+                                                    text = "$wordNumber. $word",
+                                                    modifier = Modifier.padding(
+                                                        horizontal = if (is24Words) 6.dp else 8.dp,
+                                                        vertical = if (is24Words) 4.dp else 6.dp
+                                                    ),
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                    // Second column
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(if (is24Words) 2.dp else 4.dp)
+                                    ) {
+                                        column2.forEachIndexed { index, word ->
+                                            val wordNumber = wordsPerColumn + index + 1
+                                            Card(
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                            ) {
+                                                Text(
+                                                    text = "$wordNumber. $word",
+                                                    modifier = Modifier.padding(
+                                                        horizontal = if (is24Words) 6.dp else 8.dp,
+                                                        vertical = if (is24Words) 4.dp else 6.dp
+                                                    ),
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "••••••••••••••••••••••••",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    HorizontalDivider()
+                    
+                    // Wallets using this key
+                    Column {
+                        Text(
+                            text = "Used by ${referencingWalletNames.size} wallet(s)",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (referencingWalletNames.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            referencingWalletNames.forEach { walletName ->
+                                Text(
+                                    text = "• $walletName",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showKeyDetailsDialog = false
+                    keyToView = null
+                    isMnemonicVisible = false
+                }) { 
+                    Text("Close") 
+                }
+            }
+        )
+    }
+    
+    // ========================================
     // Delete Warning Dialog
+    // ========================================
     if (showDeleteWarning && keyToDelete != null) {
         val key = keyToDelete!!
-        val walletCount = walletsToDelete.size
+        val directWalletCount = walletsToDelete.size
+        val multisigCount = multisigWalletsUsingKey.size
         
         AlertDialog(
             onDismissRequest = { 
@@ -294,16 +541,54 @@ fun WalletKeysScreen(
             },
             title = { Text("Delete ${key.label.ifEmpty { "Key" }}?") },
             text = {
-                Text(
-                    if (walletCount == 0) {
-                        "This key is not used by any wallet and will be permanently deleted.\n\n" +
-                        "This action cannot be undone."
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (directWalletCount == 0 && multisigCount == 0) {
+                        Text(
+                            "This key is not used by any wallet and will be permanently deleted.\n\n" +
+                            "This action cannot be undone."
+                        )
                     } else {
-                        "This will permanently delete this key and ALL wallets using it:\n\n" +
-                        "• $walletCount ${if (walletCount == 1) "wallet" else "wallets"} will be deleted\n\n" +
-                        "This action cannot be undone unless you have your seed phrase backed up."
+                        Text(
+                            "This will permanently delete this key.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        
+                        if (directWalletCount > 0) {
+                            Text(
+                                "• $directWalletCount ${if (directWalletCount == 1) "wallet" else "wallets"} will be deleted",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        
+                        if (multisigCount > 0) {
+                            Text(
+                                "This key is also used by $multisigCount multisig ${if (multisigCount == 1) "wallet" else "wallets"}:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            multisigWalletsUsingKey.forEach { name ->
+                                Text(
+                                    "   • $name",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Text(
+                                "These multisig wallets will lose the ability to sign with this key.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "This action cannot be undone unless you have your seed phrase backed up.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                )
+                }
             },
             confirmButton = {
                 TextButton(
@@ -326,7 +611,9 @@ fun WalletKeysScreen(
         )
     }
     
+    // ========================================
     // Delete Password Confirmation Dialog
+    // ========================================
     if (showDeletePasswordDialog && keyToDelete != null) {
         ConfirmPasswordDialog(
             onDismiss = {
@@ -358,17 +645,32 @@ fun WalletKeysScreen(
                             if (w.isMultisig && w.keyIds.size == 1 && w.keyIds.contains(key.keyId)) {
                                 wallet.deleteWallet(w.id)
                             }
-                            // For multisig with multiple keys, just remove this key reference
-                            // (This is a simplification - in practice we'd update the metadata)
+                            // For multisig with multiple local keys, remove this key reference
+                            if (w.isMultisig && w.keyIds.size > 1 && w.keyIds.contains(key.keyId)) {
+                                val updatedKeyIds = w.keyIds.filter { it != key.keyId }
+                                // Update cosigner isLocal flags
+                                val updatedCosigners = w.multisigConfig?.cosigners?.map { cosigner ->
+                                    if (cosigner.keyId == key.keyId) {
+                                        cosigner.copy(isLocal = false, keyId = null)
+                                    } else {
+                                        cosigner
+                                    }
+                                }
+                                val updatedConfig = w.multisigConfig?.copy(
+                                    cosigners = updatedCosigners ?: emptyList(),
+                                    localKeyFingerprints = w.multisigConfig.localKeyFingerprints.filter { 
+                                        !it.equals(key.fingerprint, ignoreCase = true) 
+                                    }
+                                )
+                                val updatedMetadata = w.copy(
+                                    keyIds = updatedKeyIds,
+                                    multisigConfig = updatedConfig
+                                )
+                                secureStorage.updateWalletMetadata(updatedMetadata, isDecoy)
+                            }
                         }
                         
-                        // Force delete the key (it should be unreferenced now)
-                        val prefs = if (isDecoy) {
-                            // Use reflection or add a forceDeleteKey method
-                            // For now, the key should be deletable since wallets are gone
-                        } else {
-                            // Same for main vault
-                        }
+                        // Now delete the key (should be unreferenced or force delete)
                         secureStorage.deleteWalletKey(key.keyId, isDecoy)
                         
                         // Refresh wallet list
