@@ -2,8 +2,10 @@ package com.gorunjinian.metrovault.lib.qrtools
 
 import android.graphics.Color
 import com.gorunjinian.metrovault.domain.service.util.hexToByteArray
-import com.gorunjinian.metrovault.lib.bitcoin.PSBTDecoder
+import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
 import com.gorunjinian.metrovault.lib.qrtools.registry.RegistryType
+import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UR
+import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UREncoder
 
 /**
  * Encodes raw transactions into QR code formats (BC-UR, BBQr).

@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.domain.manager
+package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import android.util.Log
 import com.gorunjinian.metrovault.core.storage.SecureStorage
@@ -7,13 +7,12 @@ import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
-import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 
 /**
  * Orchestrates PSBT signing for both single-sig and multi-sig wallets.
- * 
+ *
  * Extracted from Wallet.kt to follow single responsibility principle.
- * 
+ *
  * Signing strategy:
  * 1. For single-sig: Use loaded wallet state directly
  * 2. For multi-sig: Iterate through all local keys and sign with each
@@ -113,7 +112,7 @@ class WalletSigningService(
     /**
      * Signs a PSBT for a multi-sig wallet.
      * Iterates through all local keys and signs with each.
-     * 
+     *
      * @param psbtString The PSBT to sign
      * @param metadata The wallet metadata
      * @param isDecoyMode Whether we're in decoy mode
@@ -129,7 +128,7 @@ class WalletSigningService(
     ): SigningResult {
         val keyIds = metadata.keyIds
         Log.d(TAG, "Multisig signing: keyIds=$keyIds")
-        
+
         if (keyIds.isEmpty()) {
             Log.e(TAG, "No keyIds found for multisig wallet")
             return SigningResult.Failure(
@@ -232,7 +231,7 @@ class WalletSigningService(
         sessionSeed: String?
     ): Pair<String, List<String>>? {
         Log.d(TAG, "Direct derivation signing for key: ${key.fingerprint}")
-        
+
         val cosigner = config.cosigners.find {
             it.fingerprint.equals(key.fingerprint, ignoreCase = true)
         }

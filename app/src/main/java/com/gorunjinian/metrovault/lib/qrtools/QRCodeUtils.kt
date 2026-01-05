@@ -2,6 +2,7 @@ package com.gorunjinian.metrovault.lib.qrtools
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import com.gorunjinian.metrovault.domain.service.psbt.PSBTQREncoder
 
 /**
  * Facade for QR code utilities - delegates to specialized modules.
@@ -9,7 +10,7 @@ import android.graphics.Color
  * This object provides backward-compatible access to all QR code functionality.
  * For new code, consider using the specialized classes directly:
  * - [QRCodeGenerator] - Basic QR bitmap generation
- * - [PSBTQREncoder] - PSBT encoding to QR formats
+ * - [com.gorunjinian.metrovault.domain.service.psbt.PSBTQREncoder] - PSBT encoding to QR formats
  * - [TransactionQREncoder] - Raw transaction encoding
  * - [AnimatedQRScanner] - Scanning animated PSBT QRs
  * - [DescriptorQRScanner] - Scanning descriptor QRs

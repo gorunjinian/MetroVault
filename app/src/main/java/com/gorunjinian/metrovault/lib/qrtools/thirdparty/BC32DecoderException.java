@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.lib.qrtools;
+package com.gorunjinian.metrovault.lib.qrtools.thirdparty;
 
 public class BC32DecoderException extends IllegalArgumentException {
 

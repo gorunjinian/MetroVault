@@ -26,8 +26,8 @@ import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
 import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeGenerator
-import com.gorunjinian.metrovault.lib.qrtools.UR
-import com.gorunjinian.metrovault.lib.qrtools.UREncoder
+import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UR
+import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UREncoder
 import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

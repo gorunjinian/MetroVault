@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gorunjinian.metrovault.lib.bitcoin.crypto.musig2
 
 import com.gorunjinian.metrovault.lib.bitcoin.*

@@ -2,7 +2,7 @@ package com.gorunjinian.metrovault.lib.qrtools.registry;
 
 import co.nstant.in.cbor.CborEncoder;
 import co.nstant.in.cbor.CborException;
-import com.gorunjinian.metrovault.lib.qrtools.UR;
+import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UR;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;

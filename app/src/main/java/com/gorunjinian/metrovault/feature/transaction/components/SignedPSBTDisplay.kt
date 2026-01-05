@@ -60,78 +60,73 @@ fun SignedPSBTDisplay(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .padding(horizontal = 24.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        // Title row with finalization toggle
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Title
-            Text(
-                text = "Transaction Signed",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
-            )
+        // Title - centered at top
+        Text(
+            text = "Transaction Signed",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold
+        )
+        
+        // Finalized toggle - only show if can finalize (single-sig)
+        if (canFinalize) {
+            Spacer(modifier = Modifier.height(12.dp))
             
-            // Finalized toggle - only show if can finalize (single-sig)
-            if (canFinalize) {
-                Row(
+            Row(
+                modifier = Modifier
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(6.dp)
+                    )
+                    .padding(3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Signed PSBT option
+                Box(
                     modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
                         .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(6.dp)
+                            if (!isFinalized) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
                         )
-                        .padding(3.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clickable(enabled = !isLoading && isFinalized) { 
+                            onToggleView() 
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Signed PSBT option
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(
-                                if (!isFinalized) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable(enabled = !isLoading && isFinalized) { 
-                                onToggleView() 
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Signed",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (!isFinalized) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                    Text(
+                        text = "Signed",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (!isFinalized) MaterialTheme.colorScheme.onPrimary
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Finalized option
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            if (isFinalized) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
                         )
-                    }
-                    
-                    // Finalized option
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(
-                                if (isFinalized) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable(enabled = !isLoading && !isFinalized) { 
-                                onFinalize() 
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Finalized",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isFinalized) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                        .clickable(enabled = !isLoading && !isFinalized) { 
+                            onFinalize() 
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Finalized",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isFinalized) MaterialTheme.colorScheme.onPrimary
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -149,7 +144,7 @@ fun SignedPSBTDisplay(
                     modifier = Modifier.padding(12.dp)
                 ) {
                     Text(
-                        text = "ⓘ Alternative Path Used",
+                        text = "Alternative Path Used",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onTertiaryContainer

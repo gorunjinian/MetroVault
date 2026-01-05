@@ -2,7 +2,7 @@ package com.gorunjinian.metrovault.lib.qrtools
 
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.PSBTDecoder
+import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector32
 import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoCoinInfo
@@ -10,6 +10,7 @@ import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoHDKey
 import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoOutput
 import com.gorunjinian.metrovault.lib.qrtools.registry.ScriptExpression
 import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
+import com.gorunjinian.metrovault.lib.qrtools.thirdparty.URDecoder
 import java.io.ByteArrayOutputStream
 import java.util.zip.Inflater
 

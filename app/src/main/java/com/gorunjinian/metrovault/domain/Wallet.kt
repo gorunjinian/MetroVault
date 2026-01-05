@@ -23,7 +23,7 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import com.gorunjinian.metrovault.domain.service.bitcoin.KeyEncodingService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
-import com.gorunjinian.metrovault.domain.manager.WalletSigningService
+import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
 import com.gorunjinian.metrovault.data.repository.WalletRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -623,11 +623,16 @@ class   Wallet(context: Context) {
     }
 
     /**
-     * Checks if a PSBT can be finalized as a single-sig transaction.
-     * A PSBT is finalizable if all inputs have exactly 1 signature.
+     * Checks if a PSBT can be finalized (has all required signatures).
+     * Works for both single-sig (1 signature) and multi-sig (m-of-n with >= m signatures).
      */
+    fun canFinalize(psbtString: String): Boolean {
+        return bitcoinService.canFinalize(psbtString)
+    }
+    
+    @Deprecated("Use canFinalize() instead", ReplaceWith("canFinalize(psbtString)"))
     fun canFinalizeSingleSig(psbtString: String): Boolean {
-        return bitcoinService.canFinalizeSingleSig(psbtString)
+        return canFinalize(psbtString)
     }
 
     /**

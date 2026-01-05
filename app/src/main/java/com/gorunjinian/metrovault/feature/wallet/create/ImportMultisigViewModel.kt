@@ -13,7 +13,13 @@ import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
 import com.gorunjinian.metrovault.lib.qrtools.DescriptorQRScanner
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -62,7 +68,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
-    
+
     // Scanner for animated QR codes - exposed for UI access
     val descriptorScanner = DescriptorQRScanner()
 
@@ -83,8 +89,8 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
         descriptorScanner.reset()
         _uiState.update {
             it.copy(
-                screenState = ScreenState.SCANNING, 
-                isScanning = true, 
+                screenState = ScreenState.SCANNING,
+                isScanning = true,
                 errorMessage = "",
                 scanProgress = 0,
                 isAnimatedScan = false,
@@ -110,20 +116,20 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
     fun setWalletName(name: String) {
         _uiState.update { it.copy(walletName = name) }
     }
-    
+
     /**
      * Process a single scanned frame. Used by the camera scanner.
      * Handles both single-frame and multi-frame animated QR codes.
-     * 
+     *
      * @return Progress percentage (0-100), or null if frame is invalid
      */
     fun processScannedFrame(content: String): Int? {
         val progress = descriptorScanner.processFrame(content)
-        
+
         if (progress != null) {
             val detectedFormat = descriptorScanner.getDetectedFormat()
             val isAnimated = detectedFormat != null && detectedFormat != "plain" && detectedFormat != "unknown"
-            
+
             _uiState.update {
                 it.copy(
                     scanProgress = progress,
@@ -131,7 +137,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
                     scanProgressString = descriptorScanner.getProgressString()
                 )
             }
-            
+
             // Check if scan is complete
             if (descriptorScanner.isComplete()) {
                 viewModelScope.launch {
@@ -139,10 +145,10 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
         }
-        
+
         return progress
     }
-    
+
     /**
      * Called when all frames have been received.
      * Assembles the descriptor and processes it.
@@ -151,7 +157,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
         val descriptor = withContext(Dispatchers.Default) {
             descriptorScanner.getResult()
         }
-        
+
         if (descriptor != null) {
             Log.d(TAG, "Scan complete, descriptor: ${descriptor.take(100)}...")
             processDescriptor(descriptor)
@@ -272,30 +278,30 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
     fun importMultisigWallet() {
         val state = _uiState.value
         val config = state.parsedConfig ?: return
-        
+
         if (state.walletName.isBlank()) {
             showError("Please enter a wallet name")
             return
         }
-        
+
         _uiState.update { it.copy(isImporting = true) }
-        
+
         viewModelScope.launch {
             try {
                 val success = wallet.createMultisigWallet(
                     name = state.walletName.trim(),
                     config = config
                 )
-                
+
                 _uiState.update { it.copy(isImporting = false) }
-                
+
                 if (success) {
                     Log.d(TAG, "Multisig wallet imported successfully")
                     _events.emit(ImportEvent.WalletImported)
                 } else {
                     showError("Failed to import multisig wallet")
                 }
-                
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error importing multisig wallet: ${e.message}", e)
                 _uiState.update { it.copy(isImporting = false) }
@@ -320,4 +326,3 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
         return wallet.wallets.value.map { it.masterFingerprint.lowercase() }
     }
 }
-

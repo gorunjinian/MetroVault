@@ -74,7 +74,7 @@ fun ScanPSBTScreen(
     var isQRPaused by remember { mutableStateOf(false) }
     var isRegeneratingQR by remember { mutableStateOf(false) }
     
-    // Finalization state (single-sig only)
+    // Finalization state (single-sig or fully-signed multi-sig)
     var canFinalize by remember { mutableStateOf(false) }
     var isFinalized by remember { mutableStateOf(false) }
     var finalizedTxHex by remember { mutableStateOf<String?>(null) }
@@ -420,9 +420,9 @@ fun ScanPSBTScreen(
                                             // Track alternative paths used
                                             alternativePathsUsed = signingResult.alternativePathsUsed
 
-                                            // Check if this single-sig PSBT can be finalized
+                                            // Check if this PSBT can be finalized (all required signatures present)
                                             canFinalize = withContext(Dispatchers.Default) {
-                                                wallet.canFinalizeSingleSig(signed)
+                                                wallet.canFinalize(signed)
                                             }
 
                                             // Use smart QR generation for animated support

@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@Suppress("PrivatePropertyName", "PropertyName")
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _UserPreferencesRepository = MutableStateFlow<UserPreferencesRepository?>(null)

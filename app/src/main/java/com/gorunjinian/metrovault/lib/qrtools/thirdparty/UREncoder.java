@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.lib.qrtools;
+package com.gorunjinian.metrovault.lib.qrtools.thirdparty;
 
 import com.gorunjinian.metrovault.lib.qrtools.fountain.FountainEncoder;
 

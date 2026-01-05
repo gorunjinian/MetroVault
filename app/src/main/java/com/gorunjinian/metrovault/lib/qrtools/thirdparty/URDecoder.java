@@ -1,8 +1,11 @@
-package com.gorunjinian.metrovault.lib.qrtools;
+package com.gorunjinian.metrovault.lib.qrtools.thirdparty;
 
 import co.nstant.in.cbor.CborException;
+
+import com.gorunjinian.metrovault.lib.qrtools.ResultType;
 import com.gorunjinian.metrovault.lib.qrtools.fountain.FountainDecoder;
 import com.gorunjinian.metrovault.lib.qrtools.fountain.FountainEncoder;
+
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;

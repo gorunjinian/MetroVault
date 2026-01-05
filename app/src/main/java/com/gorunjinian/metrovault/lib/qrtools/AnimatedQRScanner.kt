@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.lib.qrtools
 
-import com.gorunjinian.metrovault.lib.bitcoin.PSBTDecoder
+import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
+import com.gorunjinian.metrovault.lib.qrtools.thirdparty.URDecoder
 
 /**
  * Helper class to track animated QR scanning progress for PSBTs.
@@ -115,7 +116,7 @@ class AnimatedQRScanner {
         }
 
         receivedFrames[partNum] = data
-        android.util.Log.d("AnimatedQRScanner", "Got frame $partNum/$totalParts, have ${receivedFrames.size} frames")
+        android.util.Log.d("AnimatedQRScanner", "Got frame $partNum/$totalParts, have ${receivedFrames.size} frames, keys: ${receivedFrames.keys.sorted()}")
 
         return ((receivedFrames.size * 100) / totalParts)
     }

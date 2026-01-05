@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.lib.qrtools;
+package com.gorunjinian.metrovault.lib.qrtools.thirdparty;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;

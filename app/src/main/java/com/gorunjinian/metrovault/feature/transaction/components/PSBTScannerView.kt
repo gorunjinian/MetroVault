@@ -104,6 +104,12 @@ fun PSBTScannerView(
                             setStatusText("")
                             decodeContinuous { result ->
                                 result.text?.let { text ->
+                                    // Debug: Log raw QR content header for BBQr frames
+                                    if (text.startsWith("B$") && text.length >= 8) {
+                                        val header = text.take(8)
+                                        android.util.Log.d("PSBTScanner", "Raw BBQr header: $header")
+                                    }
+                                    
                                     // Skip duplicate frames
                                     if (text == lastScannedFrame) return@let
                                     lastScannedFrame = text

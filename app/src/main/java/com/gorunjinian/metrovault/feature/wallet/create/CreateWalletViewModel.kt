@@ -8,7 +8,13 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.log2
@@ -216,7 +222,7 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             val state = _uiState.value
             if (state.generatedMnemonic.isEmpty()) return@launch
-            
+
             val passphrase = if (state.useBip39Passphrase) state.bip39Passphrase else ""
             val fingerprint = withContext(Dispatchers.IO) {
                 wallet.calculateFingerprint(state.generatedMnemonic, passphrase)

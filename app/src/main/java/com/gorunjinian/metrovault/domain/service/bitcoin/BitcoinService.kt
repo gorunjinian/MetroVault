@@ -208,8 +208,12 @@ class BitcoinService {
     fun getPsbtDetails(psbtBase64: String, isTestnet: Boolean = false): PsbtDetails? =
         psbtService.getPsbtDetails(psbtBase64, isTestnet)
 
+    fun canFinalize(psbtBase64: String): Boolean =
+        psbtService.canFinalize(psbtBase64)
+    
+    @Deprecated("Use canFinalize() instead", ReplaceWith("canFinalize(psbtBase64)"))
     fun canFinalizeSingleSig(psbtBase64: String): Boolean =
-        psbtService.canFinalizeSingleSig(psbtBase64)
+        canFinalize(psbtBase64)
 
     fun finalizePsbt(psbtBase64: String): PsbtService.FinalizePsbtResult =
         psbtService.finalizePsbt(psbtBase64)

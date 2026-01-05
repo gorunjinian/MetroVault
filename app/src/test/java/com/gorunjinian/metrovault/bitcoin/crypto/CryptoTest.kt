@@ -1,5 +1,7 @@
 package com.gorunjinian.metrovault.bitcoin.crypto
 
+import com.gorunjinian.metrovault.lib.bitcoin.crypto.Digest
+import com.gorunjinian.metrovault.lib.bitcoin.crypto.Pbkdf2
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
