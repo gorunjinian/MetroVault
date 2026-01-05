@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package com.gorunjinian.metrovault.lib.bitcoin
 
 import com.gorunjinian.metrovault.lib.bitcoin.BtcSerializer.Companion.writeScript
@@ -149,7 +151,7 @@ data class TxIn(
 
     constructor(outPoint: OutPoint, sequence: Long) : this(outPoint, ByteVector.empty, sequence)
 
-    public constructor(outPoint: OutPoint, signatureScript: List<ScriptElt>, sequence: Long) : this(outPoint, Script.write(signatureScript), sequence)
+    constructor(outPoint: OutPoint, signatureScript: List<ScriptElt>, sequence: Long) : this(outPoint, Script.write(signatureScript), sequence)
 
     val isFinal: Boolean get() = sequence == SEQUENCE_FINAL
 
@@ -243,7 +245,7 @@ data class TxOut(@JvmField val amount: Satoshi, @JvmField val publicKeyScript: B
 
     fun updatePublicKeyScript(input: List<ScriptElt>): TxOut = updatePublicKeyScript(Script.write(input))
 
-    public fun totalSize(): Int = totalSize(this)
+    fun totalSize(): Int = totalSize(this)
 
     fun weight(): Int = weight(this)
 
