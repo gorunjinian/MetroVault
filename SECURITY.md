@@ -236,14 +236,24 @@ Wallet data is split into two categories with different security levels:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-#### Secrets (Highly Sensitive)
+#### Secrets (Highly Sensitive) - WalletKeys
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Wallet Secrets                              │
+│                       Wallet Keys                               │
 ├─────────────────────────────────────────────────────────────────┤
 │  Contents:                                                      │
+│  • Key ID (UUID - unique identifier)                            │
 │  • Mnemonic Phrase (12 or 24 words)                             │
 │  • BIP39 Seed (512-bit, hex-encoded)                            │
+│  • Master Fingerprint (8 hex chars)                             │
+│  • User Label (e.g., "Key 1", "Cold Storage")                   │
+│                                                                 │
+│  ARCHITECTURE:                                                  │
+│  • Keys are stored SEPARATELY from wallets                      │
+│  • Multiple wallets can reference the same key (via keyId)      │
+│  • Single-sig wallets have exactly 1 keyId reference            │
+│  • Multisig wallets have 0-N keyId references (local signers)   │
+│  • Keys only deleted when no wallet references them             │
 │                                                                 │
 │  IMPORTANT: The raw passphrase is NEVER stored to disk.         │
 │  Only the derived BIP39 seed is saved, which is computed        │
