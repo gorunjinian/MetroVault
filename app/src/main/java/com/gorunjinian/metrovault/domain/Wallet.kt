@@ -810,23 +810,6 @@ class   Wallet(context: Context) {
         )
     }
 
-    /**
-     * Gets the BIP48 derivation path for the given account and script type.
-     * Useful for displaying the path alongside the exported key.
-     *
-     * @param accountNumber Account number
-     * @param bip48ScriptType Script type: P2WSH or P2SH_P2WSH
-     * @return Path string like "m/48'/0'/0'/2'"
-     */
-    fun getBip48PathForAccount(
-        accountNumber: Int,
-        bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
-    ): String {
-        val isTestnet = isActiveWalletTestnet()
-        return DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
-    }
-
-
     fun getBip48DescriptorForAccount(
         accountNumber: Int,
         bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
