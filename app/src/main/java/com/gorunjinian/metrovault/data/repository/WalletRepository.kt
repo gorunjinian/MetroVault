@@ -108,7 +108,7 @@ class WalletRepository(
                 // Otherwise, use the stored seed directly
                 val seedToUse = if (metadata.hasPassphrase) {
                     // Check if user has entered passphrase this session
-                    passphraseManager.getSessionSeed(walletId)
+                    passphraseManager.getSessionSeed(walletId, getIsDecoyMode())
                         ?: walletKey.bip39Seed  // Fallback to stored base seed
                 } else {
                     walletKey.bip39Seed

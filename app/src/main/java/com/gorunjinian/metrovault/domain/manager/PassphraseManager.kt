@@ -12,7 +12,10 @@ import kotlinx.coroutines.withContext
  * Manages passphrase input and session seed caching.
  * Handles both single-sig wallet passphrases and multi-sig key passphrases.
  * 
- * Extracted from Wallet.kt to follow single responsibility principle.
+ * Session seeds are cached by keyId (not walletId) because:
+ * - The seed is fundamentally tied to a key (mnemonic + passphrase), not a wallet
+ * - Multiple wallets can share the same key
+ * - Multi-sig signing needs to access seeds by keyId
  * 
  * Security model:
  * - Passphrases are never stored on disk
@@ -28,23 +31,24 @@ class PassphraseManager(
         private const val TAG = "PassphraseManager"
     }
 
-    /** Session seeds for wallets (keyed by walletId) */
-    val sessionSeeds = SecureSeedCache()
-
-    /** Session seeds for WalletKeys (keyed by keyId, used by multi-sig) */
-    val sessionKeySeeds = SecureSeedCache()
+    /** Session seeds, keyed by keyId (works for both single-sig and multi-sig) */
+    private val sessionSeeds = SecureSeedCache()
 
     /**
      * Checks if a wallet needs passphrase re-entry.
-     * A wallet needs passphrase if hasPassphrase=true and we don't have a session seed.
+     * A wallet needs passphrase if hasPassphrase=true and we don't have a session seed for its key.
      */
     fun needsPassphraseInput(walletId: String, isDecoyMode: Boolean): Boolean {
         val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return false
-        return metadata.hasPassphrase && !sessionSeeds.containsKey(walletId)
+        if (!metadata.hasPassphrase) return false
+        
+        // Check if we have session seed for any of the wallet's keys
+        val keyId = metadata.keyIds.firstOrNull() ?: return false
+        return !sessionSeeds.containsKey(keyId)
     }
 
     /**
-     * Sets the session seed for a wallet by computing it from the entered passphrase.
+     * Sets the session seed for a wallet's key by computing it from the entered passphrase.
      * Used when user re-enters passphrase after app restart.
      * 
      * @param walletId Wallet ID
@@ -60,17 +64,21 @@ class PassphraseManager(
             val seedBytes = MnemonicCode.toSeed(mnemonic, passphrase)
             try {
                 val seedHex = seedBytes.toHexString()
-                sessionSeeds.store(walletId, seedHex)
-                Log.d(TAG, "Session seed set for wallet: $walletId")
+                sessionSeeds.store(keyId, seedHex)
+                Log.d(TAG, "Session seed set for key: $keyId (from wallet: $walletId)")
             } finally {
                 seedBytes.fill(0)
             }
         }
 
     /**
-     * Gets the session seed for a wallet (if passphrase was entered this session).
+     * Gets the session seed for a wallet's key (if passphrase was entered this session).
      */
-    fun getSessionSeed(walletId: String): String? = sessionSeeds.get(walletId)
+    fun getSessionSeed(walletId: String, isDecoyMode: Boolean): String? {
+        val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return null
+        val keyId = metadata.keyIds.firstOrNull() ?: return null
+        return sessionSeeds.get(keyId)
+    }
 
     // ==================== Multi-sig Key Passphrase Support ====================
 
@@ -90,7 +98,7 @@ class PassphraseManager(
      * and we don't have a session seed for that key yet.
      */
     fun keyNeedsPassphraseInput(keyId: String, isDecoyMode: Boolean): Boolean {
-        if (sessionKeySeeds.containsKey(keyId)) return false
+        if (sessionSeeds.containsKey(keyId)) return false
 
         val allWallets = secureStorage.loadAllWalletMetadata(isDecoyMode)
         return allWallets.any { metadata ->
@@ -140,7 +148,7 @@ class PassphraseManager(
             val seedBytes = MnemonicCode.toSeed(mnemonic, passphrase)
             try {
                 val seedHex = seedBytes.toHexString()
-                sessionKeySeeds.store(keyId, seedHex)
+                sessionSeeds.store(keyId, seedHex)
                 Log.d(TAG, "Session seed set for key: $keyId")
             } finally {
                 seedBytes.fill(0)
@@ -150,7 +158,7 @@ class PassphraseManager(
     /**
      * Gets the session seed for a WalletKey (if passphrase was entered this session).
      */
-    fun getSessionKeySeed(keyId: String): String? = sessionKeySeeds.get(keyId)
+    fun getSessionKeySeed(keyId: String): String? = sessionSeeds.get(keyId)
 
     /**
      * Data class representing a calculated fingerprint for a multi-sig local key.
@@ -180,7 +188,7 @@ class PassphraseManager(
             val walletKey = secureStorage.loadWalletKey(keyId, isDecoyMode) ?: return@mapNotNull null
             val originalFingerprint = walletKey.fingerprint.lowercase()
 
-            val sessionSeed = sessionKeySeeds.get(keyId)
+            val sessionSeed = sessionSeeds.get(keyId)
 
             val calculatedFingerprint = if (sessionSeed != null) {
                 bitcoinService.calculateFingerprintFromSeed(sessionSeed)?.lowercase() 
@@ -228,10 +236,8 @@ class PassphraseManager(
      * Clears all session seeds. Call when session ends.
      */
     fun clearAll() {
-        val walletCount = sessionSeeds.size
-        val keyCount = sessionKeySeeds.size
+        val count = sessionSeeds.size
         sessionSeeds.clear()
-        sessionKeySeeds.clear()
-        Log.d(TAG, "Cleared $walletCount wallet seed(s) + $keyCount key seed(s)")
+        Log.d(TAG, "Cleared $count session seed(s)")
     }
 }

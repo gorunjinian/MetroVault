@@ -215,6 +215,9 @@ internal object PsbtSigner {
     /**
      * Tries alternative standard derivation paths to find a matching public key.
      * This handles cases where coordinator wallets convert paths (e.g., m/84' -> m/48' for multisig).
+     * 
+     * Also tries multiple account numbers since coordinators may normalize account to 0
+     * even when the original key was from a different account.
      *
      * @param masterPrivateKey The master private key to derive from
      * @param expectedPublicKey The public key we're looking for
@@ -228,24 +231,16 @@ internal object PsbtSigner {
         originalPath: KeyPath,
         isTestnet: Boolean
     ): Pair<PrivateKey, String>? {
-        // Extract account number and child path from original path
+        // Extract child path from original path
         // Typical format: m/purpose'/coin'/account'/change/index
+        // or for BIP48: m/48'/coin'/account'/scriptType'/change/index
         val pathList = originalPath.path
         if (pathList.size < 3) return null  // Need at least purpose/coin/account
 
         val coinType = if (isTestnet) DeterministicWallet.hardened(1) else DeterministicWallet.hardened(0)
 
-        // Try to extract account number (typically at index 2, hardened)
-        val originalAccount = pathList.getOrNull(2) ?: return null
-        val accountNum = if (DeterministicWallet.isHardened(originalAccount)) {
-            originalAccount - DeterministicWallet.hardenedKeyIndex
-        } else {
-            originalAccount
-        }
-
         // Get the child path (change/index portion after account level)
         // For m/48'/0'/0'/2'/0/5, child path would be [0, 5]
-        // For paths with script type like m/48'/0'/0'/2'/0/5, need to skip the script type too
         val childStartIndex = when {
             pathList.size >= 5 && DeterministicWallet.isHardened(pathList.getOrNull(3) ?: 0L) -> 4  // BIP48 with script type
             pathList.size >= 4 -> 3  // Standard paths
@@ -253,47 +248,65 @@ internal object PsbtSigner {
         }
         val childPath = if (childStartIndex < pathList.size) pathList.subList(childStartIndex, pathList.size) else emptyList()
 
-        Log.d(TAG, "  tryAlternativePaths: original=$originalPath, account=$accountNum, childPath=$childPath")
+        // Extract account from PSBT path as a starting point
+        val originalAccount = pathList.getOrNull(2) ?: return null
+        val psbtAccountNum = if (DeterministicWallet.isHardened(originalAccount)) {
+            originalAccount - DeterministicWallet.hardenedKeyIndex
+        } else {
+            originalAccount
+        }
+
+        Log.d(TAG, "  tryAlternativePaths: original=$originalPath, psbtAccount=$psbtAccountNum, childPath=$childPath")
+
+        // Account numbers to try - start with PSBT account, then try common accounts 0-9
+        val accountsToTry = (listOf(psbtAccountNum) + (0L..9L)).distinct()
 
         // Try single-sig paths first (most common case: coordinator converted m/84 to m/48)
-        for (purpose in STANDARD_SINGLE_SIG_PURPOSES) {
-            try {
-                // Build path: m/purpose'/coin'/account'/child...
-                val altPath = KeyPath(listOf(
-                    DeterministicWallet.hardened(purpose.toLong()),
-                    coinType,
-                    DeterministicWallet.hardened(accountNum)
-                ) + childPath)
+        for (accountNum in accountsToTry) {
+            for (purpose in STANDARD_SINGLE_SIG_PURPOSES) {
+                try {
+                    // Build path: m/purpose'/coin'/account'/child...
+                    val altPath = KeyPath(listOf(
+                        DeterministicWallet.hardened(purpose.toLong()),
+                        coinType,
+                        DeterministicWallet.hardened(accountNum)
+                    ) + childPath)
 
-                val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
-                if (derivedKey.publicKey == expectedPublicKey) {
-                    return Pair(derivedKey.privateKey, altPath.toString())
+                    val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
+                    if (derivedKey.publicKey == expectedPublicKey) {
+                        Log.d(TAG, "  Found match at alternative path: $altPath")
+                        return Pair(derivedKey.privateKey, altPath.toString())
+                    }
+                } catch (_: Exception) {
+                    // Silent - just try next
                 }
-            } catch (e: Exception) {
-                Log.d(TAG, "  Alternative path m/$purpose' failed: ${e.message}")
             }
         }
 
         // Try BIP48 multisig paths
-        for (scriptType in BIP48_SCRIPT_TYPES) {
-            try {
-                // Build path: m/48'/coin'/account'/scriptType'/child...
-                val altPath = KeyPath(listOf(
-                    DeterministicWallet.hardened(48),
-                    coinType,
-                    DeterministicWallet.hardened(accountNum),
-                    DeterministicWallet.hardened(scriptType.toLong())
-                ) + childPath)
+        for (accountNum in accountsToTry) {
+            for (scriptType in BIP48_SCRIPT_TYPES) {
+                try {
+                    // Build path: m/48'/coin'/account'/scriptType'/child...
+                    val altPath = KeyPath(listOf(
+                        DeterministicWallet.hardened(48),
+                        coinType,
+                        DeterministicWallet.hardened(accountNum),
+                        DeterministicWallet.hardened(scriptType.toLong())
+                    ) + childPath)
 
-                val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
-                if (derivedKey.publicKey == expectedPublicKey) {
-                    return Pair(derivedKey.privateKey, altPath.toString())
+                    val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
+                    if (derivedKey.publicKey == expectedPublicKey) {
+                        Log.d(TAG, "  Found match at alternative path: $altPath")
+                        return Pair(derivedKey.privateKey, altPath.toString())
+                    }
+                } catch (_: Exception) {
+                    // Silent - just try next
                 }
-            } catch (e: Exception) {
-                Log.d(TAG, "  Alternative path m/48'/.../$ scriptType' failed: ${e.message}")
             }
         }
 
+        Log.w(TAG, "  No alternative path matched after trying ${accountsToTry.size} accounts")
         return null
     }
 
