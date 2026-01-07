@@ -100,9 +100,23 @@ fun SignMessageScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Sign/Verify Message") },
+                title = { 
+                    Text(
+                        if (isScanning) {
+                            if (scanMode == "address") "Scan Address QR" else "Scan Message QR"
+                        } else {
+                            "Sign/Verify Message"
+                        }
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { 
+                        if (isScanning) {
+                            isScanning = false
+                        } else {
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -158,9 +172,11 @@ fun SignMessageScreen(
         }
         
         if (isScanning) {
-            // QR Scanner View
-            QRScannerView(
-                title = if (scanMode == "address") "Scan Address QR" else "Scan Message QR",
+            // QR Scanner View (inside Scaffold)
+            QRScannerContent(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
                 onScanned = { result ->
                     when (scanMode) {
                         "address" -> {
@@ -190,8 +206,7 @@ fun SignMessageScreen(
                         }
                     }
                     isScanning = false
-                },
-                onBack = { isScanning = false }
+                }
             )
         } else {
             Column(
@@ -202,287 +217,287 @@ fun SignMessageScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Info Card
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Text(
-                        text = "Sign messages to prove ownership of an address, or verify signatures from others.",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                
-                // Signature Format Toggle
+            // Info Card
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Text(
+                    text = "Sign messages to prove ownership of an address, or verify signatures from others.",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            
+            // Signature Format Toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Signature Format",
+                    style = MaterialTheme.typography.bodyMedium
+                )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                        )
+                        .padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Signature Format",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Row(
-                        modifier = Modifier
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                            )
-                            .padding(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        MessageSigning.SignatureFormat.entries.forEach { format ->
-                            Box(
-                                modifier = Modifier
-                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                                    .background(
-                                        if (signatureFormat == format) MaterialTheme.colorScheme.primary
-                                        else Color.Transparent
-                                    )
-                                    .clickable { signatureFormat = format }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = format.displayName,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (signatureFormat == format) MaterialTheme.colorScheme.onPrimary
-                                           else MaterialTheme.colorScheme.onSurfaceVariant
+                    MessageSigning.SignatureFormat.entries.forEach { format ->
+                        Box(
+                            modifier = Modifier
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                .background(
+                                    if (signatureFormat == format) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
                                 )
-                            }
+                                .clickable { signatureFormat = format }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = format.displayName,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (signatureFormat == format) MaterialTheme.colorScheme.onPrimary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
-                
-                // Address Input with QR Scanner
-                SecureOutlinedTextField(
-                    value = addressInput,
-                    onValueChange = { 
-                        addressInput = it
-                        errorMessage = ""
-                        successMessage = ""
-                    },
-                    label = { Text("Bitcoin Address") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    enabled = !isProcessing,
-                    trailingIcon = {
+            }
+            
+            // Address Input with QR Scanner
+            SecureOutlinedTextField(
+                value = addressInput,
+                onValueChange = { 
+                    addressInput = it
+                    errorMessage = ""
+                    successMessage = ""
+                },
+                label = { Text("Bitcoin Address") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = !isProcessing,
+                trailingIcon = {
+                    IconButton(
+                        onClick = {
+                            scanMode = "address"
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                        },
+                        enabled = !isProcessing
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_qr_code_scanner),
+                            contentDescription = "Scan QR"
+                        )
+                    }
+                }
+            )
+            
+            // Message Input (larger)
+            SecureOutlinedTextField(
+                value = messageInput,
+                onValueChange = { 
+                    messageInput = it
+                    errorMessage = ""
+                    successMessage = ""
+                },
+                label = { Text("Message") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp),
+                minLines = 4,
+                maxLines = 10,
+                enabled = !isProcessing
+            )
+            
+            // Signature Input
+            SecureOutlinedTextField(
+                value = signatureInput,
+                onValueChange = { 
+                    signatureInput = it
+                    errorMessage = ""
+                    successMessage = ""
+                },
+                label = { Text("Signature") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4,
+                enabled = !isProcessing,
+                trailingIcon = {
+                    if (signatureInput.isNotBlank()) {
                         IconButton(
                             onClick = {
-                                scanMode = "address"
-                                permissionLauncher.launch(Manifest.permission.CAMERA)
-                            },
-                            enabled = !isProcessing
+                                scope.launch {
+                                    val clipData = ClipData.newPlainText("signature", signatureInput)
+                                    clipboard.setClipEntry(clipData.toClipEntry())
+                                }
+                            }
                         ) {
                             Icon(
-                                painter = painterResource(R.drawable.ic_qr_code_scanner),
-                                contentDescription = "Scan QR"
+                                painter = painterResource(R.drawable.ic_copy),
+                                contentDescription = "Copy signature"
                             )
                         }
                     }
+                }
+            )
+            
+            // Sign by QR Button
+            OutlinedButton(
+                onClick = {
+                    scanMode = "message"
+                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isProcessing
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_qr_code_scanner),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
                 )
-                
-                // Message Input (larger)
-                SecureOutlinedTextField(
-                    value = messageInput,
-                    onValueChange = { 
-                        messageInput = it
-                        errorMessage = ""
-                        successMessage = ""
-                    },
-                    label = { Text("Message") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp),
-                    minLines = 4,
-                    maxLines = 10,
-                    enabled = !isProcessing
-                )
-                
-                // Signature Input
-                SecureOutlinedTextField(
-                    value = signatureInput,
-                    onValueChange = { 
-                        signatureInput = it
-                        errorMessage = ""
-                        successMessage = ""
-                    },
-                    label = { Text("Signature") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    maxLines = 4,
-                    enabled = !isProcessing,
-                    trailingIcon = {
-                        if (signatureInput.isNotBlank()) {
-                            IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        val clipData = ClipData.newPlainText("signature", signatureInput)
-                                        clipboard.setClipEntry(clipData.toClipEntry())
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_copy),
-                                    contentDescription = "Copy signature"
-                                )
-                            }
-                        }
-                    }
-                )
-                
-                // Sign by QR Button
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Sign by QR")
+            }
+            
+            // Show Signature QR Button (only when signature is present)
+            if (signatureInput.isNotBlank()) {
                 OutlinedButton(
                     onClick = {
-                        scanMode = "message"
-                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                        scope.launch {
+                            signatureQRBitmap = withContext(Dispatchers.Default) {
+                                com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils.generateQRCode(signatureInput)
+                            }
+                            showSignatureQR = true
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !isProcessing
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_qr_code_scanner),
+                        painter = painterResource(R.drawable.ic_qr_code_2),
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Sign by QR")
+                    Text("Show Signature QR")
                 }
-                
-                // Show Signature QR Button (only when signature is present)
-                if (signatureInput.isNotBlank()) {
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                signatureQRBitmap = withContext(Dispatchers.Default) {
-                                    com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils.generateQRCode(signatureInput)
+            }
+            
+            // Error message
+            if (errorMessage.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Text(
+                        text = errorMessage,
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+            
+            // Success message
+            if (successMessage.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Text(
+                        text = successMessage,
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            // Sign/Verify Button
+            Button(
+                onClick = {
+                    scope.launch {
+                        isProcessing = true
+                        errorMessage = ""
+                        successMessage = ""
+                        
+                        try {
+                            if (canSign) {
+                                // Sign the message
+                                val result = withContext(Dispatchers.Default) {
+                                    signMessage(wallet, addressInput, messageInput, signatureFormat)
                                 }
-                                showSignatureQR = true
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isProcessing
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_qr_code_2),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Show Signature QR")
-                    }
-                }
-                
-                // Error message
-                if (errorMessage.isNotEmpty()) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Text(
-                            text = errorMessage,
-                            modifier = Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
-                
-                // Success message
-                if (successMessage.isNotEmpty()) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Text(
-                            text = successMessage,
-                            modifier = Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.weight(1f))
-                
-                // Sign/Verify Button
-                Button(
-                    onClick = {
-                        scope.launch {
-                            isProcessing = true
-                            errorMessage = ""
-                            successMessage = ""
-                            
-                            try {
-                                if (canSign) {
-                                    // Sign the message
-                                    val result = withContext(Dispatchers.Default) {
-                                        signMessage(wallet, addressInput, messageInput, signatureFormat)
+                                result.fold(
+                                    onSuccess = { signature ->
+                                        signatureInput = signature
+                                        successMessage = "Message signed successfully ✓"
+                                    },
+                                    onFailure = { error ->
+                                        errorMessage = error.message ?: "Failed to sign message"
                                     }
-                                    result.fold(
-                                        onSuccess = { signature ->
-                                            signatureInput = signature
-                                            successMessage = "Message signed successfully ✓"
-                                        },
-                                        onFailure = { error ->
-                                            errorMessage = error.message ?: "Failed to sign message"
-                                        }
+                                )
+                            } else if (canVerify) {
+                                // Verify the signature
+                                val isValid = withContext(Dispatchers.Default) {
+                                    MessageSigning.verifyMessage(
+                                        message = messageInput,
+                                        signatureBase64 = signatureInput.trim(),
+                                        address = addressInput.trim(),
+                                        chainHash = Block.LivenetGenesisBlock.hash
                                     )
-                                } else if (canVerify) {
-                                    // Verify the signature
-                                    val isValid = withContext(Dispatchers.Default) {
-                                        MessageSigning.verifyMessage(
-                                            message = messageInput,
-                                            signatureBase64 = signatureInput.trim(),
-                                            address = addressInput.trim(),
-                                            chainHash = Block.LivenetGenesisBlock.hash
-                                        )
-                                    }
-                                    successMessage = if (isValid) {
-                                        "Signature is valid ✓"
-                                    } else {
-                                        errorMessage = "Signature is invalid ✗"
-                                        ""
-                                    }
                                 }
-                            } catch (e: Exception) {
-                                errorMessage = e.message ?: "An error occurred"
-                            } finally {
-                                isProcessing = false
+                                successMessage = if (isValid) {
+                                    "Signature is valid ✓"
+                                } else {
+                                    errorMessage = "Signature is invalid ✗"
+                                    ""
+                                }
                             }
+                        } catch (e: Exception) {
+                            errorMessage = e.message ?: "An error occurred"
+                        } finally {
+                            isProcessing = false
                         }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = (canSign || canVerify) && !isProcessing
+            ) {
+                if (isProcessing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text(if (canVerify) "Verify" else "Sign")
+                }
+            }
+            
+            // Clear button
+            if (addressInput.isNotBlank() || messageInput.isNotBlank() || signatureInput.isNotBlank()) {
+                OutlinedButton(
+                    onClick = {
+                        addressInput = ""
+                        messageInput = ""
+                        signatureInput = ""
+                        errorMessage = ""
+                        successMessage = ""
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = (canSign || canVerify) && !isProcessing
+                    enabled = !isProcessing
                 ) {
-                    if (isProcessing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Text(if (canVerify) "Verify" else "Sign")
-                    }
+                    Text("Clear All")
                 }
-                
-                // Clear button
-                if (addressInput.isNotBlank() || messageInput.isNotBlank() || signatureInput.isNotBlank()) {
-                    OutlinedButton(
-                        onClick = {
-                            addressInput = ""
-                            messageInput = ""
-                            signatureInput = ""
-                            errorMessage = ""
-                            successMessage = ""
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isProcessing
-                    ) {
-                        Text("Clear All")
-                    }
-                }
+            }
             }
         }
     }
@@ -634,24 +649,39 @@ private fun deriveAddressFromPath(pathString: String, wallet: Wallet): String? {
 }
 
 /**
- * QR Scanner composable for scanning addresses or messages.
+ * QR Scanner content composable for scanning addresses or messages.
+ * This is a simple scanner view without its own title bar (the parent Scaffold handles that).
  */
+@Suppress("COMPOSE_APPLIER_CALL_MISMATCH")
 @Composable
-private fun QRScannerView(
-    title: String = "Scan QR Code",
-    onScanned: (String) -> Unit,
-    onBack: () -> Unit
+private fun QRScannerContent(
+    modifier: Modifier = Modifier,
+    onScanned: (String) -> Unit
 ) {
     var hasScanned by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
     
+    // Track lifecycle resume state to coordinate with view readiness
+    var isLifecycleResumed by remember { mutableStateOf(false) }
+    
+    // Resume camera when BOTH: view is ready AND lifecycle is resumed
+    // This avoids double initialization (factory + lifecycle observer) that caused camera freeze
+    LaunchedEffect(barcodeView, isLifecycleResumed) {
+        if (barcodeView != null && isLifecycleResumed) {
+            barcodeView?.resume()
+        }
+    }
+    
     // Handle lifecycle for camera resume/pause
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> barcodeView?.resume()
-                Lifecycle.Event.ON_PAUSE -> barcodeView?.pause()
+                Lifecycle.Event.ON_RESUME -> isLifecycleResumed = true
+                Lifecycle.Event.ON_PAUSE -> {
+                    isLifecycleResumed = false
+                    barcodeView?.pause()
+                }
                 else -> {}
             }
         }
@@ -662,43 +692,22 @@ private fun QRScannerView(
         }
     }
     
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Back button
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                barcodeView?.pause()
-                onBack()
-            }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium
-            )
-        }
-        
-        AndroidView(
-            factory = { context ->
-                CompoundBarcodeView(context).apply {
-                    barcodeView = this
-                    setStatusText("")
-                    decodeContinuous { result ->
-                        if (!hasScanned && result.text != null) {
-                            hasScanned = true
-                            pause()
-                            onScanned(result.text)
-                        }
+    AndroidView(
+        factory = { context ->
+            CompoundBarcodeView(context).apply {
+                barcodeView = this
+                setStatusText("")
+                decodeContinuous { result ->
+                    if (!hasScanned && result.text != null) {
+                        hasScanned = true
+                        pause()
+                        onScanned(result.text)
                     }
-                    resume()
                 }
-            },
-            modifier = Modifier.weight(1f)
-        )
-    }
+                // Note: Don't call resume() here - the LaunchedEffect handles this
+                // to avoid double initialization (which causes camera freeze)
+            }
+        },
+        modifier = modifier
+    )
 }
-

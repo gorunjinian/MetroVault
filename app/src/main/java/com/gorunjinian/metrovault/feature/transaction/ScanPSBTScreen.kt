@@ -95,12 +95,26 @@ fun ScanPSBTScreen(
     // ==================== Lifecycle ====================
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
+    
+    // Track lifecycle resume state to coordinate with view readiness
+    var isLifecycleResumed by remember { mutableStateOf(false) }
+    
+    // Resume camera when BOTH: view is ready AND lifecycle is resumed AND we're in scanning mode
+    // This avoids double initialization (factory + lifecycle observer) that caused the camera freeze
+    LaunchedEffect(barcodeView, isLifecycleResumed, signedPSBT, psbtDetails) {
+        if (barcodeView != null && isLifecycleResumed && signedPSBT == null && psbtDetails == null) {
+            barcodeView?.resume()
+        }
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> if (signedPSBT == null && psbtDetails == null) barcodeView?.resume()
-                Lifecycle.Event.ON_PAUSE -> barcodeView?.pause()
+                Lifecycle.Event.ON_RESUME -> isLifecycleResumed = true
+                Lifecycle.Event.ON_PAUSE -> {
+                    isLifecycleResumed = false
+                    barcodeView?.pause()
+                }
                 else -> {}
             }
         }

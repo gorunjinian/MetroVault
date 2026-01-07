@@ -135,7 +135,8 @@ fun PSBTScannerView(
                                     }
                                 }
                             }
-                            resume()
+                            // Note: Don't call resume() here - the parent lifecycle observer handles this
+                            // to avoid double initialization (which causes camera freeze)
                         }
                     },
                     modifier = Modifier.fillMaxSize()

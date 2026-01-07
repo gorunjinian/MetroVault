@@ -489,6 +489,15 @@ private fun Step2SeedPhrase(
         }
     }
     
+    // Resume camera when isScanning becomes true and view is ready
+    // This is needed because the lifecycle observer only responds to transitions,
+    // not the current state (we're already ON_RESUME when scanning starts)
+    LaunchedEffect(barcodeView, isScanning) {
+        if (isScanning && barcodeView != null) {
+            try { barcodeView?.resume() } catch (_: Exception) { }
+        }
+    }
+    
     // Pause scanner when isScanning becomes false
     LaunchedEffect(isScanning) {
         if (!isScanning) {
@@ -583,7 +592,8 @@ private fun Step2SeedPhrase(
                                             }
                                         }
                                     }
-                                    resume()
+                                    // Note: Don't call resume() here - the lifecycle observer handles this
+                                    // to avoid double initialization (which causes camera freeze)
                                 }
                             },
                             modifier = Modifier.fillMaxSize()

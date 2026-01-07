@@ -22,6 +22,7 @@ import com.gorunjinian.metrovault.domain.service.util.hexToByteArray
  *
  * This class maintains backward compatibility with existing callers.
  */
+@Suppress("unused")
 class BitcoinService {
 
     companion object {

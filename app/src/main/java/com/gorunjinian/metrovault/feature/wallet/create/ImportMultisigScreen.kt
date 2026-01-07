@@ -66,6 +66,15 @@ fun ImportMultisigScreen(
         }
     }
     
+    // Resume camera when scanning starts and view is ready
+    // This is needed because the lifecycle observer only responds to transitions,
+    // not the current state (we're already ON_RESUME when scanning starts)
+    LaunchedEffect(barcodeView, uiState.isScanning) {
+        if (uiState.isScanning && barcodeView != null) {
+            try { barcodeView?.resume() } catch (_: Exception) { }
+        }
+    }
+    
     // Lifecycle observer for scanner
     DisposableEffect(lifecycleOwner, uiState.isScanning) {
         val observer = LifecycleEventObserver { _, event ->
@@ -249,7 +258,8 @@ private fun InitialScreen(
                             CompoundBarcodeView(ctx).apply {
                                 onBarcodeViewCreated(this)
                                 setStatusText("")
-                                resume()
+                                // Note: Don't call resume() here - the lifecycle observer handles this
+                                // to avoid double initialization (which causes camera freeze)
                             }
                         },
                         modifier = Modifier.fillMaxSize()

@@ -68,6 +68,19 @@ fun CheckAddressScreen(
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
 
+    // Resume camera when isScanning becomes true and view is ready
+    // This is needed because the lifecycle observer only responds to transitions,
+    // not the current state (we're already ON_RESUME when scanning starts)
+    LaunchedEffect(barcodeView, isScanning) {
+        if (isScanning && barcodeView != null) {
+            try {
+                barcodeView?.resume()
+            } catch (e: Exception) {
+                android.util.Log.e("CheckAddressScreen", "Failed to resume scanner in LaunchedEffect", e)
+            }
+        }
+    }
+
     // Lifecycle observer for scanner - manages resume/pause based on lifecycle and scanning state
     DisposableEffect(lifecycleOwner, isScanning) {
         val observer = LifecycleEventObserver { _, event ->
@@ -212,7 +225,8 @@ fun CheckAddressScreen(
                                             pause()
                                         }
                                     }
-                                    resume()
+                                    // Note: Don't call resume() here - the lifecycle observer handles this
+                                    // to avoid double initialization (which causes camera freeze)
                                 }
                             },
                             modifier = Modifier.fillMaxSize()
