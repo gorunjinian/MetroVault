@@ -447,12 +447,20 @@ fun SignMessageScreen(
                                 )
                             } else if (canVerify) {
                                 // Verify the signature
+                                // Determine chain hash from address prefix
+                                val chainHash = when {
+                                    addressInput.trim().startsWith("tb1") || 
+                                    addressInput.trim().startsWith("2") ||
+                                    addressInput.trim().startsWith("m") ||
+                                    addressInput.trim().startsWith("n") -> Block.Testnet4GenesisBlock.hash
+                                    else -> Block.LivenetGenesisBlock.hash
+                                }
                                 val isValid = withContext(Dispatchers.Default) {
                                     MessageSigning.verifyMessage(
                                         message = messageInput,
                                         signatureBase64 = signatureInput.trim(),
                                         address = addressInput.trim(),
-                                        chainHash = Block.LivenetGenesisBlock.hash
+                                        chainHash = chainHash
                                     )
                                 }
                                 successMessage = if (isValid) {
