@@ -141,8 +141,16 @@ fun SignedPSBTDisplay(
                 )
             ) {
                 Column(
-                    modifier = Modifier.padding(12.dp)
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_warning),
+                        contentDescription = "Warning",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Alternative Path Used",
                         style = MaterialTheme.typography.labelLarge,
@@ -151,7 +159,7 @@ fun SignedPSBTDisplay(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Signing used a different derivation path than specified in the PSBT. " +
+                        text  = "Signing used a different derivation path than specified in this wallet. " +
                                "This can happen when coordinator wallets convert paths.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer

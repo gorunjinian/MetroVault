@@ -46,12 +46,19 @@ fun DifferentAccountsScreen(
     val walletId = wallet.getActiveWalletId()
     
     // Derive accounts and activeAccountNumber from observed state
-    val activeWalletMetadata = remember(walletsList, walletId) {
-        walletsList.find { it.id == walletId }
+    // Use derivedStateOf for proper reactivity across all devices
+    val activeWalletMetadata by remember(walletsList, walletId) {
+        derivedStateOf { walletsList.find { it.id == walletId } }
     }
-    val accounts = activeWalletMetadata?.accounts ?: listOf(0)
-    val currentAccount = activeWalletMetadata?.activeAccountNumber ?: 0
-    val baseDerivationPath = activeWalletMetadata?.derivationPath ?: ""
+    val accounts by remember(activeWalletMetadata) {
+        derivedStateOf { activeWalletMetadata?.accounts ?: listOf(0) }
+    }
+    val currentAccount by remember(activeWalletMetadata) {
+        derivedStateOf { activeWalletMetadata?.activeAccountNumber ?: 0 }
+    }
+    val baseDerivationPath by remember(activeWalletMetadata) {
+        derivedStateOf { activeWalletMetadata?.derivationPath ?: "" }
+    }
     
     // Add dialog state
     var showAddDialog by remember { mutableStateOf(false) }
@@ -145,7 +152,10 @@ fun DifferentAccountsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
             
-            items(accounts.sorted()) { accountNum ->
+            items(
+                items = accounts.sorted(),
+                key = { accountNum -> "account_$accountNum" }
+            ) { accountNum ->
                 val isActive = accountNum == currentAccount
                 val path = DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
                 val canDelete = !isActive && accounts.size > 1

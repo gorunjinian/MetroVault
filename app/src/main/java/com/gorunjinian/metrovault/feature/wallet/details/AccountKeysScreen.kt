@@ -29,6 +29,7 @@ import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
+import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 
 /**
  * AccountKeysScreen - Displays extended public and private keys with QR codes.
@@ -46,6 +47,12 @@ fun AccountKeysScreen(
 ) {
     // For keys view: false = public, true = private
     var showPrivate by remember { mutableStateOf(false) }
+    
+    // Export mode: false = single-sig key, true = multisig key (BIP48)
+    var exportForMultisig by remember { mutableStateOf(false) }
+    
+    // BIP48 script type for multisig export
+    var bip48ScriptType by remember { mutableStateOf(DerivationPaths.Bip48ScriptType.P2WSH) }
     
     // QR code bitmap
     var currentQR by remember { mutableStateOf<Bitmap?>(null) }
@@ -78,39 +85,42 @@ fun AccountKeysScreen(
     // Base derivation path for key generation
     val baseDerivationPath = activeWalletMetadata?.derivationPath ?: ""
     
-    // Compute keys for selected account using Wallet's public methods
-    val xpub = remember(selectedAccountNumber, baseDerivationPath) {
-        if (baseDerivationPath.isNotEmpty()) {
-            wallet.getXpubForAccount(baseDerivationPath, selectedAccountNumber)
-        } else ""
-    }
-    val xpriv = remember(selectedAccountNumber, baseDerivationPath) {
-        if (baseDerivationPath.isNotEmpty()) {
-            wallet.getXprivForAccount(baseDerivationPath, selectedAccountNumber)
-        } else ""
-    }
-    
-    // Key prefixes for display
-    val publicKeyPrefix = when {
-        xpub.startsWith("zpub") -> "zpub"
-        xpub.startsWith("ypub") -> "ypub"
-        xpub.startsWith("vpub") -> "vpub"
-        xpub.startsWith("upub") -> "upub"
-        xpub.startsWith("tpub") -> "tpub"
-        else -> "xpub"
-    }
-    val privateKeyPrefix = when {
-        xpriv.startsWith("zprv") -> "zprv"
-        xpriv.startsWith("yprv") -> "yprv"
-        xpriv.startsWith("vprv") -> "vprv"
-        xpriv.startsWith("uprv") -> "uprv"
-        xpriv.startsWith("tprv") -> "tprv"
-        else -> "xprv"
+    // Compute keys based on export mode
+    val displayKey = remember(selectedAccountNumber, baseDerivationPath, exportForMultisig, showPrivate, bip48ScriptType) {
+        if (exportForMultisig) {
+            // BIP48 multisig key export
+            if (showPrivate) {
+                wallet.getBip48XprivForAccount(selectedAccountNumber, bip48ScriptType)
+            } else {
+                wallet.getBip48XpubForAccount(selectedAccountNumber, bip48ScriptType)
+            }
+        } else {
+            // Single-sig key export
+            if (baseDerivationPath.isEmpty()) return@remember ""
+            if (showPrivate) {
+                wallet.getXprivForAccount(baseDerivationPath, selectedAccountNumber)
+            } else {
+                wallet.getXpubForAccount(baseDerivationPath, selectedAccountNumber)
+            }
+        }
     }
     
-    val displayKey = if (showPrivate) xpriv else xpub
+    // Key prefix for display label
+    val keyPrefix = when {
+        displayKey.startsWith("Zpub") || displayKey.startsWith("Zprv") -> if (showPrivate) "Zprv" else "Zpub"
+        displayKey.startsWith("Vpub") || displayKey.startsWith("Vprv") -> if (showPrivate) "Vprv" else "Vpub"
+        displayKey.startsWith("Ypub") || displayKey.startsWith("Yprv") -> if (showPrivate) "Yprv" else "Ypub"
+        displayKey.startsWith("Upub") || displayKey.startsWith("Uprv") -> if (showPrivate) "Uprv" else "Upub"
+        displayKey.startsWith("zpub") || displayKey.startsWith("zprv") -> if (showPrivate) "zprv" else "zpub"
+        displayKey.startsWith("ypub") || displayKey.startsWith("yprv") -> if (showPrivate) "yprv" else "ypub"
+        displayKey.startsWith("vpub") || displayKey.startsWith("vprv") -> if (showPrivate) "vprv" else "vpub"
+        displayKey.startsWith("upub") || displayKey.startsWith("uprv") -> if (showPrivate) "uprv" else "upub"
+        displayKey.startsWith("tpub") || displayKey.startsWith("tprv") -> if (showPrivate) "tprv" else "tpub"
+        else -> if (showPrivate) "xprv" else "xpub"
+    }
+    
     val keyType = if (showPrivate) "Private" else "Public"
-    val prefix = if (showPrivate) privateKeyPrefix else publicKeyPrefix
+    val exportLabel = if (exportForMultisig) "Multisig $keyType Key" else "Extended $keyType Key"
     
     // Display name for selected account
     val selectedAccountName = activeWalletMetadata?.getAccountDisplayName(selectedAccountNumber)
@@ -138,6 +148,18 @@ fun AccountKeysScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    // Single-sig / Multisig Toggle in App Bar
+                    SegmentedToggle(
+                        firstOption = "Single-sig",
+                        secondOption = "Multisig",
+                        isSecondSelected = exportForMultisig,
+                        onSelectFirst = { exportForMultisig = false },
+                        onSelectSecond = { exportForMultisig = true },
+                        modifier = Modifier.padding(end = 8.dp),
+                        compact = true
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
                 )
@@ -163,7 +185,7 @@ fun AccountKeysScreen(
                     value = selectedAccountName,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Extended $keyType Key ($prefix)") },
+                    label = { Text("$exportLabel ($keyPrefix)") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountDropdownExpanded) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -176,7 +198,11 @@ fun AccountKeysScreen(
                     accounts.forEach { accountNum ->
                         val accountName = activeWalletMetadata?.getAccountDisplayName(accountNum)
                             ?: "Account $accountNum"
-                        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
+                        val accountPath = if (exportForMultisig) {
+                            DerivationPaths.bip48(accountNum, bip48ScriptType, wallet.isActiveWalletTestnet())
+                        } else {
+                            DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
+                        }
                         DropdownMenuItem(
                             text = {
                                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -207,6 +233,25 @@ fun AccountKeysScreen(
                 }
             }
 
+            // BIP48 Script Type Selector (only shown in multisig mode)
+            if (exportForMultisig) {
+                SegmentedToggle(
+                    options = listOf(
+                        DerivationPaths.Bip48ScriptType.P2WSH.displayName,
+                        DerivationPaths.Bip48ScriptType.P2SH_P2WSH.displayName
+                    ),
+                    selectedIndex = if (bip48ScriptType == DerivationPaths.Bip48ScriptType.P2WSH) 0 else 1,
+                    onSelect = { index ->
+                        bip48ScriptType = if (index == 0) {
+                            DerivationPaths.Bip48ScriptType.P2WSH
+                        } else {
+                            DerivationPaths.Bip48ScriptType.P2SH_P2WSH
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             // Public/Private Toggle
             PublicPrivateToggle(
                 showPrivate = showPrivate,
@@ -226,10 +271,28 @@ fun AccountKeysScreen(
                     )
                 ) {
                     Text(
-                        text = "This key can spend all funds in this account.\nNever share it!",
+                        text = if (exportForMultisig) {
+                            "This key can sign multisig transactions.\nNever share it!"
+                        } else {
+                            "This key can spend all funds in this account.\nNever share it!"
+                        },
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            } else if (exportForMultisig) {
+                // Info card for multisig public key
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = "Import this key into a multisig coordinator.",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
@@ -247,10 +310,10 @@ fun AccountKeysScreen(
                             .fillMaxSize()
                             .then(
                                 if (tapToCopyEnabled) {
-                                    Modifier.clickable {
+                            Modifier.clickable {
                                         SecurityUtils.copyToClipboardWithAutoClear(
                                             context = context,
-                                            label = "Extended $keyType Key",
+                                            label = exportLabel,
                                             text = displayKey,
                                             delayMs = 20_000
                                         )

@@ -286,6 +286,112 @@ class KeyEncodingService {
     }
 
     /**
+     * Gets the BIP48 extended public key for a specific account number.
+     * Handles derivation and encoding in one step.
+     *
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param accountNumber Account number to derive key for
+     * @param bip48ScriptType BIP48 script type (P2WSH or P2SH-P2WSH)
+     * @param isTestnet Whether to use testnet prefixes
+     * @return Zpub/Vpub (P2WSH) or Ypub/Upub (P2SH-P2WSH) encoded string, or empty on error
+     */
+    fun getBip48XpubForAccount(
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            val bip48Path = DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(bip48Path)
+            val accountPublicKey = accountPrivateKey.extendedPublicKey
+            getBip48Xpub(accountPublicKey, bip48ScriptType, isTestnet)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to derive BIP48 xpub for account $accountNumber")
+            ""
+        }
+    }
+
+    /**
+     * Gets the BIP48 extended private key for a specific account number.
+     * WARNING: Contains private keys - handle with extreme care!
+     *
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param accountNumber Account number to derive key for
+     * @param bip48ScriptType BIP48 script type (P2WSH or P2SH-P2WSH)
+     * @param isTestnet Whether to use testnet prefixes
+     * @return Zprv/Vprv (P2WSH) or Yprv/Uprv (P2SH-P2WSH) encoded string, or empty on error
+     */
+    fun getBip48XprivForAccount(
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            val bip48Path = DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(bip48Path)
+            getBip48Xpriv(accountPrivateKey, bip48ScriptType, isTestnet)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to derive BIP48 xpriv for account $accountNumber")
+            ""
+        }
+    }
+
+
+    fun getBip48DescriptorForAccount(
+        fingerprint: String,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            val bip48Path = DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(bip48Path)
+            val accountPublicKey = accountPrivateKey.extendedPublicKey
+            val xpub = getBip48Xpub(accountPublicKey, bip48ScriptType, isTestnet)
+            val fp = fingerprint.toLongOrNull(16) ?: 0L
+            val isWrapped = bip48ScriptType == DerivationPaths.Bip48ScriptType.P2SH_P2WSH
+            DescriptorExtensions.getBip48Descriptor(fp, bip48Path, xpub, isWrapped)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to generate BIP48 descriptor for account $accountNumber")
+            ""
+        }
+    }
+
+    /**
+     * Gets the BIP48 multisig descriptor (private/spending) for a specific account number.
+     * WARNING: Contains private keys - handle with extreme care!
+     *
+     * @param fingerprint Master fingerprint as hex string
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param accountNumber Account number to derive descriptor for
+     * @param bip48ScriptType BIP48 script type (P2WSH or P2SH-P2WSH)
+     * @param isTestnet Whether to use testnet prefixes
+     * @return Private descriptor string with checksum, or empty on error
+     */
+    fun getBip48PrivateDescriptorForAccount(
+        fingerprint: String,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType,
+        isTestnet: Boolean = false
+    ): String {
+        return try {
+            val bip48Path = DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
+            val accountPrivateKey = masterPrivateKey.derivePrivateKey(bip48Path)
+            val xpriv = getBip48Xpriv(accountPrivateKey, bip48ScriptType, isTestnet)
+            val fp = fingerprint.toLongOrNull(16) ?: 0L
+            val isWrapped = bip48ScriptType == DerivationPaths.Bip48ScriptType.P2SH_P2WSH
+            DescriptorExtensions.getBip48Descriptor(fp, bip48Path, xpriv, isWrapped)
+        } catch (_: Exception) {
+            Log.e(TAG, "Failed to generate BIP48 private descriptor for account $accountNumber")
+            ""
+        }
+    }
+
+    /**
      * Get BIP48 public key prefix based on script type and network.
      */
     private fun getBip48PublicKeyPrefix(bip48ScriptType: DerivationPaths.Bip48ScriptType, isTestnet: Boolean): Int {

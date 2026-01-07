@@ -1,11 +1,8 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -15,13 +12,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
+import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
 import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
@@ -29,6 +26,7 @@ import com.gorunjinian.metrovault.lib.qrtools.QRCodeGenerator
 import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UR
 import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UREncoder
 import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
+import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -133,74 +131,20 @@ fun ExportMultiSigScreen(
         ) {
             
             // Content format toggle: Descriptor / BSMS
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ContentFormat.entries.forEach { format ->
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (selectedContentFormat == format) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { selectedContentFormat = format }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = format.displayName,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (selectedContentFormat == format) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            SegmentedToggle(
+                options = ContentFormat.entries.map { it.displayName },
+                selectedIndex = ContentFormat.entries.indexOf(selectedContentFormat),
+                onSelect = { index -> selectedContentFormat = ContentFormat.entries[index] },
+                modifier = Modifier.fillMaxWidth()
+            )
             
             // QR encoding format toggle: BC-UR v1 / BBQr / BC-UR v2
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutputFormat.entries.forEach { format ->
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (selectedQRFormat == format) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                            .clickable { selectedQRFormat = format }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = format.displayName,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (selectedQRFormat == format) MaterialTheme.colorScheme.onPrimary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            SegmentedToggle(
+                options = OutputFormat.entries.map { it.displayName },
+                selectedIndex = OutputFormat.entries.indexOf(selectedQRFormat),
+                onSelect = { index -> selectedQRFormat = OutputFormat.entries[index] },
+                modifier = Modifier.fillMaxWidth()
+            )
             
             // Info card about the descriptor
             Card(
@@ -426,12 +370,14 @@ private fun generateDescriptorURv1(content: String): AnimatedQRResult? {
 }
 
 /**
- * Generate BBQr encoded descriptor QR
+ * Generate BBQr encoded descriptor QR.
  * BBQr format: B$[encoding][type][total:2 base36][part:2 base36][data]
- * - encoding: H=hex, 2=zlib+base32, Z=zlib+base32 (legacy), U=uncompressed UTF-8
+ * - encoding: H=hex, 2=base32, Z=zlib+base32, U=raw UTF-8
  * - type: U=Unicode/UTF-8 text, P=PSBT, T=Transaction, J=JSON, C=CBOR
  * - total/part: 2-char base36 encoded (0-indexed for part)
- * For descriptors, we use "UU" = Uncompressed UTF-8 text
+ * 
+ * For descriptors, we use "2U" = Base32-encoded UTF-8 text.
+ * Note: Sparrow/Coldcard expect Base32 encoding, NOT raw UTF-8.
  * 
  * For even visual distribution (like Sparrow), we:
  * 1. Calculate minimum frames needed at max capacity
@@ -440,67 +386,79 @@ private fun generateDescriptorURv1(content: String): AnimatedQRResult? {
 @Suppress("KDocUnresolvedReference")
 private fun generateDescriptorBBQr(descriptor: String): AnimatedQRResult? {
     return try {
-        val maxQrChars = 500
-        // BBQr header overhead: "B$UU" + 2 char total + 2 char part = 8 chars
-        val headerOverhead = 8
-        val maxPayload = maxQrChars - headerOverhead
+        // Convert descriptor to UTF-8 bytes for Base32 encoding
+        val descriptorBytes = descriptor.toByteArray(Charsets.UTF_8)
         
-        if (descriptor.length <= maxPayload) {
-            // Single frame BBQr
-            // Format: B$UU[total:2 base36][part:2 base36][descriptor]
-            // total=1, part=0 (0-indexed)
-            val totalBase36 = 1.toString(36).padStart(2, '0').uppercase()
-            val partBase36 = 0.toString(36).padStart(2, '0').uppercase()
-            val bbqrContent = $$"B$UU$${totalBase36}$${partBase36}$$descriptor"
-            val bitmap = QRCodeGenerator.generateQRCode(bbqrContent, size = 512)
-            bitmap?.let {
-                AnimatedQRResult(
-                    frames = listOf(it),
-                    totalParts = 1,
-                    isAnimated = false,
-                    format = OutputFormat.BBQR
-                )
+        // Use Base32 encoding (not raw UTF-8) for Sparrow compatibility
+        val encoding = '2'  // Base32 encoding
+        val dataType = 'U'  // Unicode text type
+        
+        val maxQrChars = 500
+        // BBQr header overhead: "B$" + encoding + type + 2 char total + 2 char part = 8 chars
+        val headerOverhead = 8
+        val maxDataChars = maxQrChars - headerOverhead
+        
+        // For Base32: 8 chars = 5 bytes
+        // Calculate max bytes per frame (aligned to 5-byte boundary for Base32)
+        val maxBytesPerFrame = (maxDataChars / 8) * 5
+        
+        // Calculate minimum number of frames needed
+        val totalBytes = descriptorBytes.size
+        val numFrames = kotlin.math.ceil(totalBytes.toDouble() / maxBytesPerFrame).toInt()
+            .coerceAtLeast(1)
+        
+        if (numFrames > 1295) {
+            android.util.Log.e("ExportMultiSigScreen", "Descriptor too large for BBQr: $numFrames parts")
+            return null
+        }
+        
+        // Distribute bytes evenly across frames
+        val baseBytesPerFrame = totalBytes / numFrames
+        // Align to 5-byte boundary (for Base32 encoding without padding issues)
+        val alignedBytesPerFrame = ((baseBytesPerFrame + 4) / 5) * 5
+        
+        android.util.Log.d("ExportMultiSigScreen", "BBQr descriptor: $totalBytes bytes in $numFrames frames (~$alignedBytesPerFrame bytes/frame)")
+        
+        // Split bytes into chunks with even distribution
+        val chunks = mutableListOf<ByteArray>()
+        var offset = 0
+        for (i in 0 until numFrames) {
+            val remaining = totalBytes - offset
+            val chunkSize = if (i == numFrames - 1) {
+                // Last frame takes whatever is left
+                remaining
+            } else {
+                // Non-final frames: use aligned size, but don't exceed remaining
+                alignedBytesPerFrame.coerceAtMost(remaining)
             }
+            chunks.add(descriptorBytes.copyOfRange(offset, offset + chunkSize))
+            offset += chunkSize
+        }
+        
+        // Encode each byte chunk to Base32 and prepend BBQr header
+        val frameContents = chunks.mapIndexed { index, chunk ->
+            val chunkBase32 = PSBTDecoder.encodeBase32(chunk)
+            val totalBase36 = numFrames.toString(36).padStart(2, '0').uppercase()
+            val partBase36 = index.toString(36).padStart(2, '0').uppercase()
+            $$"B$$${encoding}$${dataType}$${totalBase36}$${partBase36}$${chunkBase32}"
+        }
+        
+        val bitmaps = if (frameContents.size > 1) {
+            QRCodeGenerator.generateConsistentQRCodes(frameContents, size = 512)
         } else {
-            // Multi-frame BBQr encoding with even distribution
-            // Calculate minimum number of frames needed
-            val totalChars = descriptor.length
-            val numFrames = kotlin.math.ceil(totalChars.toDouble() / maxPayload).toInt()
-                .coerceAtLeast(1)
-            
-            // Distribute characters evenly across frames
-            // Each frame gets approximately the same number of characters
-            val baseCharsPerFrame = totalChars / numFrames
-            val extraChars = totalChars % numFrames
-            
-            // Split into evenly-sized chunks
-            val chunks = mutableListOf<String>()
-            var offset = 0
-            for (i in 0 until numFrames) {
-                // First 'extraChars' frames get one extra character
-                val chunkSize = baseCharsPerFrame + if (i < extraChars) 1 else 0
-                chunks.add(descriptor.substring(offset, offset + chunkSize))
-                offset += chunkSize
+            frameContents.mapNotNull { frame ->
+                QRCodeGenerator.generateQRCode(frame, size = 512)
             }
-            
-            val frameContents = chunks.mapIndexed { index, chunk ->
-                // BBQr header format: B$UU[total:2 base36][part:2 base36][data]
-                // Part is 0-indexed per BBQr spec
-                val totalBase36 = numFrames.toString(36).padStart(2, '0').uppercase()
-                val partBase36 = index.toString(36).padStart(2, '0').uppercase()
-                $$"B$UU$${totalBase36}$${partBase36}$$chunk"
-            }
-            
-            val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameContents, size = 512)
-            bitmaps?.let {
-                AnimatedQRResult(
-                    frames = it,
-                    totalParts = it.size,
-                    isAnimated = it.size > 1,
-                    recommendedFrameDelayMs = 500,
-                    format = OutputFormat.BBQR
-                )
-            }
+        }
+        
+        bitmaps?.let {
+            AnimatedQRResult(
+                frames = it,
+                totalParts = it.size,
+                isAnimated = it.size > 1,
+                recommendedFrameDelayMs = 500,
+                format = OutputFormat.BBQR
+            )
         }
     } catch (e: Exception) {
         android.util.Log.e("ExportMultiSigScreen", "BBQr generation failed: ${e.message}")
@@ -522,7 +480,8 @@ private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat
         val ur = when (contentFormat) {
             ContentFormat.DESCRIPTOR -> {
                 // Use ur:output-descriptor/ for raw descriptor - proper UR 2.0 type
-                createOutputDescriptorUR(content)
+                // UROutputDescriptor encodes as CBOR map with SOURCE key
+                UROutputDescriptor(content).toUR()
             }
             ContentFormat.BSMS -> {
                 // Use ur:bytes/ for BSMS multi-line text format
@@ -574,13 +533,4 @@ private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat
             )
         }
     }
-}
-
-/**
- * Create a UR with ur:output-descriptor/ type from a descriptor string.
- * Uses UROutputDescriptor registry item for proper CBOR encoding.
- */
-private fun createOutputDescriptorUR(descriptor: String): UR {
-    // Create UROutputDescriptor with the descriptor text and convert to UR
-    return UROutputDescriptor(descriptor).toUR()
 }

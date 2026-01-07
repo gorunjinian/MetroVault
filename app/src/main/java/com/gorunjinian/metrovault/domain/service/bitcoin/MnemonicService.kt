@@ -1,11 +1,11 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import android.util.Log
+import com.gorunjinian.metrovault.lib.bitcoin.Crypto
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
-import java.security.MessageDigest
 import java.security.SecureRandom
 
 /**
@@ -58,7 +58,7 @@ class MnemonicService {
             finalEntropy = if (userEntropy != null && userEntropy.isNotEmpty()) {
                 // Mix user entropy with system entropy using SHA-256
                 combinedEntropy = userEntropy + systemEntropy
-                val hash = MessageDigest.getInstance("SHA-256").digest(combinedEntropy)
+                val hash = Crypto.sha256(combinedEntropy)
                 // Take the required number of bytes
                 hash.copyOfRange(0, entropySize)
             } else {

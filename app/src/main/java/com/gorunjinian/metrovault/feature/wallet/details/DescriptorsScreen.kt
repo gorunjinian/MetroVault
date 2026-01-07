@@ -26,6 +26,7 @@ import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
+import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 
 /**
  * DescriptorsScreen - Displays wallet output descriptors with QR codes.
@@ -43,6 +44,12 @@ fun DescriptorsScreen(
 ) {
     // For descriptors view: false = public, true = private
     var showPrivate by remember { mutableStateOf(false) }
+    
+    // Export mode: false = single-sig descriptor, true = multisig key (BIP48)
+    var exportForMultisig by remember { mutableStateOf(false) }
+    
+    // BIP48 script type for multisig export
+    var bip48ScriptType by remember { mutableStateOf(DerivationPaths.Bip48ScriptType.P2WSH) }
     
     // QR code bitmap
     var currentQR by remember { mutableStateOf<Bitmap?>(null) }
@@ -76,31 +83,40 @@ fun DescriptorsScreen(
     // Base derivation path for descriptor generation
     val baseDerivationPath = activeWalletMetadata?.derivationPath ?: ""
     
-    // Compute descriptors for selected account using Wallet's public methods
-    val publicDescriptor = remember(selectedAccountNumber, baseDerivationPath) {
-        if (baseDerivationPath.isNotEmpty()) {
-            wallet.getUnifiedDescriptorForAccount(baseDerivationPath, selectedAccountNumber)
-        } else ""
+    // Compute display data based on export mode
+    val displayData = remember(selectedAccountNumber, baseDerivationPath, exportForMultisig, showPrivate, bip48ScriptType) {
+        if (exportForMultisig) {
+            // BIP48 multisig descriptor export
+            if (showPrivate) {
+                wallet.getBip48PrivateDescriptorForAccount(selectedAccountNumber, bip48ScriptType)
+            } else {
+                wallet.getBip48DescriptorForAccount(selectedAccountNumber, bip48ScriptType)
+            }
+        } else {
+            // Single-sig descriptor export
+            if (baseDerivationPath.isEmpty()) return@remember ""
+            if (showPrivate) {
+                wallet.getPrivateDescriptorForAccount(baseDerivationPath, selectedAccountNumber)
+            } else {
+                wallet.getUnifiedDescriptorForAccount(baseDerivationPath, selectedAccountNumber)
+            }
+        }
     }
-    val privateDescriptor = remember(selectedAccountNumber, baseDerivationPath) {
-        if (baseDerivationPath.isNotEmpty()) {
-            wallet.getPrivateDescriptorForAccount(baseDerivationPath, selectedAccountNumber)
-        } else ""
-    }
-    
-    val displayDescriptor = if (showPrivate) privateDescriptor else publicDescriptor
-    val descriptorType = if (showPrivate) "Spending" else "Watch-Only"
+    // Labels for display
+    val exportTypeLabel = if (exportForMultisig) "Multisig Descriptor" else "Descriptor"
+    val keyTypeLabel = if (showPrivate) "Spending" else "Watch-Only"
+    val fullLabel = "$keyTypeLabel $exportTypeLabel"
     
     // Display name for selected account
     val selectedAccountName = activeWalletMetadata?.getAccountDisplayName(selectedAccountNumber)
         ?: "Account $selectedAccountNumber"
     
     // Generate QR code when display data changes
-    LaunchedEffect(displayDescriptor) {
-        if (displayDescriptor.isNotEmpty()) {
+    LaunchedEffect(displayData) {
+        if (displayData.isNotEmpty()) {
             currentQR = null // Show loading
             withContext(Dispatchers.IO) {
-                currentQR = QRCodeUtils.generateQRCode(displayDescriptor)
+                currentQR = QRCodeUtils.generateQRCode(displayData)
             }
         }
     }
@@ -116,6 +132,18 @@ fun DescriptorsScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    // Single-sig / Multisig Toggle in App Bar
+                    SegmentedToggle(
+                        firstOption = "Single-sig",
+                        secondOption = "Multisig",
+                        isSecondSelected = exportForMultisig,
+                        onSelectFirst = { exportForMultisig = false },
+                        onSelectSecond = { exportForMultisig = true },
+                        modifier = Modifier.padding(end = 8.dp),
+                        compact = true
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
@@ -142,7 +170,7 @@ fun DescriptorsScreen(
                     value = selectedAccountName,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("$descriptorType Descriptor") },
+                    label = { Text(fullLabel) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountDropdownExpanded) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -155,7 +183,11 @@ fun DescriptorsScreen(
                     accounts.forEach { accountNum ->
                         val accountName = activeWalletMetadata?.getAccountDisplayName(accountNum)
                             ?: "Account $accountNum"
-                        val accountPath = DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
+                        val accountPath = if (exportForMultisig) {
+                            DerivationPaths.bip48(accountNum, bip48ScriptType, wallet.isActiveWalletTestnet())
+                        } else {
+                            DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
+                        }
                         DropdownMenuItem(
                             text = {
                                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -186,6 +218,25 @@ fun DescriptorsScreen(
                 }
             }
 
+            // BIP48 Script Type Selector (only shown in multisig mode)
+            if (exportForMultisig) {
+                SegmentedToggle(
+                    options = listOf(
+                        DerivationPaths.Bip48ScriptType.P2WSH.displayName,
+                        DerivationPaths.Bip48ScriptType.P2SH_P2WSH.displayName
+                    ),
+                    selectedIndex = if (bip48ScriptType == DerivationPaths.Bip48ScriptType.P2WSH) 0 else 1,
+                    onSelect = { index ->
+                        bip48ScriptType = if (index == 0) {
+                            DerivationPaths.Bip48ScriptType.P2WSH
+                        } else {
+                            DerivationPaths.Bip48ScriptType.P2SH_P2WSH
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             // Public/Private Toggle
             PublicPrivateToggle(
                 showPrivate = showPrivate,
@@ -205,7 +256,11 @@ fun DescriptorsScreen(
                     )
                 ) {
                     Text(
-                        text = "This descriptor contains private keys.\nAnyone with it can spend your UTXOs",
+                        text = if (exportForMultisig) {
+                            "This contains private keys.\nUse only for watch+sign multisig wallets."
+                        } else {
+                            "This descriptor contains private keys.\nAnyone with it can spend your UTXOs"
+                        },
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer
@@ -219,7 +274,11 @@ fun DescriptorsScreen(
                     )
                 ) {
                     Text(
-                        text = "Import this to an online wallet as a watch-only wallet.",
+                        text = if (exportForMultisig) {
+                            "Import this descriptor into a multisig coordinator."
+                        } else {
+                            "Import this to an online wallet as a watch-only wallet."
+                        },
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -242,8 +301,8 @@ fun DescriptorsScreen(
                                     Modifier.clickable {
                                         SecurityUtils.copyToClipboardWithAutoClear(
                                             context = context,
-                                            label = "$descriptorType Descriptor",
-                                            text = displayDescriptor,
+                                            label = fullLabel,
+                                            text = displayData,
                                             delayMs = 20_000
                                         )
                                         Toast.makeText(context, "Copied! Clipboard will clear in 20 seconds", Toast.LENGTH_SHORT).show()
@@ -253,7 +312,7 @@ fun DescriptorsScreen(
                     ) {
                         Image(
                             bitmap = currentQR!!.asImageBitmap(),
-                            contentDescription = "$descriptorType Descriptor QR Code - Tap to copy",
+                            contentDescription = "$fullLabel QR Code - Tap to copy",
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -270,7 +329,7 @@ fun DescriptorsScreen(
                 )
             }
 
-            // Descriptor text display
+            // Descriptor/Key text display
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = if (showPrivate) {
@@ -282,7 +341,7 @@ fun DescriptorsScreen(
                 }
             ) {
                 Text(
-                    text = displayDescriptor,
+                    text = displayData,
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodySmall
                 )

@@ -2,11 +2,8 @@ package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -14,11 +11,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.lib.qrtools.SeedQRUtils
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
 import kotlinx.coroutines.Dispatchers
@@ -100,80 +97,12 @@ fun SeedQRScreen(
         ) {
             
             // Format toggle with 3 options
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Standard SeedQR option (default)
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (selectedFormat == 0) MaterialTheme.colorScheme.primary
-                            else Color.Transparent
-                        )
-                        .clickable { selectedFormat = 0 }
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "SeedQR",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (selectedFormat == 0) MaterialTheme.colorScheme.onPrimary
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Compact SeedQR option
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (selectedFormat == 1) MaterialTheme.colorScheme.primary
-                            else Color.Transparent
-                        )
-                        .clickable { selectedFormat = 1 }
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Compact",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (selectedFormat == 1) MaterialTheme.colorScheme.onPrimary
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // Generic option
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (selectedFormat == 2) MaterialTheme.colorScheme.primary
-                            else Color.Transparent
-                        )
-                        .clickable { selectedFormat = 2 }
-                        .padding(vertical = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Generic",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (selectedFormat == 2) MaterialTheme.colorScheme.onPrimary
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            SegmentedToggle(
+                options = listOf("SeedQR", "Compact", "Generic"),
+                selectedIndex = selectedFormat,
+                onSelect = { selectedFormat = it },
+                modifier = Modifier.fillMaxWidth()
+            )
             
             // Security warning card
             Card(

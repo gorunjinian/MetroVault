@@ -72,7 +72,32 @@ object DerivationPaths {
      */
     enum class Bip48ScriptType(val value: String) {
         P2SH_P2WSH("1'"),
-        P2WSH("2'")
+        P2WSH("2'");
+
+        /** User-friendly display name */
+        val displayName: String
+            get() = when (this) {
+                P2WSH -> "Native SegWit"
+                P2SH_P2WSH -> "Wrapped SegWit"
+            }
+    }
+
+    /**
+     * Build BIP48 multisig path with account number and script type.
+     * Path format: m/48'/coin_type'/account'/script_type'
+     *
+     * @param account Account number (default 0)
+     * @param scriptType P2WSH (native) or P2SH-P2WSH (wrapped)
+     * @param testnet Whether to use testnet coin type
+     * @return Derivation path like "m/48'/0'/0'/2'"
+     */
+    fun bip48(
+        account: Int = 0,
+        scriptType: Bip48ScriptType = Bip48ScriptType.P2WSH,
+        testnet: Boolean = false
+    ): String {
+        val coinType = if (testnet) COIN_TYPE_TESTNET else COIN_TYPE_MAINNET
+        return "m/48'/$coinType/$account'/${scriptType.value}"
     }
 
     // === Path parsing utilities ===

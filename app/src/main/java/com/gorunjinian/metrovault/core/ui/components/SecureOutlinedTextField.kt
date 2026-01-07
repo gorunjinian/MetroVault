@@ -102,7 +102,7 @@ fun SecureOutlinedTextField(
     )
     
     // Modifier that disables autofill on any child views when they are positioned
-    val secureModifier = modifier.onGloballyPositioned { coordinates ->
+    val secureModifier = modifier.onGloballyPositioned { _ ->
         // Find the underlying Android View and disable autofill on it
         // The view hierarchy has already been set up via SecurityUtils.disableAutofill
         // This callback ensures the flag is applied after layout

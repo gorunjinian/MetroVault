@@ -766,6 +766,103 @@ class   Wallet(context: Context) {
         )
     }
 
+    // ==================== BIP48 Multisig Export ====================
+
+    /**
+     * Gets the BIP48 extended public key (Zpub/Vpub/Ypub/Upub) for multisig coordinator import.
+     * Use this to add this wallet as a cosigner in Sparrow, Specter, or other coordinators.
+     *
+     * @param accountNumber Account number to derive key for
+     * @param bip48ScriptType Script type: P2WSH (native) or P2SH_P2WSH (wrapped)
+     * @return BIP48 xpub string (Zpub/Vpub for P2WSH, Ypub/Upub for P2SH-P2WSH), or empty on error
+     */
+    fun getBip48XpubForAccount(
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
+    ): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val isTestnet = isActiveWalletTestnet()
+
+        return keyEncodingService.getBip48XpubForAccount(
+            masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
+        )
+    }
+
+    /**
+     * Gets the BIP48 extended private key (Zprv/Vprv/Yprv/Uprv) for multisig wallet with signing.
+     * WARNING: Contains private keys - handle with extreme care!
+     *
+     * @param accountNumber Account number to derive key for
+     * @param bip48ScriptType Script type: P2WSH (native) or P2SH_P2WSH (wrapped)
+     * @return BIP48 xprv string, or empty on error
+     */
+    fun getBip48XprivForAccount(
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
+    ): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val isTestnet = isActiveWalletTestnet()
+
+        return keyEncodingService.getBip48XprivForAccount(
+            masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
+        )
+    }
+
+    /**
+     * Gets the BIP48 derivation path for the given account and script type.
+     * Useful for displaying the path alongside the exported key.
+     *
+     * @param accountNumber Account number
+     * @param bip48ScriptType Script type: P2WSH or P2SH_P2WSH
+     * @return Path string like "m/48'/0'/0'/2'"
+     */
+    fun getBip48PathForAccount(
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
+    ): String {
+        val isTestnet = isActiveWalletTestnet()
+        return DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
+    }
+
+
+    fun getBip48DescriptorForAccount(
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
+    ): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val fingerprint = state.fingerprint
+        val isTestnet = isActiveWalletTestnet()
+
+        return keyEncodingService.getBip48DescriptorForAccount(
+            fingerprint, masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
+        )
+    }
+
+    /**
+     * Gets the BIP48 multisig descriptor (private/spending) for watch+sign setups.
+     * WARNING: Contains private keys - handle with extreme care!
+     *
+     * @param accountNumber Account number to derive descriptor for
+     * @param bip48ScriptType Script type: P2WSH (native) or P2SH_P2WSH (wrapped)
+     * @return Private descriptor string with checksum, or empty on error
+     */
+    fun getBip48PrivateDescriptorForAccount(
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
+    ): String {
+        val state = getActiveWalletState() ?: return ""
+        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
+        val fingerprint = state.fingerprint
+        val isTestnet = isActiveWalletTestnet()
+
+        return keyEncodingService.getBip48PrivateDescriptorForAccount(
+            fingerprint, masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
+        )
+    }
+
     @Suppress("unused")
     fun getActiveDescriptor(): Pair<String, String>? {
         val state = getActiveWalletState() ?: return null
