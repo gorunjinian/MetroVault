@@ -24,7 +24,7 @@
 
 ---
 
-**MetroVault** is a secure, offline Android signing device application designed to turn your Android phone into a cold storage hardware wallet. Built with modern Android technologies and a custom Kotlin Bitcoin library, it prioritizes security, simplicity, and user experience.
+**MetroVault** is a secure, offline Android signing device application designed to turn your Android phone into a cold storage hardware wallet. Built with modern Android technologies and a custom Kotlin Bitcoin library, it prioritizes security, simplicity, and user experience. Supports both single-sig and multi-sig (collaborative custody) wallets.
 
 ## Why MetroVault?
 
@@ -50,6 +50,7 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 
 ### 💼 Wallet Management
 - **Multi-Type Support**: Native SegWit (`bc1q...`), Taproot (`bc1p...`), Nested SegWit (`3...`), Legacy (`1...`)
+- **Multi-Sig Support**: Import and sign for collaborative custody wallets (2-of-3, 3-of-5, etc.)
 - **Passphrase Support**: Optional BIP-39 passphrase with choice to save locally or keep in session memory only
 - **Testnet4 Support**: Import or create Testnet wallet for testing and development
 - **Custom Entropy**: Add your own randomness via dice rolls or coin flips
@@ -58,10 +59,18 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 - **XPRIV Export**: Export wallet's extended private key (if needed)
 
 ### 📝 Transaction Signing
-- **PSBT Workflow** (BIP-174): Partially Signed Bitcoin Transactions
+- **PSBT Workflow** (BIP-174): Partially Signed Bitcoin Transactions for single-sig and multi-sig
+- **Multi-Sig Signing**: Sign your part of collaborative custody transactions (with locally saved keys)
+- **Transaction Finalization**: Finalize fully-signed PSBTs into broadcastable transactions
 - **QR Code Air-Gap**: Scan PSBT → Verify → Sign → Export via QR
+- **Animated QR Support**: BC-UR (v1/v2) and BBQr formats for large transactions
 - **Address Verification**: Confirm receive/change addresses on trusted screen
 - **XPUB Export**: Generate watch-only wallets on your online device
+
+### 🔗 Multi-Sig & Descriptors
+- **Descriptor Import**: Import multi-sig wallets via QR (BC-UR v2, BBQr) or text
+- **Descriptor Export**: Share your signer info for multi-sig setup (BIP-48 compatible)
+- **Flexible Derivation**: Supports BIP-48 m/48'/0'/0'/2' and m/48'/0'/0'/1' paths
 
 ### 📖 Signing / Verifying Messages
 - **Sign Messages**: Sign messages to prove ownership
@@ -93,9 +102,9 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 |----------|------------|
 | **UI Framework** | Jetpack Compose (Material 3) |
 | **Architecture** | MVVM with Clean Architecture |
-| **Cryptography** | Custom Kotlin Bitcoin Library (Secp256k1, BIP-32, BIP-39, BIP-174) |
+| **Cryptography** | Custom Kotlin Bitcoin Library (Secp256k1, BIP-32, BIP-39, BIP-48, BIP-174) |
 | **Storage** | EncryptedSharedPreferences (Android Keystore) |
-| **QR Codes** | ZXing + URKit (Animated QR for large data) |
+| **QR Codes** | ZXing + URKit (BC-UR v1/v2, BBQr for animated multi-frame QR) |
 | **Biometrics** | AndroidX Biometric Library (BIOMETRIC_STRONG) |
 | **Min SDK** | Android 8.0 (API 26) |
 
@@ -153,9 +162,9 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ### Reporting Issues
 
-- 🐛 **Bugs**: Open a GitHub issue with reproduction steps
-- 💡 **Features**: Open a discussion or issue with your proposal
-- 🔒 **Security**: See [SECURITY.md](./SECURITY.md) for responsible disclosure
+- **Bugs**: Open a GitHub issue with reproduction steps
+- **Features**: Open a discussion or issue with your proposal
+- **Security**: See [SECURITY.md](./SECURITY.md) for responsible disclosure
 
 ## 🙏 Acknowledgments
 
@@ -173,10 +182,10 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 While every effort is made to ensure security and correctness, using early-development software for managing real funds carries risks:
 
-- ⚡ Always verify addresses on the device screen
-- 🧪 Test with small amounts first
-- 📝 **You are responsible for your own keys** - ensure proper mnemonic backups
-- 🔍 Review the code yourself or have it audited before trusting with significant funds
+- Always verify addresses on the device screen
+- Test with small amounts first
+- **You are responsible for your own keys** - ensure proper mnemonic backups
+- Review the code yourself or have it audited before trusting with significant funds
 
 ---
 
