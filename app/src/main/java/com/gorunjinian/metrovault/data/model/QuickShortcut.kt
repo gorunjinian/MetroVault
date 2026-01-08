@@ -13,7 +13,7 @@ enum class QuickShortcut(
     VIEW_ADDRESSES("Addresses", R.drawable.ic_addresses),
     SIGN_PSBT("Sign PSBT", R.drawable.ic_qr_code_scanner),
     CHECK_ADDRESS("Check", R.drawable.ic_search),
-    EXPORT("Export", R.drawable.ic_download),
+    EXPORT("Export", R.drawable.ic_upload),
     BIP85("BIP-85", R.drawable.ic_account_tree),
     SIGN_MESSAGE("Message", R.drawable.ic_signature);
 
