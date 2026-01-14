@@ -79,7 +79,7 @@ Components:
               ▼                               ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
 │  Initialize Session Key     │   │  Record Failed Attempt      │
-│  Reset attempt counter     │   │  Apply exponential backoff  │
+│  Reset attempt counter      │   │  Apply exponential backoff  │
 └─────────────────────────────┘   └─────────────────────────────┘
 ```
 
