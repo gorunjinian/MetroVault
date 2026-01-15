@@ -63,20 +63,22 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         val showWarningDialog: Boolean = false
     ) {
         // Derived properties
-        val requiredEntropyBytes: Int get() = if (wordCount == 12) 16 else 32
+        val requiredEntropyBits: Int get() = if (wordCount == 12) 128 else 256
 
         val entropyBytes: ByteArray get() = calculateEntropyBytes(entropyType, collectedEntropy)
 
-        val entropyProgress: Float get() =
-            (entropyBytes.size.toFloat() / requiredEntropyBytes).coerceIn(0f, 1f)
-
-        val bitsCollected: Int get() = if (entropyType == "coin") {
-            collectedEntropy.size
+        // Calculate bits collected based on entropy type
+        // Coin flip: 1 bit per flip (log2(2) = 1)
+        // Dice roll: ~2.58 bits per roll (log2(6) ≈ 2.585)
+        val bitsCollected: Double get() = if (entropyType == "coin") {
+            collectedEntropy.size.toDouble()
         } else {
-            (collectedEntropy.size * log2(6.0)).toInt()
+            collectedEntropy.size * log2(6.0)
         }
 
-        val bytesCollected: Double get() = bitsCollected / 8.0
+        // Progress is based on bits collected, not packed byte array size
+        val entropyProgress: Float get() =
+            (bitsCollected.toFloat() / requiredEntropyBits).coerceIn(0f, 1f)
 
         val entropyInputCount: String get() = "${collectedEntropy.size} ${
             if (entropyType == "coin") "coin flips" else "dice rolls"

@@ -103,8 +103,8 @@ fun CreateWalletScreen(
                     entropyType = uiState.entropyType,
                     collectedEntropy = uiState.collectedEntropy,
                     entropyProgress = uiState.entropyProgress,
-                    bytesCollected = uiState.bytesCollected,
-                    requiredEntropyBytes = uiState.requiredEntropyBytes,
+                    bitsCollected = uiState.bitsCollected,
+                    requiredEntropyBits = uiState.requiredEntropyBits,
                     entropyInputCount = uiState.entropyInputCount,
                     onEntropyTypeChange = { viewModel.setEntropyType(it) },
                     onAddEntropy = { viewModel.addEntropyInput(it) },
@@ -446,8 +446,8 @@ private fun Step2Entropy(
     entropyType: String,
     collectedEntropy: List<Int>,
     entropyProgress: Float,
-    bytesCollected: Double,
-    requiredEntropyBytes: Int,
+    bitsCollected: Double,
+    requiredEntropyBits: Int,
     entropyInputCount: String,
     onEntropyTypeChange: (String) -> Unit,
     onAddEntropy: (Int) -> Unit,
@@ -619,7 +619,7 @@ private fun Step2Entropy(
                 )
 
                 Text(
-                    text = "${String.format("%.1f", bytesCollected)} bytes collected ($requiredEntropyBytes bytes recommended)",
+                    text = "${String.format("%.0f", bitsCollected)} bits collected ($requiredEntropyBits bits recommended)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
