@@ -63,6 +63,10 @@ fun WalletDetailsScreen(
 
     // Check if multisig wallet
     val isMultisig = activeWalletMetadata?.isMultisig ?: false
+    
+    // Check if currently viewing a stateless wallet (not just if one exists in memory)
+    // Stateless wallet is active only if no persistent wallet is loaded (activeWalletMetadata == null)
+    val isStatelessWallet = activeWalletMetadata == null && wallet.hasStatelessWallet()
 
     // Calculated fingerprints for multi-sig local keys (reflects passphrase if entered)
     var calculatedKeyFingerprints by remember { mutableStateOf<List<com.gorunjinian.metrovault.domain.manager.PassphraseManager.CalculatedKeyFingerprint>>(emptyList()) }
@@ -109,6 +113,22 @@ fun WalletDetailsScreen(
                         ) {
                             Text(
                                 text = "Multi-Sig",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    // Stateless badge
+                    if (isStatelessWallet) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Stateless",
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold
@@ -399,8 +419,8 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Sign/Verify Message (not for multisig wallets)
-            if (!isMultisig) {
+            // Sign/Verify Message (not for multisig or stateless wallets)
+            if (!isMultisig && !isStatelessWallet) {
                 ElevatedCard(
                     onClick = onSignMessage,
                     modifier = Modifier.fillMaxWidth()
@@ -431,8 +451,8 @@ fun WalletDetailsScreen(
                 }
             }
 
-            // BIP-85 Derivation (only if enabled in settings and not multisig)
-            if (bip85Enabled && !isMultisig) {
+            // BIP-85 Derivation (only if enabled in settings and not multisig/stateless)
+            if (bip85Enabled && !isMultisig && !isStatelessWallet) {
                 ElevatedCard(
                     onClick = onBIP85,
                     modifier = Modifier.fillMaxWidth()
@@ -463,8 +483,8 @@ fun WalletDetailsScreen(
                 }
             }
 
-            // Different Accounts (only if enabled in settings and not multisig)
-            if (differentAccountsEnabled && !isMultisig) {
+            // Different Accounts (only if enabled in settings and not multisig/stateless)
+            if (differentAccountsEnabled && !isMultisig && !isStatelessWallet) {
                 ElevatedCard(
                     onClick = onDifferentAccounts,
                     modifier = Modifier.fillMaxWidth()
@@ -526,32 +546,34 @@ fun WalletDetailsScreen(
                 }
             }
 
-            // Delete Wallet
-            ElevatedCard(
-                onClick = { walletToDelete = activeWalletMetadata },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Delete Wallet (not for stateless wallets - nothing to delete)
+            if (!isStatelessWallet) {
+                ElevatedCard(
+                    onClick = { walletToDelete = activeWalletMetadata },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_delete),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                    Column {
-                        Text(
-                            text = "Delete Wallet",
-                            style = MaterialTheme.typography.titleMedium
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_delete),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.error
                         )
-                        Text(
-                            text = "Permanently remove this wallet",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column {
+                            Text(
+                                text = "Delete Wallet",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Permanently remove this wallet",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

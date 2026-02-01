@@ -71,19 +71,19 @@ fun AccountKeysScreen(
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf("") }
     
-    // Account selection state
+    // Account selection state - unified for both stateless and persistent wallets
     val walletsList by wallet.wallets.collectAsState()
     val walletId = wallet.getActiveWalletId()
     val activeWalletMetadata = remember(walletsList, walletId) {
         walletsList.find { it.id == walletId }
     }
-    val accounts = activeWalletMetadata?.accounts?.sorted() ?: listOf(0)
-    val currentActiveAccount = activeWalletMetadata?.activeAccountNumber ?: 0
-    var selectedAccountNumber by remember { mutableIntStateOf(currentActiveAccount) }
-    var accountDropdownExpanded by remember { mutableStateOf(false) }
     
-    // Base derivation path for key generation
-    val baseDerivationPath = activeWalletMetadata?.derivationPath ?: ""
+    // Get unified wallet info (handles stateless vs persistent internally)
+    val walletInfo = wallet.getActiveWalletInfo(activeWalletMetadata)
+    val accounts = walletInfo.accounts
+    val baseDerivationPath = walletInfo.derivationPath
+    var selectedAccountNumber by remember { mutableIntStateOf(walletInfo.accountNumber) }
+    var accountDropdownExpanded by remember { mutableStateOf(false) }
     
     // Compute keys based on export mode
     val displayKey = remember(selectedAccountNumber, baseDerivationPath, exportForMultisig, showPrivate, bip48ScriptType) {

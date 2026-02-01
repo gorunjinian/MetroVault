@@ -1,5 +1,6 @@
 package com.gorunjinian.metrovault.feature.home
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -33,13 +34,17 @@ import com.gorunjinian.metrovault.navigation.Screen
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.feature.settings.SettingsContent
 import com.gorunjinian.metrovault.feature.wallet.list.WalletsListContent
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
 
 
 enum class BottomNavTab {
     WALLETS, SETTINGS
 }
 
-@Suppress("UNUSED_PARAMETER")
+@SuppressLint("LocalContextResourcesRead")
+@Suppress("UNUSED_PARAMETER", "AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -52,7 +57,8 @@ fun HomeScreen(
     onAppearanceSettings: () -> Unit,
     onSecuritySettings: () -> Unit,
     onAdvancedSettings: () -> Unit,
-    onAbout: () -> Unit
+    onAbout: () -> Unit,
+    onWhitePaper: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(BottomNavTab.WALLETS) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -215,12 +221,37 @@ fun HomeScreen(
                     )
                 },
                 navigationIcon = {
+                    // Easter egg: Long-press icon for 5 seconds to view Bitcoin Whitepaper
+                    var isLongPressing by remember { mutableStateOf(false) }
+                    
+                    LaunchedEffect(isLongPressing) {
+                        if (isLongPressing) {
+                            delay(5000L) // 5 seconds
+                            if (isLongPressing) {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                onWhitePaper()
+                            }
+                        }
+                    }
+                    
                     Icon(
                         painter = painterResource(R.drawable.ic_metrovault),
                         contentDescription = "Metro Vault",
                         modifier = Modifier
                             .padding(start = 12.dp)
-                            .size(28.dp),
+                            .size(28.dp)
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onPress = {
+                                        isLongPressing = true
+                                        try {
+                                            awaitRelease()
+                                        } finally {
+                                            isLongPressing = false
+                                        }
+                                    }
+                                )
+                            },
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
@@ -286,6 +317,7 @@ fun HomeScreen(
                                 autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
                                 quickShortcuts = filteredShortcuts,
                                 onWalletClick = onWalletClickCallback,
+                                onStatelessWalletClick = { navController.navigate(Screen.WalletDetails.route) },
                                 onViewAddresses = onViewAddressesCallback,
                                 onScanPSBT = onScanPSBTCallback,
                                 onCheckAddress = onCheckAddressCallback,
@@ -416,23 +448,98 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
                     
-                    // Lock button in center
-                    FilledTonalIconButton(
-                        onClick = {
-                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            wallet.emergencyWipe()
-                            navController.navigate(Screen.Unlock.route) {
-                                popUpTo(0) { inclusive = true }
+                    // Lock button in center with Satoshi quote easter egg
+                    // Long-press for 5 seconds shows a random Satoshi quote
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val satoshiQuotes = context.resources.getStringArray(R.array.satoshi_quotes)
+                    var isLockLongPressing by remember { mutableStateOf(false) }
+                    var quoteTriggered by remember { mutableStateOf(false) }
+                    var showQuoteDialog by remember { mutableStateOf<String?>(null) }
+                    
+                    LaunchedEffect(isLockLongPressing) {
+                        if (isLockLongPressing) {
+                            delay(5000L) // 5 seconds
+                            if (isLockLongPressing) {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                quoteTriggered = true
+                                showQuoteDialog = satoshiQuotes.random()
                             }
-                        },
+                        }
+                    }
+                    
+                    // Quote Dialog
+                    showQuoteDialog?.let { quote ->
+                        AlertDialog(
+                            onDismissRequest = { showQuoteDialog = null },
+                            icon = {
+                                Text(
+                                    text = "₿",
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            title = {
+                                Text(
+                                    text = "Satoshi Nakamoto",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            },
+                            text = {
+                                Text(
+                                    text = quote,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showQuoteDialog = null }) {
+                                    Text("Dismiss")
+                                }
+                            }
+                        )
+                    }
+                    
+                    Box(
                         modifier = Modifier
                             .padding(horizontal = 12.dp)
                             .size(56.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onTap = {
+                                        // Only lock if quote wasn't triggered
+                                        if (!quoteTriggered) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            wallet.emergencyWipe()
+                                            navController.navigate(Screen.Unlock.route) {
+                                                popUpTo(0) { inclusive = true }
+                                            }
+                                        }
+                                        quoteTriggered = false
+                                    },
+                                    onPress = {
+                                        isLockLongPressing = true
+                                        try {
+                                            awaitRelease()
+                                        } finally {
+                                            isLockLongPressing = false
+                                        }
+                                    }
+                                )
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_lock),
                             contentDescription = "Lock",
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(28.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
                     
@@ -471,41 +578,178 @@ fun HomeScreen(
         val currentCount = wallets.size
 
         AlertDialog(
-            onDismissRequest = {
-                @Suppress("AssignedValueIsNeverRead")
-                showCreateDialog = false
-            },
-            title = { Text("Add Wallet") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("How would you like to add a wallet?")
+            onDismissRequest = { showCreateDialog = false },
+            title = {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = "Current: $currentCount/$maxWallets wallets",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Add Wallet",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        @Suppress("AssignedValueIsNeverRead")
-                        showCreateDialog = false
-                        navController.navigate(Screen.CreateWallet.route)
-                    }
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Create New")
+                    // Wallet capacity indicator - styled as a subtle chip
+                    val remaining = maxWallets - currentCount
+                    Surface(
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = "$currentCount of $maxWallets wallets added • $remaining available",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Create New Wallet - Card option
+                    Surface(
+                        onClick = {
+                            showCreateDialog = false
+                            navController.navigate(Screen.CreateWallet.route)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Surface(
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_add),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .padding(10.dp)
+                                        .size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Create New Wallet",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Generate a new wallet",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Import Existing Wallet - Card option
+                    Surface(
+                        onClick = {
+                            showCreateDialog = false
+                            navController.navigate(Screen.ImportWallet.route)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Surface(
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_download),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .padding(10.dp)
+                                        .size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Import Existing Wallet",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Restore from seed phrase",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Import Stateless - Card option
+                    Surface(
+                        onClick = {
+                            showCreateDialog = false
+                            navController.navigate(Screen.ImportStateless.route)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Surface(
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_qr_code_scanner),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .padding(10.dp)
+                                        .size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Import Stateless",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Temporary in-memory wallet",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                 }
             },
+            confirmButton = {},
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        @Suppress("AssignedValueIsNeverRead")
-                        showCreateDialog = false
-                        navController.navigate(Screen.ImportWallet.route)
-                    }
-                ) {
-                    Text("Import Existing")
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text("Cancel")
                 }
             }
         )

@@ -26,15 +26,15 @@ import kotlinx.coroutines.launch
 private fun formatTruncatedAddress(address: String): String {
     if (address.length <= 28) return address // Short enough to show fully
     
-    val first15 = address.take(15)
+    val first10 = address.take(10)
     val last15 = address.takeLast(15)
     
-    // Format with 2 spaces every 4 characters
+    // Format with 2 spaces every 5 characters
     fun formatWithSpaces(s: String): String {
         return s.chunked(5).joinToString("   ")
     }
     
-    return "${formatWithSpaces(first15)}  ...  ${formatWithSpaces(last15)}"
+    return "${formatWithSpaces(first10)}  ...  ${formatWithSpaces(last15)}"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

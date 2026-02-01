@@ -53,10 +53,11 @@ class   Wallet(context: Context) {
     private val multisigAddressService = MultisigAddressService()
     private val sessionKeyManager = SessionKeyManager.getInstance()
 
-    // Managers functionality for better separation of concerns
+    // Managers for better separation of concerns
     private val passphraseManager = com.gorunjinian.metrovault.domain.manager.PassphraseManager(secureStorage, bitcoinService)
     private val sessionManager = com.gorunjinian.metrovault.domain.manager.WalletSessionManager(secureStorage, passphraseManager)
     private val accountManager = com.gorunjinian.metrovault.domain.manager.WalletAccountManager(secureStorage)
+    private val statelessWalletManager = com.gorunjinian.metrovault.domain.manager.StatelessWalletManager(bitcoinService)
     private val signingService = WalletSigningService(secureStorage, bitcoinService)
     private val keyEncodingService = KeyEncodingService()
 
@@ -132,8 +133,10 @@ class   Wallet(context: Context) {
 
     /**
      * Emergency wipe - clears all sensitive data immediately.
+     * Also wipes any active stateless wallet.
      */
     fun emergencyWipe() {
+        wipeStatelessWallet()
         sessionManager.emergencyWipe { clearSession() }
     }
 
@@ -458,7 +461,18 @@ class   Wallet(context: Context) {
         }
     }
 
-    fun getActiveWalletState(): WalletState? = walletRepository.getActiveWalletState(activeWalletId)
+    /**
+     * Gets the active wallet state.
+     * Falls back to stateless wallet if no persisted wallet is active.
+     */
+    fun getActiveWalletState(): WalletState? {
+        // First try persisted wallet
+        val persistedState = walletRepository.getActiveWalletState(activeWalletId)
+        if (persistedState != null) return persistedState
+        
+        // Fall back to stateless wallet if active
+        return statelessWalletManager.get()
+    }
 
     // ==================== Wallet Operations ====================
 
@@ -541,10 +555,46 @@ class   Wallet(context: Context) {
         activeWalletId = null
     }
 
+    // ==================== Stateless Wallet (delegated to StatelessWalletManager) ====================
+    
+    /** Computes the master fingerprint for a mnemonic without modifying any state. */
+    fun computeFingerprintOnly(
+        mnemonic: List<String>,
+        passphrase: String = "",
+        derivationPath: String
+    ): String? = statelessWalletManager.computeFingerprintOnly(mnemonic, passphrase, derivationPath)
+    
+    /** Creates a stateless wallet from mnemonic and passphrase (memory-only). */
+    fun createStatelessWallet(
+        mnemonic: List<String>,
+        passphrase: String = "",
+        derivationPath: String
+    ): WalletState? = statelessWalletManager.create(mnemonic, passphrase, derivationPath)
+    
+    /** Gets the current stateless wallet state, if one exists. */
+    fun getStatelessWalletState(): WalletState? = statelessWalletManager.get()
+    
+    /** Wipes the stateless wallet from memory. */
+    fun wipeStatelessWallet() = statelessWalletManager.wipe()
+    
+    /** Checks if a stateless wallet is currently active. */
+    fun hasStatelessWallet(): Boolean = statelessWalletManager.hasWallet()
+    
+    /** Gets unified wallet info for the currently active wallet. */
+    fun getActiveWalletInfo(metadata: WalletMetadata?): com.gorunjinian.metrovault.domain.manager.StatelessWalletManager.ActiveWalletInfo =
+        statelessWalletManager.getActiveWalletInfo(metadata)
+
     // ==================== Bitcoin Operations ====================
 
     /** Check if the active wallet is a testnet wallet */
     fun isActiveWalletTestnet(): Boolean {
+        // Check stateless wallet first
+        val statelessState = statelessWalletManager.get()
+        if (statelessState != null) {
+            return DerivationPaths.isTestnet(statelessState.derivationPath)
+        }
+        
+        // Fall back to persisted wallet
         val walletId = activeWalletId ?: return false
         val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return false
 
@@ -591,6 +641,20 @@ class   Wallet(context: Context) {
     }
 
     fun signPsbt(psbtString: String): PsbtSigningResult {
+        // Check for stateless wallet first (no activeWalletId needed)
+        val statelessState = statelessWalletManager.get()
+        if (statelessState != null) {
+            val isTestnet = DerivationPaths.isTestnet(statelessState.derivationPath)
+            val result = signingService.signSingleSig(psbtString, statelessState, isTestnet)
+            return when (result) {
+                is WalletSigningService.SigningResult.Success ->
+                    PsbtSigningResult.Success(result.signedPsbt, result.alternativePathsUsed)
+                is WalletSigningService.SigningResult.Failure ->
+                    PsbtSigningResult.Failure(result.error, result.message)
+            }
+        }
+        
+        // Fall back to persisted wallet
         val activeMetadata = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
             ?: return PsbtSigningResult.Failure(
                 WalletSigningService.SigningError.NO_ACTIVE_WALLET,
@@ -656,6 +720,18 @@ class   Wallet(context: Context) {
         offset: Int = 0,
         isChange: Boolean = false
     ): List<BitcoinAddress>? {
+        // Check for stateless wallet first (no activeWalletId needed)
+        val statelessState = statelessWalletManager.get()
+        if (statelessState != null) {
+            val isTestnet = DerivationPaths.isTestnet(statelessState.derivationPath)
+            val accountPublicKey = statelessState.getAccountPublicKey() ?: return null
+            val scriptType = getScriptType(statelessState.derivationPath)
+            return (0 until count).mapNotNull { i ->
+                bitcoinService.generateAddress(accountPublicKey, offset + i, isChange, scriptType, isTestnet)
+            }
+        }
+        
+        // Fall back to persisted wallet
         val walletId = activeWalletId ?: return null
         val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return null
         val isTestnet = isActiveWalletTestnet()
@@ -685,6 +761,16 @@ class   Wallet(context: Context) {
     }
 
     fun checkAddressBelongsToWallet(address: String): AddressCheckResult? {
+        // Check for stateless wallet first
+        val statelessState = statelessWalletManager.get()
+        if (statelessState != null) {
+            val isTestnet = DerivationPaths.isTestnet(statelessState.derivationPath)
+            val accountPublicKey = statelessState.getAccountPublicKey() ?: return null
+            val scriptType = getScriptType(statelessState.derivationPath)
+            return bitcoinService.checkAddressBelongsToWallet(address, accountPublicKey, scriptType, isTestnet)
+        }
+        
+        // Fall back to persisted wallet
         val walletId = activeWalletId ?: return null
         val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return null
         val isTestnet = isActiveWalletTestnet()

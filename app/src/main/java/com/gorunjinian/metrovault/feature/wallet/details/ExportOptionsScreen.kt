@@ -39,6 +39,7 @@ private enum class SensitiveViewTarget {
 fun ExportOptionsScreen(
     wallet: Wallet,
     secureStorage: SecureStorage,
+    isStatelessWallet: Boolean = false,
     onBack: () -> Unit,
     onViewAccountKeys: () -> Unit,
     onViewDescriptors: () -> Unit,
@@ -176,32 +177,34 @@ fun ExportOptionsScreen(
                 }
             }
 
-            // Card 4: View Seed Phrase
-            ElevatedCard(
-                onClick = { showSeedWarningDialog = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Card 4: View Seed Phrase (hidden for stateless wallets)
+            if (!isStatelessWallet) {
+                ElevatedCard(
+                    onClick = { showSeedWarningDialog = true },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_privacy_tip),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                    Column {
-                        Text(
-                            text = "View Seed Phrase",
-                            style = MaterialTheme.typography.titleMedium
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_privacy_tip),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.error
                         )
-                        Text(
-                            text = "Show your recovery seed phrase or SeedQR",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        Column {
+                            Text(
+                                text = "View Seed Phrase",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Show your recovery seed phrase or SeedQR",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }

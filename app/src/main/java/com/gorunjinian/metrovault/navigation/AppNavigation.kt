@@ -44,11 +44,13 @@ import com.gorunjinian.metrovault.feature.wallet.details.SeedQRScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SignMessageScreen
 import com.gorunjinian.metrovault.feature.wallet.details.WalletDetailsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.DifferentAccountsScreen
+import com.gorunjinian.metrovault.feature.wallet.create.ImportStatelessScreen
 import com.gorunjinian.metrovault.feature.settings.AppearanceSettingsScreen
 import com.gorunjinian.metrovault.feature.settings.SecuritySettingsScreen
 import com.gorunjinian.metrovault.feature.settings.AdvancedSettingsScreen
 import com.gorunjinian.metrovault.feature.settings.WalletKeysScreen
 import com.gorunjinian.metrovault.feature.settings.LibUsedScreen
+import com.gorunjinian.metrovault.feature.settings.WhitePaperScreen
 
 // Optimized animation parameters for smoother performance
 private const val ANIMATION_DURATION = 250
@@ -99,6 +101,8 @@ sealed class Screen(val route: String) {
     object RootKey : Screen("root_key")
     object WalletKeys : Screen("wallet_keys")
     object LibUsed : Screen("lib_used")
+    object ImportStateless : Screen("import_stateless")
+    object WhitePaper : Screen("white_paper")
 }
 
 @Suppress("AssignedValueIsNeverRead")
@@ -227,6 +231,8 @@ fun AppNavigation(
             currentRoute != Screen.Unlock.route &&
             currentRoute != Screen.SetupPassword.route) {
             android.util.Log.d("AppNavigation", "Session expired while app resumed - navigating to unlock screen")
+            // Wipe stateless wallet on session lock
+            wallet.wipeStatelessWallet()
             navController.navigate(Screen.Unlock.route) {
                 popUpTo(0) { inclusive = true }
             }
@@ -311,7 +317,8 @@ fun AppNavigation(
                 onAppearanceSettings = { navController.navigate(Screen.SettingsAppearance.route) },
                 onSecuritySettings = { navController.navigate(Screen.SettingsSecurity.route) },
                 onAdvancedSettings = { navController.navigate(Screen.SettingsAdvanced.route) },
-                onAbout = { navController.navigate(Screen.About.route) }
+                onAbout = { navController.navigate(Screen.About.route) },
+                onWhitePaper = { navController.navigate(Screen.WhitePaper.route) }
             )
         }
 
@@ -462,6 +469,7 @@ fun AppNavigation(
             ExportOptionsScreen(
                 wallet = wallet,
                 secureStorage = secureStorage,
+                isStatelessWallet = wallet.hasStatelessWallet(),
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)
@@ -703,6 +711,29 @@ fun AppNavigation(
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.SettingsAdvanced.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.ImportStateless.route) {
+            ImportStatelessScreen(
+                wallet = wallet,
+                onBack = { navController.navigateUp() },
+                onWalletCreated = {
+                    // Navigate to unified WalletDetailsScreen for stateless wallets
+                    navController.navigate(Screen.WalletDetails.route) {
+                        popUpTo(Screen.Home.route) { inclusive = false }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.WhitePaper.route) {
+            WhitePaperScreen(
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route)
                     }
                 }
             )

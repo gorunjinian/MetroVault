@@ -32,7 +32,7 @@
     <string name="use_bip39_passphrase">Use BIP39 passphrase (25th word)</string>
     <string name="bip39_passphrase_visible">BIP39 Passphrase (visible)</string>
     <string name="confirm_bip39_passphrase">Confirm BIP39 Passphrase</string>
-    <string name="bip39_passphrase_warning">⚠️ WARNING: A single typo creates a completely different wallet. The passphrase is shown in plain text so you can verify it carefully.</string>
+    <string name="bip39_passphrase_warning">WARNING: A single typo creates a completely different wallet. The passphrase is shown in plain text so you can verify it carefully.</string>
     <string name="bip39_passphrase_mismatch">BIP39 passphrases do not match</string>
     <string name="bip39_not_encryption_password">This is NOT your encryption password. This is the BIP39 passphrase.</string>
 
@@ -40,7 +40,7 @@
     <string name="custom_entropy">Add Custom Entropy</string>
     <string name="dice_rolls">Dice Rolls</string>
     <string name="coin_flips">Coin Flips</string>
-    <string name="enter_dice_rolls">Enter dice rolls (1-6)</string>
+    <string name="enter_dice_rolls">Enter dice rolls (1–6)</string>
     <string name="enter_coin_flips">Enter coin flips (H/T)</string>
     <string name="use_custom_entropy">Use Custom Entropy</string>
     <string name="skip_custom_entropy">Skip (Use System Entropy)</string>
@@ -94,4 +94,54 @@
     <string name="invalid_seed">Invalid seed phrase</string>
     <string name="camera_permission_required">Camera permission is required</string>
     <string name="biometric_not_available">Biometric authentication is not available</string>
+
+    <!-- Bitcoin Whitepaper (Easter Egg) -->
+    <string name="whitepaper_title">Bitcoin:</string>
+    <string name="whitepaper_subtitle">A Peer-to-Peer Electronic Cash System</string>
+    <string name="whitepaper_date">October 31, 2008</string>
+    
+    <string name="whitepaper_abstract_title">Abstract</string>
+    <string name="whitepaper_abstract">A purely peer-to-peer version of electronic cash would allow online payments to be sent directly from one party to another without going through a financial institution. Digital signatures provide part of the solution, but the main benefits are lost if a trusted third party is still required to prevent double-spending. We propose a solution to the double-spending problem using a peer-to-peer network.</string>
+    
+    <string name="whitepaper_intro_title">1. Introduction</string>
+    <string name="whitepaper_intro">Commerce on the Internet has come to rely almost exclusively on financial institutions serving as trusted third parties. While the system works well enough for most transactions, it still suffers from the inherent weaknesses of the trust-based model. What is needed is an electronic payment system based on cryptographic proof instead of trust.</string>
+    
+    <string name="whitepaper_transactions_title">2. Transactions</string>
+    <string name="whitepaper_transactions">We define an electronic coin as a chain of digital signatures. Each owner transfers the coin to the next by digitally signing a hash of the previous transaction and the public key of the next owner and adding these to the end of the coin.</string>
+    
+    <string name="whitepaper_timestamp_title">3. Timestamp Server</string>
+    <string name="whitepaper_timestamp">The solution we propose begins with a timestamp server. A timestamp server works by taking a hash of a block of items to be timestamped and widely publishing the hash. The timestamp proves that the data must have existed at the time in order to get into the hash.</string>
+    
+    <string name="whitepaper_pow_title">4. Proof-of-Work</string>
+    <string name="whitepaper_pow">To implement a distributed timestamp server on a peer-to-peer basis, we will need to use a proof-of-work system. The proof-of-work involves scanning for a value that when hashed, the hash begins with a number of zero bits. Once the CPU effort has been expended to satisfy the proof-of-work, the block cannot be changed without redoing the work.</string>
+    
+    <string name="whitepaper_network_title">5. Network</string>
+    <string name="whitepaper_network">The steps to run the network are: 1) New transactions are broadcast to all nodes. 2) Each node collects new transactions into a block. 3) Each node works on finding a proof-of-work for its block. 4) When a node finds a proof-of-work, it broadcasts the block. 5) Nodes accept the block only if all transactions are valid. 6) Nodes express acceptance by working on the next block.</string>
+    
+    <string name="whitepaper_incentive_title">6. Incentive</string>
+    <string name="whitepaper_incentive">By convention, the first transaction in a block is a special transaction that starts a new coin owned by the creator of the block. This adds an incentive for nodes to support the network, and provides a way to initially distribute coins into circulation. The incentive can also be funded with transaction fees. If the output value of a transaction is less than its input value, the difference is a transaction fee that is added to the incentive value of the block containing the transaction.</string>
+    
+    <string name="whitepaper_security_title">7–12. Security \u0026 Verification</string>
+    <string name="whitepaper_security">The system is secure as long as honest nodes collectively control more CPU power than any cooperating group of attacker nodes. Transactions can be verified without running a full network node using Simplified Payment Verification. Privacy is maintained by keeping public keys anonymous.</string>
+    
+    <string name="whitepaper_author">Satoshi Nakamoto</string>
+    <string name="whitepaper_email">satoshin@gmx.com</string>
+    <string name="whitepaper_times_headline">"Chancellor on brink of second bailout for banks"</string>
+    <string name="whitepaper_times_source">— The Times, January 3, 2009</string>
+
+    <!-- Satoshi Nakamoto Quotes (Easter Egg) -->
+    <string-array name="satoshi_quotes">
+        <item>"If you don\'t believe me or don\'t get it, I don\'t have time to try to convince you, sorry."</item>
+        <item>"The root problem with conventional currency is all the trust that\'s required to make it work."</item>
+        <item>"I\'ve been working on a new electronic cash system that\'s fully peer-to-peer, with no trusted third party."</item>
+        <item>"Lost coins only make everyone else\'s coins worth slightly more. Think of it as a donation to everyone."</item>
+        <item>"The nature of Bitcoin is such that once version 0.1 was released, the core design was set in stone for the rest of its lifetime."</item>
+        <item>"It might make sense just to get some in case it catches on."</item>
+        <item>"Writing a description for this thing for general audiences is bloody hard. There\'s nothing to relate it to."</item>
+        <item>"I\'m sure that in 20 years there will either be very large transaction volume or no volume."</item>
+        <item>"The Times 03/Jan/2009 Chancellor on brink of second bailout for banks."</item>
+        <item>"We have proposed a system for electronic transactions without relying on trust."</item>
+        <item>"Governments are good at cutting off the heads of centrally controlled networks, but pure P2P networks seem to be holding their own."</item>
+        <item>"When someone tries to buy all the world\'s supply of a scarce asset, the more they buy the higher the price goes."</item>
+    </string-array>
 </resources>

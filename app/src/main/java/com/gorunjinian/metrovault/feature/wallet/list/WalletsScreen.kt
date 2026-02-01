@@ -49,6 +49,7 @@ fun WalletsListContent(
     autoExpandSingleWallet: Boolean = false,
     quickShortcuts: List<QuickShortcut> = QuickShortcut.DEFAULT,
     onWalletClick: (String) -> Unit,
+    onStatelessWalletClick: () -> Unit = {},
     onViewAddresses: (String) -> Unit,
     onScanPSBT: (String) -> Unit,
     onCheckAddress: (String) -> Unit,
@@ -128,6 +129,27 @@ fun WalletsListContent(
             // Disable user scroll during drag for smoother experience
             userScrollEnabled = draggingItemIndex == null && !isEditMode
         ) {
+            // Stateless wallet card at top of list (if active)
+            val statelessState = wallet.getStatelessWalletState()
+            if (statelessState != null && !isEditMode) {
+                item(key = "stateless_wallet") {
+                    StatelessWalletCard(
+                        fingerprint = statelessState.fingerprint.uppercase(),
+                        derivationPath = statelessState.derivationPath,
+                        onClick = onStatelessWalletClick
+                    )
+                }
+                // Divider between stateless and regular wallets
+                if (wallets.isNotEmpty()) {
+                    item(key = "stateless_divider") {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant
+                        )
+                    }
+                }
+            }
+            
             itemsIndexed(
                 items = wallets,
                 key = { _, walletItem -> walletItem.id }
@@ -669,6 +691,107 @@ fun QuickActionButton(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1
+            )
+        }
+    }
+}
+
+/**
+ * Stateless wallet card - shown at top of wallet list when a stateless wallet is active.
+ * Has a distinct appearance with "Stateless" badge in errorContainer color.
+ */
+@Composable
+fun StatelessWalletCard(
+    fingerprint: String,
+    derivationPath: String,
+    onClick: () -> Unit
+) {
+    val isTestnet = DerivationPaths.isTestnet(derivationPath)
+    val walletType = when (DerivationPaths.getPurpose(derivationPath)) {
+        86 -> "Taproot"
+        84 -> "Native SegWit"
+        49 -> "Nested SegWit"
+        44 -> "Legacy"
+        else -> "Unknown"
+    }
+    
+    ElevatedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Stateless Wallet",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    // Stateless badge
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "Stateless",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    // Testnet badge
+                    if (isTestnet) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "Testnet",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = fingerprint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "• $walletType",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            Icon(
+                painter = painterResource(R.drawable.ic_chevron_right),
+                contentDescription = "Open",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
             )
         }
     }
