@@ -2,12 +2,12 @@ package com.gorunjinian.metrovault.feature.wallet.list
 
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -19,17 +19,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
-import androidx.compose.runtime.rememberUpdatedState
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
@@ -39,8 +34,9 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.model.WalletMetadata
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
-@Suppress("AssignedValueIsNeverRead")
 @Composable
 fun WalletsListContent(
     wallet: Wallet,
@@ -82,12 +78,6 @@ fun WalletsListContent(
         }
     }
 
-    // Drag and Drop State
-    var draggingItemIndex by remember { mutableStateOf<Int?>(null) }
-    var dragStartIndex by remember { mutableIntStateOf(0) } // Track where drag started
-    var draggingItemOffset by remember { mutableFloatStateOf(0f) }
-    val itemHeight = remember { mutableIntStateOf(0) }
-
     if (wallets.isEmpty()) {
         // Empty State
         Box(
@@ -119,6 +109,13 @@ fun WalletsListContent(
     } else {
         // Wallet List with Drag and Drop using LazyColumn for better performance
         val lazyListState = rememberLazyListState()
+        val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+            val fromIndex = wallets.indexOfFirst { it.id == from.key }
+            val toIndex = wallets.indexOfFirst { it.id == to.key }
+            if (fromIndex != -1 && toIndex != -1) {
+                wallet.swapWallets(fromIndex, toIndex)
+            }
+        }
 
         LazyColumn(
             state = lazyListState,
@@ -127,7 +124,7 @@ fun WalletsListContent(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             // Disable user scroll during drag for smoother experience
-            userScrollEnabled = draggingItemIndex == null && !isEditMode
+            userScrollEnabled = !isEditMode
         ) {
             // Stateless wallet card at top of list (if active)
             val statelessState = wallet.getStatelessWalletState()
@@ -154,205 +151,124 @@ fun WalletsListContent(
                 items = wallets,
                 key = { _, walletItem -> walletItem.id }
             ) { index, walletItem ->
-                // Use rememberUpdatedState to always have the current index in callbacks
-                val currentIndex by rememberUpdatedState(index)
-                val currentWallets by rememberUpdatedState(wallets)
+                ReorderableItem(reorderableState, key = walletItem.id) { isDragging ->
+                    val baseScale = if (isEditMode) 0.97f else 1f
+                    val scale by animateFloatAsState(
+                        if (isDragging) baseScale * 1.05f else baseScale, label = "dragScale"
+                    )
+                    val shadow by animateDpAsState(
+                        if (isDragging) 8.dp else 2.dp, label = "dragShadow"
+                    )
 
-                // Use derivedStateOf for drag states to reduce recompositions
-                val isDragging by remember {
-                    derivedStateOf {
-                        walletItem.id == draggingItemIndex?.let { wallets.getOrNull(it)?.id }
-                    }
-                }
-                
-                // Calculate visual offset: total drag minus the layout displacement from swaps
-                // This keeps the card exactly under the finger regardless of swaps
-                val slotHeight = itemHeight.intValue.toFloat() + with(LocalDensity.current) { 12.dp.toPx() }
-                val visualOffset by remember(slotHeight) { 
-                    derivedStateOf { 
-                        if (isDragging) {
-                            val currentIdx = draggingItemIndex ?: dragStartIndex
-                            val layoutDisplacement = (currentIdx - dragStartIndex) * slotHeight
-                            draggingItemOffset - layoutDisplacement
-                        } else 0f
-                    } 
-                }
-                
-                val zIndex by remember { derivedStateOf { if (isDragging) 1f else 0f } }
-                // In edit mode, cards are 97% scale (subtle shrink); when dragging, bump slightly
-                val baseScale = if (isEditMode) 0.97f else 1f
-                val scale by remember(isEditMode) { derivedStateOf { if (isDragging) baseScale * 1.05f else baseScale } }
-                val shadow by remember { derivedStateOf { if (isDragging) 8.dp else 2.dp } }
-
-                Box(
-                    modifier = Modifier
-                        // Apply graphicsLayer in edit mode for scaling, or when dragging for translation
-                        .then(
-                            if (isEditMode || isDragging) Modifier.graphicsLayer {
-                                translationY = visualOffset
-                                scaleX = scale
-                                scaleY = scale
-                            } else Modifier
-                        )
-                        .zIndex(zIndex)
-                        .onGloballyPositioned { coordinates ->
-                            if (itemHeight.intValue == 0) {
-                                itemHeight.intValue = coordinates.size.height
-                            }
+                    Box(modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) {
+                        // Compute wallet type and testnet status
+                        val isWalletTestnet = remember(walletItem.derivationPath) {
+                            DerivationPaths.isTestnet(walletItem.derivationPath)
                         }
-                ) {
-                    // Compute wallet type and testnet status
-                    val isWalletTestnet = remember(walletItem.derivationPath) {
-                        DerivationPaths.isTestnet(walletItem.derivationPath)
-                    }
 
-                    WalletCard(
-                        name = walletItem.name,
-                        masterFingerprint = walletItem.masterFingerprint.uppercase(),
-                        isTestnet = isWalletTestnet,
-                        isMultisig = walletItem.isMultisig,
-                        elevation = shadow,
-                        isEditMode = isEditMode,
-                        isExpanded = if (isEditMode) false else expandedWalletId == walletItem.id,
-                        // For multisig wallets, use only allowed shortcuts: Addresses, Sign PSBT, Check Address
-                        quickShortcuts = if (walletItem.isMultisig) {
-                            QuickShortcut.DEFAULT
-                        } else {
-                            quickShortcuts
-                        },
-                        onClick = {
-                            if (draggingItemIndex == null) {
-                                if (isEditMode) {
-                                    // In edit mode, tapping card opens rename dialog
-                                    showRenameDialog = walletItem.id to walletItem.name
-                                } else {
-                                    // Normal mode: navigate to wallet details
-                                    if (walletItem.isMultisig) {
-                                        // Multi-sig: check if any local keys need passphrase
-                                        scope.launch {
-                                            val keysNeeding = wallet.getKeysNeedingPassphrase(walletItem.id)
-                                            if (keysNeeding.isNotEmpty()) {
-                                                multisigKeysNeedingPassphrase = keysNeeding
-                                                currentKeyPassphraseIndex = 0
-                                                pendingMultisigWalletId = walletItem.id
+                        WalletCard(
+                            name = walletItem.name,
+                            masterFingerprint = walletItem.masterFingerprint.uppercase(),
+                            isTestnet = isWalletTestnet,
+                            isMultisig = walletItem.isMultisig,
+                            elevation = shadow,
+                            isEditMode = isEditMode,
+                            isExpanded = if (isEditMode) false else expandedWalletId == walletItem.id,
+                            // For multisig wallets, use only allowed shortcuts: Addresses, Sign PSBT, Check Address
+                            quickShortcuts = if (walletItem.isMultisig) {
+                                QuickShortcut.DEFAULT
+                            } else {
+                                quickShortcuts
+                            },
+                            onClick = {
+                                if (!isDragging) {
+                                    if (isEditMode) {
+                                        // In edit mode, tapping card opens rename dialog
+                                        showRenameDialog = walletItem.id to walletItem.name
+                                    } else {
+                                        // Normal mode: navigate to wallet details
+                                        if (walletItem.isMultisig) {
+                                            // Multi-sig: check if any local keys need passphrase
+                                            scope.launch {
+                                                val keysNeeding = wallet.getKeysNeedingPassphrase(walletItem.id)
+                                                if (keysNeeding.isNotEmpty()) {
+                                                    multisigKeysNeedingPassphrase = keysNeeding
+                                                    currentKeyPassphraseIndex = 0
+                                                    pendingMultisigWalletId = walletItem.id
+                                                } else {
+                                                    onWalletClick(walletItem.id)
+                                                }
+                                            }
+                                        } else {
+                                            // Single-sig: use existing passphrase check
+                                            if (wallet.needsPassphraseInput(walletItem.id)) {
+                                                showPassphraseDialog = walletItem
                                             } else {
                                                 onWalletClick(walletItem.id)
                                             }
                                         }
-                                    } else {
-                                        // Single-sig: use existing passphrase check
-                                        if (wallet.needsPassphraseInput(walletItem.id)) {
-                                            showPassphraseDialog = walletItem
+                                    }
+                                }
+                            },
+                            onLongPress = {
+                                // Long press to delete wallet (only when not in edit mode)
+                                if (!isEditMode && !isDragging) {
+                                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                    walletToDelete = walletItem
+                                }
+                            },
+                            onExpandClick = {
+                                if (!isEditMode) {
+                                    expandedWalletId = if (expandedWalletId == walletItem.id) null else walletItem.id
+                                }
+                            },
+                            onShortcutClick = { shortcut ->
+                                // Check if wallet needs passphrase re-entry before executing shortcut
+                                if (walletItem.isMultisig) {
+                                    // Multi-sig: check if any local keys need passphrase
+                                    scope.launch {
+                                        val keysNeeding = wallet.getKeysNeedingPassphrase(walletItem.id)
+                                        if (keysNeeding.isNotEmpty()) {
+                                            pendingShortcut = shortcut
+                                            multisigKeysNeedingPassphrase = keysNeeding
+                                            currentKeyPassphraseIndex = 0
+                                            pendingMultisigWalletId = walletItem.id
                                         } else {
-                                            onWalletClick(walletItem.id)
+                                            when (shortcut) {
+                                                QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
+                                                QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
+                                                QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
+                                                QuickShortcut.EXPORT -> onExport(walletItem.id)
+                                                QuickShortcut.BIP85 -> onBIP85(walletItem.id)
+                                                QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
+                                            }
                                         }
                                     }
-                                }
-                            }
-                        },
-                        onLongPress = {
-                            // Long press to delete wallet (only when not in edit mode)
-                            if (!isEditMode && draggingItemIndex == null) {
-                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                                walletToDelete = walletItem
-                            }
-                        },
-                        onExpandClick = {
-                            if (!isEditMode) {
-                                expandedWalletId = if (expandedWalletId == walletItem.id) null else walletItem.id
-                            }
-                        },
-                        onShortcutClick = { shortcut ->
-                            // Check if wallet needs passphrase re-entry before executing shortcut
-                            if (walletItem.isMultisig) {
-                                // Multi-sig: check if any local keys need passphrase
-                                scope.launch {
-                                    val keysNeeding = wallet.getKeysNeedingPassphrase(walletItem.id)
-                                    if (keysNeeding.isNotEmpty()) {
-                                        pendingShortcut = shortcut
-                                        multisigKeysNeedingPassphrase = keysNeeding
-                                        currentKeyPassphraseIndex = 0
-                                        pendingMultisigWalletId = walletItem.id
-                                    } else {
-                                        when (shortcut) {
-                                            QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
-                                            QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
-                                            QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
-                                            QuickShortcut.EXPORT -> onExport(walletItem.id)
-                                            QuickShortcut.BIP85 -> onBIP85(walletItem.id)
-                                            QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
-                                        }
+                                } else if (wallet.needsPassphraseInput(walletItem.id)) {
+                                    pendingShortcut = shortcut
+                                    showPassphraseDialog = walletItem
+                                } else {
+                                    when (shortcut) {
+                                        QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
+                                        QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
+                                        QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
+                                        QuickShortcut.EXPORT -> onExport(walletItem.id)
+                                        QuickShortcut.BIP85 -> onBIP85(walletItem.id)
+                                        QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
                                     }
                                 }
-                            } else if (wallet.needsPassphraseInput(walletItem.id)) {
-                                pendingShortcut = shortcut
-                                showPassphraseDialog = walletItem
-                            } else {
-                                when (shortcut) {
-                                    QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
-                                    QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
-                                    QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
-                                    QuickShortcut.EXPORT -> onExport(walletItem.id)
-                                    QuickShortcut.BIP85 -> onBIP85(walletItem.id)
-                                    QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
-                                }
-                            }
-                        },
-                        // In edit mode, use immediate drag; otherwise no drag handle interaction
-                        modifier = if (isEditMode) {
-                            Modifier.pointerInput(walletItem.id) {
-                                detectDragGestures(
-                                    onDragStart = {
-                                        draggingItemIndex = currentIndex
-                                        dragStartIndex = currentIndex
-                                        draggingItemOffset = 0f
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        draggingItemOffset += dragAmount.y
-
-                                        val dragIdx = draggingItemIndex ?: return@detectDragGestures
-                                        
-                                        // Calculate item slot height
-                                        val slotHeight = itemHeight.intValue.toFloat() + 12.dp.toPx()
-                                        
-                                        // Calculate visual offset (offset from current layout position)
-                                        val layoutDisplacement = (dragIdx - dragStartIndex) * slotHeight
-                                        val currentVisualOffset = draggingItemOffset - layoutDisplacement
-                                        
-                                        // Swap when visual offset exceeds threshold (60% of slot height)
-                                        val swapThreshold = slotHeight * 0.6f
-                                        
-                                        // Swap down
-                                        if (currentVisualOffset > swapThreshold && dragIdx < currentWallets.size - 1) {
-                                            wallet.swapWallets(dragIdx, dragIdx + 1)
-                                            draggingItemIndex = dragIdx + 1
-                                        }
-                                        // Swap up
-                                        else if (currentVisualOffset < -swapThreshold && dragIdx > 0) {
-                                            wallet.swapWallets(dragIdx, dragIdx - 1)
-                                            draggingItemIndex = dragIdx - 1
-                                        }
-                                    },
-                                    onDragEnd = {
-                                        draggingItemIndex = null
-                                        draggingItemOffset = 0f
-
-                                        // Save new order
-                                        scope.launch {
-                                            wallet.saveWalletListOrder()
-                                        }
-                                    },
-                                    onDragCancel = {
-                                        draggingItemIndex = null
-                                        draggingItemOffset = 0f
+                            },
+                            modifier = if (isEditMode) {
+                                Modifier.draggableHandle(
+                                    onDragStopped = {
+                                        scope.launch { wallet.saveWalletListOrder() }
                                     }
                                 )
+                            } else {
+                                Modifier
                             }
-                        } else {
-                            Modifier
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }

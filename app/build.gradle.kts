@@ -1,13 +1,17 @@
+import com.android.build.api.dsl.ApplicationExtension
 import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
-android {
+val appVersionName = "3.7.0"
+val appVersionCode = 3
+
+configure<ApplicationExtension> {
     namespace = "com.gorunjinian.metrovault"
     compileSdk = 36
 
@@ -15,8 +19,8 @@ android {
         applicationId = "com.gorunjinian.metrovault"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "3.7.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -25,7 +29,6 @@ android {
         create("release") {
             val keystorePropertiesFile = rootProject.file("keystore.properties")
             if (keystorePropertiesFile.exists()) {
-                // Local builds: load from keystore.properties
                 val keystoreProperties = Properties()
                 keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 
@@ -34,7 +37,6 @@ android {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
             } else {
-                // CI/CD builds: load from environment variables
                 val envStorePath = System.getenv("KEYSTORE_PATH")
                 if (!envStorePath.isNullOrEmpty()) {
                     storeFile = file(envStorePath)
@@ -58,38 +60,17 @@ android {
         }
     }
 
-    applicationVariants.all {
-        val variant = this
-        variant.outputs.all {
-            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            val appName = "MetroVault"
-            val versionName = variant.versionName
-            val buildType = variant.buildType.name
-            output.outputFileName = "$appName-$versionName-$buildType.apk"
-        }
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
-    }
-
     buildFeatures {
-        viewBinding = true
         compose = true
         buildConfig = true
     }
 
     packaging {
-        // Enable compressed shared libraries to handle pre-built .so files
-        // from third-party dependencies (like Signal's Argon2) that aren't 16KB aligned
-        // This allows the app to work on 16KB page size devices
         jniLibs {
             useLegacyPackaging = true
         }
@@ -109,56 +90,68 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+base.archivesName.set("MetroVault-$appVersionName")
+
 dependencies {
     // Core Android
-    implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("androidx.activity:activity-ktx:1.12.4")
-    implementation("androidx.fragment:fragment-ktx:1.8.9")
-    implementation("androidx.core:core-splashscreen:1.2.0")
+    implementation(libs.core.ktx)
+    implementation(libs.appcompat)
+    implementation(libs.activity.ktx)
+    implementation(libs.fragment.ktx)
+    implementation(libs.splashscreen)
 
     // Material 3
-    implementation("com.google.android.material:material:1.13.0")
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation(libs.material)
+    implementation(libs.compose.material.icons.extended)
 
-    // Jetpack Compose
-    implementation(platform("androidx.compose:compose-bom:2026.02.00"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.activity:activity-compose:1.12.4")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
-    implementation("androidx.navigation:navigation-compose:2.9.7")
+    // Reorderable drag-and-drop for LazyColumn
+    implementation(libs.reorderable)
+
+    // Jetpack Compose (BOM manages all Compose artifact versions)
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.activity.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.navigation.compose)
 
     // Crypto & Security
-    implementation("androidx.security:security-crypto:1.1.0")
-    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation(libs.security.crypto)
+    implementation(libs.biometric)
 
     // QR Code
-    implementation("com.google.zxing:core:3.5.4")
-    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
-    //CBor
-    implementation("co.nstant.in:cbor:0.9")
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.embedded)
+
+    // CBOR
+    implementation(libs.cbor)
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation(libs.coroutines.android)
+    implementation(libs.coroutines.core)
 
     // Lifecycle
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.viewmodel.ktx)
+    implementation(libs.lifecycle.process)
 
-    //bitcoin libraries
+    // Bitcoin
     implementation(kotlin("stdlib"))
-    implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.22.0")
+    implementation(libs.secp256k1.android)
 
-    implementation("androidx.lifecycle:lifecycle-process:2.10.0")
-    implementation("androidx.window:window:1.5.1")
-    implementation("androidx.compose.ui:ui-text:1.10.4")
+    implementation(libs.window)
+    implementation(libs.compose.ui.text)
 
     // Testing
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.junit.ext)
+    androidTestImplementation(libs.espresso.core)
 }
