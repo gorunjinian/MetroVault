@@ -28,8 +28,6 @@ espresso = "3.7.0"
 
 [libraries]
 # Core Android
-bbqr = { module = "com.gorunjinian:bbqr", version.ref = "bbqr" }
-bcur-kotlin = { module = "com.gorunjinian:bcur-kotlin", version.ref = "bcur-kotlin" }
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
 appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }
@@ -58,6 +56,10 @@ biometric = { group = "androidx.biometric", name = "biometric", version.ref = "b
 # QR Code
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 zxing-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxing-embedded" }
+
+#BBQr and BC-UR
+bbqr = { module = "com.gorunjinian:bbqr", version.ref = "bbqr" }
+bcur-kotlin = { module = "com.gorunjinian:bcur-kotlin", version.ref = "bcur-kotlin" }
 
 # CBOR
 cbor = { group = "co.nstant.in", name = "cbor", version.ref = "cbor" }
