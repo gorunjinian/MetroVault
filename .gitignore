@@ -5,6 +5,7 @@
 
 # IDE configs
 /.idea/
+/.claude/
 /.vscode/
 *.iml
 
@@ -27,4 +28,3 @@ Thumbs.db
 /.kotlin/
 /RELEASE NOTES TEMPLATE.md
 /FEATURES.md
-/.claude/settings.local.json

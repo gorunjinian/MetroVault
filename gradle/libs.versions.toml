@@ -1,14 +1,16 @@
 [versions]
 agp = "9.1.0"
-kotlin = "2.3.10"
+bbqr = "1.0.0"
+bcur-kotlin = "1.0.1"
+kotlin = "2.3.20"
 core-ktx = "1.18.0"
 appcompat = "1.7.1"
 activity = "1.13.0"
 fragment = "1.8.9"
 splashscreen = "1.2.0"
 material = "1.13.0"
-compose-bom = "2026.03.00"
-compose-ui-text = "1.10.5"
+compose-bom = "2026.03.01"
+compose-ui-text = "1.10.6"
 lifecycle = "2.10.0"
 navigation = "2.9.7"
 security-crypto = "1.1.0"
@@ -17,8 +19,8 @@ zxing = "3.5.4"
 zxing-embedded = "4.3.0"
 cbor = "0.9"
 coroutines = "1.10.2"
-secp256k1 = "0.22.0"
-reorderable = "2.4.3"
+secp256k1 = "0.23.0"
+reorderable = "3.0.0"
 window = "1.5.1"
 junit = "4.13.2"
 junit-ext = "1.3.0"
@@ -26,6 +28,8 @@ espresso = "3.7.0"
 
 [libraries]
 # Core Android
+bbqr = { module = "com.gorunjinian:bbqr", version.ref = "bbqr" }
+bcur-kotlin = { module = "com.gorunjinian:bcur-kotlin", version.ref = "bcur-kotlin" }
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
 appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }

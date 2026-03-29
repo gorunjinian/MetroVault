@@ -131,6 +131,10 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.zxing.embedded)
 
+    //BBQr and BC-UR implementations
+    implementation(libs.bcur.kotlin)
+    implementation(libs.bbqr)
+
     // CBOR
     implementation(libs.cbor)
 
