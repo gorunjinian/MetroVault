@@ -20,13 +20,16 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
+import com.gorunjinian.bbqr.FileType
+import com.gorunjinian.bbqr.SplitResult
+import com.gorunjinian.bcur.UR
+import com.gorunjinian.bcur.UREncoder
 import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
+import com.gorunjinian.metrovault.lib.qrtools.DensitySettings
 import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeGenerator
-import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UR
-import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UREncoder
+import com.gorunjinian.metrovault.lib.qrtools.QRDensity
 import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
-import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -322,10 +325,10 @@ private fun generateDescriptorURv1(content: String): AnimatedQRResult? {
         // For BC-UR v1, we use ur:bytes encoding
         val contentBytes = content.toByteArray(Charsets.UTF_8)
         
-        val ur = UR.fromBytes("bytes", contentBytes)
+        val ur = UR.fromBytes(contentBytes)
         val encoder = UREncoder(ur, 250, 50, 0)
         
-        if (encoder.isSinglePart) {
+        if (encoder.isSinglePart()) {
             val urString = encoder.nextPart()
             val bitmap = QRCodeGenerator.generateQRCode(urString.uppercase(), size = 512)
             bitmap?.let {
@@ -370,79 +373,19 @@ private fun generateDescriptorURv1(content: String): AnimatedQRResult? {
 }
 
 /**
- * Generate BBQr encoded descriptor QR.
- * BBQr format: B$[encoding][type][total:2 base36][part:2 base36][data]
- * - encoding: H=hex, 2=base32, Z=zlib+base32, U=raw UTF-8
- * - type: U=Unicode/UTF-8 text, P=PSBT, T=Transaction, J=JSON, C=CBOR
- * - total/part: 2-char base36 encoded (0-indexed for part)
- * 
- * For descriptors, we use "2U" = Base32-encoded UTF-8 text.
- * Note: Sparrow/Coldcard expect Base32 encoding, NOT raw UTF-8.
- * 
- * For even visual distribution (like Sparrow), we:
- * 1. Calculate minimum frames needed at max capacity
- * 2. Distribute data evenly across all frames
+ * Generate BBQr encoded descriptor QR using bbqr-kotlin library.
  */
-@Suppress("KDocUnresolvedReference")
 private fun generateDescriptorBBQr(descriptor: String): AnimatedQRResult? {
     return try {
-        // Convert descriptor to UTF-8 bytes for Base32 encoding
         val descriptorBytes = descriptor.toByteArray(Charsets.UTF_8)
-        
-        // Use Base32 encoding (not raw UTF-8) for Sparrow compatibility
-        val encoding = '2'  // Base32 encoding
-        val dataType = 'U'  // Unicode text type
-        
-        val maxQrChars = 500
-        // BBQr header overhead: "B$" + encoding + type + 2 char total + 2 char part = 8 chars
-        val headerOverhead = 8
-        val maxDataChars = maxQrChars - headerOverhead
-        
-        // For Base32: 8 chars = 5 bytes
-        // Calculate max bytes per frame (aligned to 5-byte boundary for Base32)
-        val maxBytesPerFrame = (maxDataChars / 8) * 5
-        
-        // Calculate minimum number of frames needed
-        val totalBytes = descriptorBytes.size
-        val numFrames = kotlin.math.ceil(totalBytes.toDouble() / maxBytesPerFrame).toInt()
-            .coerceAtLeast(1)
-        
-        if (numFrames > 1295) {
-            android.util.Log.e("ExportMultiSigScreen", "Descriptor too large for BBQr: $numFrames parts")
-            return null
-        }
-        
-        // Distribute bytes evenly across frames
-        val baseBytesPerFrame = totalBytes / numFrames
-        // Align to 5-byte boundary (for Base32 encoding without padding issues)
-        val alignedBytesPerFrame = ((baseBytesPerFrame + 4) / 5) * 5
-        
-        android.util.Log.d("ExportMultiSigScreen", "BBQr descriptor: $totalBytes bytes in $numFrames frames (~$alignedBytesPerFrame bytes/frame)")
-        
-        // Split bytes into chunks with even distribution
-        val chunks = mutableListOf<ByteArray>()
-        var offset = 0
-        for (i in 0 until numFrames) {
-            val remaining = totalBytes - offset
-            val chunkSize = if (i == numFrames - 1) {
-                // Last frame takes whatever is left
-                remaining
-            } else {
-                // Non-final frames: use aligned size, but don't exceed remaining
-                alignedBytesPerFrame.coerceAtMost(remaining)
-            }
-            chunks.add(descriptorBytes.copyOfRange(offset, offset + chunkSize))
-            offset += chunkSize
-        }
-        
-        // Encode each byte chunk to Base32 and prepend BBQr header
-        val frameContents = chunks.mapIndexed { index, chunk ->
-            val chunkBase32 = PSBTDecoder.encodeBase32(chunk)
-            val totalBase36 = numFrames.toString(36).padStart(2, '0').uppercase()
-            val partBase36 = index.toString(36).padStart(2, '0').uppercase()
-            $$"B$$${encoding}$${dataType}$${totalBase36}$${partBase36}$${chunkBase32}"
-        }
-        
+        val options = DensitySettings.getBBQrSplitOptions(QRDensity.LOW)
+        android.util.Log.d("ExportMultiSigScreen", "BBQr descriptor: ${descriptorBytes.size} bytes")
+
+        val splitResult = SplitResult.fromData(descriptorBytes, FileType.UnicodeText, options)
+        val frameContents = splitResult.parts
+
+        android.util.Log.d("ExportMultiSigScreen", "BBQr descriptor: ${frameContents.size} frames (version=${splitResult.version})")
+
         val bitmaps = if (frameContents.size > 1) {
             QRCodeGenerator.generateConsistentQRCodes(frameContents, size = 512)
         } else {
@@ -450,7 +393,7 @@ private fun generateDescriptorBBQr(descriptor: String): AnimatedQRResult? {
                 QRCodeGenerator.generateQRCode(frame, size = 512)
             }
         }
-        
+
         bitmaps?.let {
             AnimatedQRResult(
                 frames = it,
@@ -485,13 +428,13 @@ private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat
             }
             ContentFormat.BSMS -> {
                 // Use ur:bytes/ for BSMS multi-line text format
-                UR.fromBytes("bytes", content.toByteArray(Charsets.UTF_8))
+                UR.fromBytes(content.toByteArray(Charsets.UTF_8))
             }
         }
 
         val encoder = UREncoder(ur, 250, 50, 0)
 
-        if (encoder.isSinglePart) {
+        if (encoder.isSinglePart()) {
             val urString = encoder.nextPart()
             val bitmap = QRCodeGenerator.generateQRCode(urString.uppercase(), size = 512)
             bitmap?.let {

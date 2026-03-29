@@ -81,7 +81,7 @@ public class CryptoKeypath extends RegistryItem {
             if(intKey == COMPONENTS_KEY) {
                 components = PathComponent.fromCbor(map.get(key));
             } else if(intKey == SOURCE_FINGERPRINT_KEY) {
-                sourceFingerprint = bigIntegerToBytes(((UnsignedInteger)map.get(key)).getValue(), 4);
+                sourceFingerprint = bigIntegerToBytes(((UnsignedInteger)map.get(key)).getValue());
             } else if(intKey == DEPTH_KEY) {
                 depth = ((UnsignedInteger)map.get(key)).getValue().intValue();
             }

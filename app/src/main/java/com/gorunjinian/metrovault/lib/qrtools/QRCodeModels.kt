@@ -1,6 +1,9 @@
 package com.gorunjinian.metrovault.lib.qrtools
 
 import android.graphics.Bitmap
+import com.gorunjinian.bbqr.Encoding
+import com.gorunjinian.bbqr.SplitOptions
+import com.gorunjinian.bbqr.Version
 
 /**
  * Output format options for signed PSBT QR codes
@@ -51,6 +54,12 @@ internal object DensitySettings {
         QRDensity.LOW -> BBQR_MAX_CHARS_LOW
         QRDensity.MEDIUM -> BBQR_MAX_CHARS_MEDIUM
         QRDensity.HIGH -> BBQR_MAX_CHARS_HIGH
+    }
+
+    fun getBBQrSplitOptions(density: QRDensity): SplitOptions = when (density) {
+        QRDensity.LOW -> SplitOptions(encoding = Encoding.Zlib, maxVersion = Version.V12)
+        QRDensity.MEDIUM -> SplitOptions(encoding = Encoding.Zlib, maxVersion = Version.V20)
+        QRDensity.HIGH -> SplitOptions(encoding = Encoding.Zlib, maxVersion = Version.V27)
     }
 }
 

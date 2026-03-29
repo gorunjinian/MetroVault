@@ -3,14 +3,15 @@ package com.gorunjinian.metrovault.domain.service.psbt
 import android.graphics.Color
 import android.util.Base64
 import android.util.Log
+import com.gorunjinian.bbqr.FileType
+import com.gorunjinian.bbqr.SplitResult
+import com.gorunjinian.bcur.UR
+import com.gorunjinian.bcur.UREncoder
 import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
 import com.gorunjinian.metrovault.lib.qrtools.DensitySettings
 import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeGenerator
 import com.gorunjinian.metrovault.lib.qrtools.QRDensity
-import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UR
-import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UREncoder
-import com.gorunjinian.metrovault.lib.qrtools.registry.RegistryType
 
 /**
  * Encodes PSBTs into QR code formats (BC-UR v1, BC-UR v2, BBQr).
@@ -75,7 +76,7 @@ object PSBTQREncoder {
             val psbtBytes = Base64.decode(psbt, Base64.NO_WRAP)
 
             // Create UR using "crypto-psbt" type (BC-UR v1) for legacy wallet compatibility
-            val ur = UR.fromBytes(RegistryType.CRYPTO_PSBT.toString(), psbtBytes)
+            val ur = UR.fromBytes(psbtBytes, "crypto-psbt")
 
             // Get fragment lengths based on selected density
             val (maxFragmentLen, minFragmentLen) = DensitySettings.getURFragmentLengths(density)
@@ -84,7 +85,7 @@ object PSBTQREncoder {
             // Create encoder with fountain code support
             val encoder = UREncoder(ur, maxFragmentLen, minFragmentLen, 0)
 
-            if (encoder.isSinglePart) {
+            if (encoder.isSinglePart()) {
                 // Single frame - simple case
                 val urString = encoder.nextPart()
                 Log.d("PSBTQREncoder", "BC-UR v1 single part: ${urString.length} chars")
@@ -113,9 +114,10 @@ object PSBTQREncoder {
 
                 // Generate QR codes for all frames
                 val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
-                if (bitmaps != null && bitmaps.isNotEmpty()) {
+                if (!bitmaps.isNullOrEmpty()) {
                     Log.d("PSBTQREncoder", "BC-UR v1: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)")
                     AnimatedQRResult(
+
                         frames = bitmaps,
                         totalParts = bitmaps.size,
                         isAnimated = true,
@@ -151,7 +153,7 @@ object PSBTQREncoder {
             val psbtBytes = Base64.decode(psbt, Base64.NO_WRAP)
 
             // Create UR using "psbt" type (BC-UR v2) for modern UR 2.0 standard
-            val ur = UR.fromBytes(RegistryType.PSBT.toString(), psbtBytes)
+            val ur = UR.fromBytes(psbtBytes, "psbt")
 
             // Get fragment lengths based on selected density
             val (maxFragmentLen, minFragmentLen) = DensitySettings.getURFragmentLengths(density)
@@ -160,7 +162,7 @@ object PSBTQREncoder {
             // Create encoder with fountain code support
             val encoder = UREncoder(ur, maxFragmentLen, minFragmentLen, 0)
 
-            if (encoder.isSinglePart) {
+            if (encoder.isSinglePart()) {
                 // Single frame - simple case
                 val urString = encoder.nextPart()
                 Log.d("PSBTQREncoder", "BC-UR v2 single part: ${urString.length} chars")
@@ -189,7 +191,7 @@ object PSBTQREncoder {
 
                 // Generate QR codes for all frames
                 val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
-                if (bitmaps != null && bitmaps.isNotEmpty()) {
+                if (!bitmaps.isNullOrEmpty()) {
                     Log.d("PSBTQREncoder", "BC-UR v2: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)")
                     AnimatedQRResult(
                         frames = bitmaps,
@@ -221,16 +223,14 @@ object PSBTQREncoder {
         density: QRDensity = QRDensity.MEDIUM
     ): AnimatedQRResult? {
         return try {
-            // Get max characters per frame based on selected density
-            val maxQrChars = DensitySettings.getBBQrMaxChars(density)
-            Log.d("PSBTQREncoder", "BBQr generation starting, PSBT length: ${psbt.length}, density=$density, maxChars=$maxQrChars")
-            val bbqrFrames = PSBTDecoder.encodeToBBQr(psbt, maxQrChars)
-            if (bbqrFrames == null || bbqrFrames.isEmpty()) {
-                Log.w("PSBTQREncoder", "BBQr encoding failed - encodeToBBQr returned null/empty")
-                return null
-            }
+            val psbtBytes = Base64.decode(psbt, Base64.NO_WRAP)
+            val options = DensitySettings.getBBQrSplitOptions(density)
+            Log.d("PSBTQREncoder", "BBQr generation starting, PSBT size: ${psbtBytes.size} bytes, density=$density")
 
-            Log.d("PSBTQREncoder", "BBQr encoded to ${bbqrFrames.size} frames")
+            val splitResult = SplitResult.fromData(psbtBytes, FileType.Psbt, options)
+            val bbqrFrames = splitResult.parts
+
+            Log.d("PSBTQREncoder", "BBQr encoded to ${bbqrFrames.size} frames (version=${splitResult.version}, encoding=${splitResult.encoding})")
 
             // Generate consistent QR codes for all frames
             val bitmaps = if (bbqrFrames.size > 1) {

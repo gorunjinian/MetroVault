@@ -1,8 +1,13 @@
 package com.gorunjinian.metrovault.lib.qrtools
 
+import co.nstant.`in`.cbor.CborDecoder
+import co.nstant.`in`.cbor.model.DataItem
+import com.gorunjinian.bbqr.ContinuousJoinResult
+import com.gorunjinian.bbqr.ContinuousJoiner
+import com.gorunjinian.bcur.ResultType
+import com.gorunjinian.bcur.URDecoder
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector32
 import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoCoinInfo
@@ -10,37 +15,37 @@ import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoHDKey
 import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoOutput
 import com.gorunjinian.metrovault.lib.qrtools.registry.ScriptExpression
 import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
-import com.gorunjinian.metrovault.lib.qrtools.thirdparty.URDecoder
-import java.io.ByteArrayOutputStream
-import java.util.zip.Inflater
 
 /**
  * Helper class to track animated QR scanning for descriptors.
  * Supports: UR:CRYPTO-OUTPUT, UR:OUTPUT-DESCRIPTOR, BBQr with text content
- * 
+ *
  * Similar to AnimatedQRScanner but returns raw descriptor string instead of PSBT.
  */
 class DescriptorQRScanner {
-    // For non-UR formats (BBQr)
-    private val receivedFrames = mutableMapOf<Int, String>()
-    private var expectedTotal: Int? = null
-    private var detectedFormat: String? = null
-    
-    // For UR formats - use URDecoder which handles fountain codes
+    // For UR formats - bcur-kotlin library handles fountain codes
     private var urDecoder: URDecoder? = null
     private var urFrameCount: Int = 0
     private var urEstimatedTotal: Int = 0
-    
+
+    // For BBQr formats - bbqr-kotlin library handles streaming decoding
+    private var bbqrJoiner: ContinuousJoiner? = null
+    private var bbqrTotalParts: Int = 0
+    private var bbqrReceivedParts: Int = 0
+    private var bbqrCompleteData: ByteArray? = null
+
+    private var detectedFormat: String? = null
+
     // Single-frame result
     private var singleFrameResult: String? = null
-    
+
     /**
      * Process a scanned frame.
      * @return Progress percentage (0-100), or null if frame is invalid
      */
     fun processFrame(content: String): Int? {
         val lower = content.lowercase()
-        
+
         // Detect format on first frame
         if (detectedFormat == null) {
             detectedFormat = when {
@@ -70,60 +75,71 @@ class DescriptorQRScanner {
             }
         }
     }
-    
+
     /**
-     * Process UR format frames using URDecoder
+     * Process UR format frames using bcur-kotlin URDecoder
      */
     private fun processURFrame(content: String): Int? {
         try {
-            // Initialize URDecoder if needed
             if (urDecoder == null) {
                 urDecoder = URDecoder()
                 android.util.Log.d("DescriptorQRScanner", "Initialized URDecoder for fountain codes")
             }
-            
+
             val decoder = urDecoder!!
             decoder.receivePart(content)
             urFrameCount++
-            
-            // Get progress info
+
             val progress = decoder.estimatedPercentComplete
             if (urEstimatedTotal == 0 && decoder.expectedPartCount > 0) {
                 urEstimatedTotal = decoder.expectedPartCount
             }
-            
+
             val percentComplete = (progress * 100).toInt().coerceIn(0, 100)
             android.util.Log.d("DescriptorQRScanner", "UR frame $urFrameCount received, progress: $percentComplete%")
-            
+
             return percentComplete
         } catch (e: Exception) {
             android.util.Log.e("DescriptorQRScanner", "Error processing UR frame: ${e.message}")
             return null
         }
     }
-    
+
     /**
-     * Process BBQr format frames
+     * Process BBQr frame using ContinuousJoiner from bbqr-kotlin
      */
     private fun processBBQrFrame(content: String): Int? {
-        val parsed = PSBTDecoder.parseBBQrFrame(content) ?: return null
-        val (partNum, totalParts, _) = parsed
-        
-        if (expectedTotal == null) {
-            expectedTotal = totalParts
-        } else if (expectedTotal != totalParts) {
-            android.util.Log.w("DescriptorQRScanner", "Total parts changed, resetting")
-            reset()
-            expectedTotal = totalParts
+        try {
+            if (bbqrJoiner == null) {
+                bbqrJoiner = ContinuousJoiner()
+            }
+
+            return when (val result = bbqrJoiner!!.addPart(content)) {
+                is ContinuousJoinResult.NotStarted -> {
+                    android.util.Log.d("DescriptorQRScanner", "BBQr: not started yet")
+                    0
+                }
+                is ContinuousJoinResult.InProgress -> {
+                    bbqrReceivedParts++
+                    if (bbqrTotalParts == 0) {
+                        bbqrTotalParts = bbqrReceivedParts + result.partsLeft
+                    }
+                    val progress = ((bbqrTotalParts - result.partsLeft) * 100) / bbqrTotalParts
+                    android.util.Log.d("DescriptorQRScanner", "BBQr: ${result.partsLeft} parts left, progress: $progress%")
+                    progress
+                }
+                is ContinuousJoinResult.Complete -> {
+                    bbqrCompleteData = result.joined.data
+                    android.util.Log.d("DescriptorQRScanner", "BBQr: complete, ${bbqrCompleteData!!.size} bytes")
+                    100
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("DescriptorQRScanner", "Error processing BBQr frame: ${e.message}")
+            return null
         }
-        
-        // Store the full frame (including header) for later decoding
-        receivedFrames[partNum] = content
-        android.util.Log.d("DescriptorQRScanner", "BBQr frame $partNum/$totalParts, have ${receivedFrames.size} frames")
-        
-        return ((receivedFrames.size * 100) / totalParts)
     }
-    
+
     /**
      * Check if all frames have been received
      */
@@ -133,15 +149,12 @@ class DescriptorQRScanner {
                 val result = urDecoder?.result
                 result?.type == ResultType.SUCCESS
             }
-            "bbqr" -> {
-                val total = expectedTotal ?: return false
-                receivedFrames.size >= total
-            }
+            "bbqr" -> bbqrCompleteData != null
             "plain", "unknown" -> singleFrameResult != null
             else -> false
         }
     }
-    
+
     /**
      * Get the assembled descriptor string.
      * Returns null if not complete.
@@ -151,23 +164,26 @@ class DescriptorQRScanner {
 
         return when (detectedFormat) {
             "ur-crypto-output", "ur-output-descriptor" -> {
-                // Get UR from decoder and use DescriptorDecoder to convert to string
                 val result = urDecoder?.result
                 if (result?.type == ResultType.SUCCESS) {
                     try {
-                        val ur = result.ur
-                        // Use DescriptorDecoder's reconstruction logic
-                        when (val decoded = ur.decodeFromRegistry()) {
-                            is CryptoOutput -> {
-                                reconstructDescriptorFromCryptoOutput(decoded)
-                            }
+                        val ur = result.ur!!
+                        // Manually dispatch CBOR decoding based on UR type
+                        val cborBytes = ur.cborData
+                        val dataItems: List<DataItem> = CborDecoder.decode(cborBytes)
+                        val item: DataItem = dataItems[0]
 
-                            is UROutputDescriptor -> {
+                        when (ur.type) {
+                            "crypto-output" -> {
+                                val decoded = CryptoOutput.fromCbor(item)
+                                reconstructFromCryptoOutput(decoded)
+                            }
+                            "output-descriptor" -> {
+                                val decoded = UROutputDescriptor.fromCbor(item)
                                 decoded.source
                             }
-
                             else -> {
-                                android.util.Log.w("DescriptorQRScanner", "Unknown UR decoded type: ${decoded?.javaClass}")
+                                android.util.Log.w("DescriptorQRScanner", "Unknown UR type: ${ur.type}")
                                 null
                             }
                         }
@@ -178,20 +194,14 @@ class DescriptorQRScanner {
                 } else null
             }
             "ur-bytes" -> {
-                // UR:BYTES contains raw bytes - decode to string (BSMS format)
                 val result = urDecoder?.result
                 if (result?.type == ResultType.SUCCESS) {
                     try {
-                        val ur = result.ur
+                        val ur = result.ur!!
                         val bytes = ur.toBytes()
-                        if (bytes != null) {
-                            val content = String(bytes, Charsets.UTF_8)
-                            android.util.Log.d("DescriptorQRScanner", "UR:BYTES decoded: ${content.take(100)}...")
-                            content
-                        } else {
-                            android.util.Log.e("DescriptorQRScanner", "UR:BYTES toBytes() returned null")
-                            null
-                        }
+                        val content = String(bytes, Charsets.UTF_8)
+                        android.util.Log.d("DescriptorQRScanner", "UR:BYTES decoded: ${content.take(100)}...")
+                        content
                     } catch (e: Exception) {
                         android.util.Log.e("DescriptorQRScanner", "Failed to decode UR:BYTES: ${e.message}")
                         null
@@ -199,42 +209,34 @@ class DescriptorQRScanner {
                 } else null
             }
             "bbqr" -> {
-                // Reassemble BBQr frames and decode
-                val frames = receivedFrames.entries.sortedBy { it.key }.map { it.value }
-                decodeBBQrToDescriptor(frames)
+                bbqrCompleteData?.let { bytes ->
+                    String(bytes, Charsets.UTF_8)
+                }
             }
             "plain", "unknown" -> singleFrameResult
             else -> null
         }
     }
-    
-    /**
-     * Reconstructs descriptor string from CryptoOutput
-     */
-    private fun reconstructDescriptorFromCryptoOutput(output: CryptoOutput): String? {
-        // Directly reconstruct from the parsed CryptoOutput object
-        return reconstructFromCryptoOutput(output)
-    }
-    
+
     /**
      * Manual reconstruction from CryptoOutput
      */
     private fun reconstructFromCryptoOutput(output: CryptoOutput): String? {
         val expressions = output.scriptExpressions ?: return null
         val multiKey = output.multiKey
-        
+
         if (multiKey != null) {
             val threshold = multiKey.threshold
             val hdKeys = multiKey.hdKeys ?: return null
-            
-            val isSorted = expressions.any { 
-                it == ScriptExpression.SORTED_MULTISIG 
+
+            val isSorted = expressions.any {
+                it == ScriptExpression.SORTED_MULTISIG
             }
             val multiFunc = if (isSorted) "sortedmulti" else "multi"
-            
+
             val keyStrings = hdKeys.map { key -> formatHDKeyForDescriptor(key) }
             var result = "$multiFunc($threshold,${keyStrings.joinToString(",")})"
-            
+
             // Wrap in script expressions
             for (expr in expressions.reversed()) {
                 result = when (expr) {
@@ -250,7 +252,7 @@ class DescriptorQRScanner {
         }
         return null
     }
-    
+
     private fun formatHDKeyForDescriptor(hdKey: CryptoHDKey): String {
         val sb = StringBuilder()
 
@@ -275,10 +277,8 @@ class DescriptorQRScanner {
 
         if (keyBytes != null && keyBytes.size == 33 && chainCodeBytes.size == 32) {
             try {
-                // Determine depth from origin path (count path components)
                 val depth = if (originPath.isEmpty()) 0 else originPath.split("/").filter { it.isNotEmpty() }.size
 
-                // Get parent fingerprint (use origin's source fingerprint or 0)
                 val parentFingerprint = origin?.sourceFingerprint?.let { fp ->
                     if (fp.size >= 4) {
                         ((fp[0].toLong() and 0xFF) shl 24) or
@@ -288,7 +288,6 @@ class DescriptorQRScanner {
                     } else 0L
                 } ?: 0L
 
-                // Get child number from last path component
                 val childNumber = originPath.split("/").lastOrNull { it.isNotEmpty() }
                     ?.let { component ->
                     val cleaned = component.replace("'", "").replace("h", "")
@@ -298,7 +297,6 @@ class DescriptorQRScanner {
                     } else num
                 } ?: 0L
 
-                // Create ExtendedPublicKey and encode properly
                 val extPubKey = DeterministicWallet.ExtendedPublicKey(
                     publickeybytes = keyBytes.byteVector(),
                     chaincode = chainCodeBytes.byteVector32(),
@@ -307,7 +305,6 @@ class DescriptorQRScanner {
                     parent = parentFingerprint
                 )
 
-                // Encode with appropriate prefix (xpub/tpub for now, could extend to zpub/vpub)
                 val prefix = if (isTestnet) {
                     DeterministicWallet.tpub
                 } else {
@@ -316,12 +313,10 @@ class DescriptorQRScanner {
                 sb.append(extPubKey.encode(prefix))
             } catch (e: Exception) {
                 android.util.Log.e("DescriptorQRScanner", "Failed to encode xpub: ${e.message}")
-                // Fallback - shouldn't happen with valid keys
                 return ""
             }
         }
 
-        // Children path (wildcard derivation suffix)
         val children = hdKey.children
         if (children != null) {
             val childPath = children.path
@@ -333,110 +328,22 @@ class DescriptorQRScanner {
 
         return sb.toString()
     }
-    
-    /**
-     * Decode BBQr frames to descriptor string
-     */
-    private fun decodeBBQrToDescriptor(frames: List<String>): String? {
-        if (frames.isEmpty()) return null
-        
-        try {
-            val encoding = frames[0][2]
-            
-            // Sort and extract data
-            val sortedFrames = frames
-                .mapNotNull { frame ->
-                    PSBTDecoder.parseBBQrFrame(frame)?.let { (part, _, raw) ->
-                        part to raw.substring(8)
-                    }
-                }
-                .sortedBy { it.first }
-                .map { it.second }
-            
-            val combinedData = sortedFrames.joinToString("")
-            
-            // Handle different BBQr encodings
-            // U = Uncompressed UTF-8 (raw text, no encoding)
-            // H = Hex encoded
-            // 2 = Base32 encoded
-            // Z = Zlib compressed + Base32 encoded
-            return when (encoding) {
-                'U' -> combinedData  // Uncompressed UTF-8 - data is already the string
-                'H' -> decodeHex(combinedData)?.let { String(it, Charsets.UTF_8) }
-                '2' -> decodeBase32(combinedData)?.let { String(it, Charsets.UTF_8) }
-                'Z' -> decodeZlibBase32(combinedData)?.let { String(it, Charsets.UTF_8) }
-                else -> {
-                    android.util.Log.w("DescriptorQRScanner", "Unknown BBQr encoding: $encoding")
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("DescriptorQRScanner", "BBQr decode error: ${e.message}")
-            return null
-        }
-    }
-    
-    // Helper decode functions
-    private fun decodeHex(hex: String): ByteArray? {
-        return try {
-            val clean = hex.replace(" ", "").replace("\n", "")
-            if (clean.length % 2 != 0) return null
-            ByteArray(clean.length / 2) { i ->
-                clean.substring(i * 2, i * 2 + 2).toInt(16).toByte()
-            }
-        } catch (_: Exception) { null }
-    }
-    
-    private fun decodeBase32(input: String): ByteArray? {
-        return try {
-            val clean = input.uppercase().replace("=", "")
-            val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-            val bits = StringBuilder()
-            for (c in clean) {
-                val index = alphabet.indexOf(c)
-                if (index < 0) return null
-                bits.append(index.toString(2).padStart(5, '0'))
-            }
-            val bytes = mutableListOf<Byte>()
-            var i = 0
-            while (i + 8 <= bits.length) {
-                bytes.add(bits.substring(i, i + 8).toInt(2).toByte())
-                i += 8
-            }
-            bytes.toByteArray()
-        } catch (_: Exception) { null }
-    }
-    
-    private fun decodeZlibBase32(input: String): ByteArray? {
-        val compressed = decodeBase32(input) ?: return null
-        return try {
-            val inflater = Inflater(true)
-            inflater.setInput(compressed)
-            val output = ByteArrayOutputStream()
-            val buffer = ByteArray(1024)
-            while (!inflater.finished()) {
-                val count = inflater.inflate(buffer)
-                if (count == 0 && inflater.needsInput()) break
-                output.write(buffer, 0, count)
-            }
-            inflater.end()
-            output.toByteArray()
-        } catch (_: Exception) { null }
-    }
-    
+
     /**
      * Reset scanner state
      */
     fun reset() {
-        receivedFrames.clear()
-        expectedTotal = null
         detectedFormat = null
         urDecoder = null
         urFrameCount = 0
         urEstimatedTotal = 0
+        bbqrJoiner = null
+        bbqrTotalParts = 0
+        bbqrReceivedParts = 0
+        bbqrCompleteData = null
         singleFrameResult = null
     }
-    
+
     /**
      * Get progress string
      */
@@ -447,12 +354,15 @@ class DescriptorQRScanner {
                 "${progress.toInt()}% BC-UR"
             }
             "bbqr" -> {
-                val total = expectedTotal ?: return "Waiting..."
-                "${receivedFrames.size}/$total BBQr"
+                if (bbqrTotalParts > 0) {
+                    "${bbqrTotalParts - (bbqrTotalParts - bbqrReceivedParts).coerceAtLeast(0)}/$bbqrTotalParts BBQr"
+                } else {
+                    "Scanning BBQr..."
+                }
             }
             else -> "Scanning..."
         }
     }
-    
+
     fun getDetectedFormat(): String? = detectedFormat
 }

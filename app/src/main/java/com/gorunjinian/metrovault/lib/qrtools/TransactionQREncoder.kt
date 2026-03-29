@@ -1,11 +1,11 @@
 package com.gorunjinian.metrovault.lib.qrtools
 
 import android.graphics.Color
+import com.gorunjinian.bbqr.FileType
+import com.gorunjinian.bbqr.SplitResult
+import com.gorunjinian.bcur.UR
+import com.gorunjinian.bcur.UREncoder
 import com.gorunjinian.metrovault.domain.service.util.hexToByteArray
-import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
-import com.gorunjinian.metrovault.lib.qrtools.registry.RegistryType
-import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UR
-import com.gorunjinian.metrovault.lib.qrtools.thirdparty.UREncoder
 
 /**
  * Encodes raw transactions into QR code formats (BC-UR, BBQr).
@@ -66,7 +66,7 @@ object TransactionQREncoder {
     ): AnimatedQRResult? {
         return try {
             // Create UR using "bytes" type for raw binary data
-            val ur = UR.fromBytes(RegistryType.BYTES.toString(), data)
+            val ur = UR.fromBytes(data)
 
             // Get fragment lengths based on selected density
             val (maxFragmentLen, minFragmentLen) = DensitySettings.getURFragmentLengths(density)
@@ -75,7 +75,7 @@ object TransactionQREncoder {
             // Create encoder with fountain code support
             val encoder = UREncoder(ur, maxFragmentLen, minFragmentLen, 0)
 
-            if (encoder.isSinglePart) {
+            if (encoder.isSinglePart()) {
                 // Single frame
                 val urString = encoder.nextPart()
                 android.util.Log.d("TransactionQREncoder", "UR bytes single part: ${urString.length} chars")
@@ -119,7 +119,6 @@ object TransactionQREncoder {
     /**
      * Generate QR code(s) in BBQr format for raw transaction.
      * Uses 'T' type code for transaction (per BBQr spec).
-     * Distributes data evenly across frames for consistent density.
      */
     private fun generateBBQrTransaction(
         txHex: String,
@@ -129,57 +128,14 @@ object TransactionQREncoder {
         density: QRDensity
     ): AnimatedQRResult? {
         return try {
-            val maxQrChars = DensitySettings.getBBQrMaxChars(density)
-            android.util.Log.d("TransactionQREncoder", "BBQr transaction: ${txHex.length} hex chars, density=$density")
-
-            // Convert hex to bytes
             val txBytes = txHex.hexToByteArray()
-            
-            // Header is 8 chars: B$ + encoding + type + 2 chars total + 2 chars part
-            val headerSize = 8
-            val maxDataChars = maxQrChars - headerSize
-            
-            // For Base32: 8 chars = 5 bytes
-            // Calculate max bytes per frame (aligned to 5-byte boundary for Base32)
-            val maxBytesPerFrame = (maxDataChars / 8) * 5
-            
-            // Calculate minimum number of frames needed
-            val totalBytes = txBytes.size
-            val numFrames = kotlin.math.ceil(totalBytes.toDouble() / maxBytesPerFrame).toInt()
-                .coerceAtLeast(1)
-            
-            if (numFrames > 1295) {
-                android.util.Log.e("TransactionQREncoder", "Transaction too large for BBQr: $numFrames parts")
-                return null
-            }
-            
-            // Distribute bytes evenly across frames
-            val baseBytesPerFrame = totalBytes / numFrames
-            val alignedBytesPerFrame = ((baseBytesPerFrame + 4) / 5) * 5
+            val options = DensitySettings.getBBQrSplitOptions(density)
+            android.util.Log.d("TransactionQREncoder", "BBQr transaction: ${txBytes.size} bytes, density=$density")
 
-            android.util.Log.d("TransactionQREncoder", "BBQr tx: $totalBytes bytes in $numFrames frames (~$alignedBytesPerFrame bytes/frame)")
+            val splitResult = SplitResult.fromData(txBytes, FileType.Transaction, options)
+            val frameStrings = splitResult.parts
 
-            // Split bytes into chunks with even distribution
-            val chunks = mutableListOf<ByteArray>()
-            var offset = 0
-            for (i in 0 until numFrames) {
-                val remaining = totalBytes - offset
-                val chunkSize = if (i == numFrames - 1) {
-                    remaining
-                } else {
-                    alignedBytesPerFrame.coerceAtMost(remaining)
-                }
-                chunks.add(txBytes.copyOfRange(offset, offset + chunkSize))
-                offset += chunkSize
-            }
-
-            // Encode each byte chunk to Base32 and prepend header
-            val frameStrings = chunks.mapIndexed { index, chunk ->
-                val chunkBase32 = PSBTDecoder.encodeBase32(chunk)
-                val totalBase36 = numFrames.toString(36).padStart(2, '0').uppercase()
-                val partBase36 = index.toString(36).padStart(2, '0').uppercase()
-                "B$2T${totalBase36}${partBase36}${chunkBase32}"
-            }
+            android.util.Log.d("TransactionQREncoder", "BBQr tx: ${frameStrings.size} frames (version=${splitResult.version}, encoding=${splitResult.encoding})")
 
             val bitmaps = if (frameStrings.size > 1) {
                 QRCodeGenerator.generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
