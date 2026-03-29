@@ -99,7 +99,7 @@ object TransactionQREncoder {
                 }
 
                 val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
-                if (bitmaps != null && bitmaps.isNotEmpty()) {
+                if (!bitmaps.isNullOrEmpty()) {
                     android.util.Log.d("TransactionQREncoder", "UR bytes: Generated ${bitmaps.size} frames")
                     AnimatedQRResult(
                         frames = bitmaps,
