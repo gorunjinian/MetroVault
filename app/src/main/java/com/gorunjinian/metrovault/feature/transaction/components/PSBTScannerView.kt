@@ -15,6 +15,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRScanner
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
@@ -43,13 +44,15 @@ fun PSBTScannerView(
     // Track last scanned frame to avoid duplicates
     var lastScannedFrame by remember { mutableStateOf("") }
     var frameJustCaptured by remember { mutableStateOf(false) }
-    
+
     // State for pending result processing (to move heavy work off camera thread)
     var pendingScanComplete by remember { mutableStateOf(false) }
     var barcodeViewRef by remember { mutableStateOf<CompoundBarcodeView?>(null) }
-    
-    // State for pending progress updates (ensures UI recomposition from camera thread)
-    var pendingProgress by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
+
+    // Channel for queueing scanned frames for background processing.
+    // The decodeContinuous callback runs on the main thread (via Handler), so heavy
+    // work like BBQr Zlib decompression must be moved off the main thread to avoid ANR.
+    val frameChannel = remember { Channel<String>(Channel.UNLIMITED) }
     
     // Flash effect when frame is captured
     val scannerBackgroundColor by animateColorAsState(
@@ -68,28 +71,47 @@ fun PSBTScannerView(
         }
     }
     
-    // Process scan result in LaunchedEffect (runs on Main thread, can use withContext)
+    // Process scanned frames on a background thread to avoid blocking the main thread
+    // during heavy operations (BBQr Base32 decode + Zlib decompression, UR fountain codes)
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.Default) {
+            for (frame in frameChannel) {
+                try {
+                    val progress = animatedScanner.processFrame(frame)
+
+                    if (progress != null) {
+                        withContext(Dispatchers.Main) {
+                            frameJustCaptured = true
+                            val detectedFormat = animatedScanner.getDetectedFormat()
+                            val isAnimated = detectedFormat != null && detectedFormat != "single"
+                            onScanProgress(progress, isAnimated)
+
+                            if (animatedScanner.isComplete()) {
+                                barcodeViewRef?.pause()
+                                pendingScanComplete = true
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("PSBTScanner", "Frame processing failed: ${e.message}", e)
+                }
+            }
+        }
+    }
+
+    // Process completed scan result on background thread, then deliver to caller
     LaunchedEffect(pendingScanComplete) {
         if (pendingScanComplete) {
-            // Do heavy work on background thread
             val assembledPSBT = withContext(Dispatchers.Default) {
                 animatedScanner.getResult()
             }
-            
+
             if (assembledPSBT != null) {
                 onScanComplete(assembledPSBT)
             } else {
                 barcodeViewRef?.resume()
             }
             pendingScanComplete = false
-        }
-    }
-    
-    // Process pending progress updates on main thread (ensures UI recomposition)
-    LaunchedEffect(pendingProgress) {
-        pendingProgress?.let { (progress, isAnimated) ->
-            onScanProgress(progress, isAnimated)
-            pendingProgress = null
         }
     }
     
@@ -109,30 +131,15 @@ fun PSBTScannerView(
                                         val header = text.take(8)
                                         android.util.Log.d("PSBTScanner", "Raw BBQr header: $header")
                                     }
-                                    
+
                                     // Skip duplicate frames
                                     if (text == lastScannedFrame) return@let
                                     lastScannedFrame = text
-                                    
-                                    // Process the frame (lightweight)
-                                    val progress = animatedScanner.processFrame(text)
-                                    
-                                    if (progress != null) {
-                                        frameJustCaptured = true
-                                        
-                                        // Check if this is an animated scan based on detected format
-                                        // AnimatedQRScanner detects: "ur-psbt", "ur", "bbqr", "simple", "single"
-                                        val detectedFormat = animatedScanner.getDetectedFormat()
-                                        val isAnimated = detectedFormat != null && detectedFormat != "single"
-                                        // Use pending state to trigger main thread update via LaunchedEffect
-                                        pendingProgress = Pair(progress, isAnimated)
-                                        
-                                        // Check if scan is complete - trigger async processing
-                                        if (animatedScanner.isComplete()) {
-                                            pause()
-                                            pendingScanComplete = true
-                                        }
-                                    }
+
+                                    // Queue for background processing — do NOT process on
+                                    // the main thread as decoding (BBQr Zlib, UR fountain
+                                    // codes) can be expensive and cause ANR.
+                                    frameChannel.trySend(text)
                                 }
                             }
                             // Note: Don't call resume() here - the parent lifecycle observer handles this
