@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRScanner
+import com.gorunjinian.metrovault.lib.qrtools.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -123,6 +124,7 @@ fun PSBTScannerView(
                         CompoundBarcodeView(context).apply {
                             barcodeViewRef = this
                             onBarcodeViewCreated(this)
+                            configureForQRScanning()
                             setStatusText("")
                             decodeContinuous { result ->
                                 result.text?.let { text ->

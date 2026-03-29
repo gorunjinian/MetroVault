@@ -33,6 +33,7 @@ import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.lib.bitcoin.Block
 import com.gorunjinian.metrovault.lib.bitcoin.MessageSigning
+import com.gorunjinian.metrovault.lib.qrtools.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import kotlinx.coroutines.Dispatchers
@@ -704,6 +705,7 @@ private fun QRScannerContent(
         factory = { context ->
             CompoundBarcodeView(context).apply {
                 barcodeView = this
+                configureForQRScanning()
                 setStatusText("")
                 decodeContinuous { result ->
                     if (!hasScanned && result.text != null) {

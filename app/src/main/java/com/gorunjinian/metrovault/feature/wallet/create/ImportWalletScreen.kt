@@ -41,6 +41,7 @@ import com.gorunjinian.metrovault.lib.qrtools.SeedQRUtils
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
 import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.lib.qrtools.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.delay
 import com.gorunjinian.metrovault.data.model.DerivationPaths
@@ -568,6 +569,7 @@ private fun Step2SeedPhrase(
                             factory = { ctx ->
                                 CompoundBarcodeView(ctx).apply {
                                     barcodeView = this
+                                    configureForQRScanning()
                                     setStatusText("")
                                     decodeContinuous { result ->
                                         result.text?.let { scannedText ->

@@ -20,6 +20,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.lib.qrtools.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -207,6 +208,7 @@ fun CheckAddressScreen(
                             factory = { context ->
                                 CompoundBarcodeView(context).apply {
                                     barcodeView = this
+                                    configureForQRScanning()
                                     setStatusText("")
                                     decodeContinuous { result ->
                                         result.text?.let { scannedText ->

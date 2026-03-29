@@ -7,9 +7,10 @@
 -keep class androidx.security.crypto.** { *; }
 -dontwarn androidx.security.crypto.**
 
-# Keep ZXing (only QR code generation classes we actually use)
+# Keep ZXing (QR code generation + scanner decoder configuration)
 -keep class com.google.zxing.BarcodeFormat { *; }
 -keep class com.google.zxing.EncodeHintType { *; }
+-keep class com.google.zxing.DecodeHintType { *; }
 -keep class com.google.zxing.qrcode.QRCodeWriter { *; }
 -keep class com.google.zxing.qrcode.decoder.ErrorCorrectionLevel { *; }
 -keep class com.google.zxing.qrcode.encoder.** { *; }

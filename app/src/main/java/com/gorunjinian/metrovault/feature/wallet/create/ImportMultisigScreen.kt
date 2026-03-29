@@ -22,6 +22,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.R
+import com.gorunjinian.metrovault.lib.qrtools.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 
 /**
@@ -257,6 +258,7 @@ private fun InitialScreen(
                         factory = { ctx ->
                             CompoundBarcodeView(ctx).apply {
                                 onBarcodeViewCreated(this)
+                                configureForQRScanning()
                                 setStatusText("")
                                 // Note: Don't call resume() here - the lifecycle observer handles this
                                 // to avoid double initialization (which causes camera freeze)
