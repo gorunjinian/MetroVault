@@ -135,9 +135,6 @@ dependencies {
     implementation(libs.bcur.kotlin)
     implementation(libs.bbqr)
 
-    // CBOR
-    implementation(libs.cbor)
-
     // Coroutines
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.core)

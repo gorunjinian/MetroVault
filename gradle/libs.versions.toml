@@ -1,7 +1,7 @@
 [versions]
 agp = "9.1.0"
 bbqr = "1.0.2"
-bcur-kotlin = "1.0.1"
+bcur-kotlin = "1.0.5"
 kotlin = "2.3.20"
 core-ktx = "1.18.0"
 appcompat = "1.7.1"
@@ -17,7 +17,7 @@ security-crypto = "1.1.0"
 biometric = "1.2.0-alpha05"
 zxing = "3.5.4"
 zxing-embedded = "4.3.0"
-cbor = "0.9"
+
 coroutines = "1.10.2"
 secp256k1 = "0.23.0"
 reorderable = "3.0.0"
@@ -60,9 +60,6 @@ zxing-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", v
 #BBQr and BC-UR
 bbqr = { module = "com.gorunjinian:bbqr", version.ref = "bbqr" }
 bcur-kotlin = { module = "com.gorunjinian:bcur-kotlin", version.ref = "bcur-kotlin" }
-
-# CBOR
-cbor = { group = "co.nstant.in", name = "cbor", version.ref = "cbor" }
 
 # Coroutines
 coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }

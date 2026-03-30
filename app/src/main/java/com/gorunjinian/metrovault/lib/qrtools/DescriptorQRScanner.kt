@@ -1,20 +1,19 @@
 package com.gorunjinian.metrovault.lib.qrtools
 
-import co.nstant.`in`.cbor.CborDecoder
-import co.nstant.`in`.cbor.model.DataItem
 import com.gorunjinian.bbqr.ContinuousJoinResult
 import com.gorunjinian.bbqr.ContinuousJoiner
+import com.gorunjinian.bcur.CborItem
 import com.gorunjinian.bcur.ResultType
 import com.gorunjinian.bcur.URDecoder
+import com.gorunjinian.bcur.registry.CryptoCoinInfo
+import com.gorunjinian.bcur.registry.CryptoHDKey
+import com.gorunjinian.bcur.registry.CryptoOutput
+import com.gorunjinian.bcur.registry.ScriptExpression
+import com.gorunjinian.bcur.registry.UROutputDescriptor
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector32
-import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoCoinInfo
-import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoHDKey
-import com.gorunjinian.metrovault.lib.qrtools.registry.CryptoOutput
-import com.gorunjinian.metrovault.lib.qrtools.registry.ScriptExpression
-import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
 
 /**
  * Helper class to track animated QR scanning for descriptors.
@@ -168,10 +167,7 @@ class DescriptorQRScanner {
                 if (result?.type == ResultType.SUCCESS) {
                     try {
                         val ur = result.ur!!
-                        // Manually dispatch CBOR decoding based on UR type
-                        val cborBytes = ur.cborData
-                        val dataItems: List<DataItem> = CborDecoder.decode(cborBytes)
-                        val item: DataItem = dataItems[0]
+                        val item = CborItem.decode(ur.cborData)
 
                         when (ur.type) {
                             "crypto-output" -> {
@@ -222,12 +218,14 @@ class DescriptorQRScanner {
      * Manual reconstruction from CryptoOutput
      */
     private fun reconstructFromCryptoOutput(output: CryptoOutput): String? {
-        val expressions = output.scriptExpressions ?: return null
+        val expressions = output.scriptExpressions
+        if (expressions.isEmpty()) return null
         val multiKey = output.multiKey
 
         if (multiKey != null) {
             val threshold = multiKey.threshold
-            val hdKeys = multiKey.hdKeys ?: return null
+            val hdKeys = multiKey.hdKeys
+        if (hdKeys.isEmpty()) return null
 
             val isSorted = expressions.any {
                 it == ScriptExpression.SORTED_MULTISIG
@@ -270,12 +268,12 @@ class DescriptorQRScanner {
         }
 
         // Determine if testnet
-        val isTestnet = hdKey.useInfo?.network == CryptoCoinInfo.Network.TESTNET
+        val isTestnet = hdKey.useInfo?.resolvedNetwork == CryptoCoinInfo.Network.TESTNET
 
         val keyBytes = hdKey.key
         val chainCodeBytes = hdKey.chainCode ?: ByteArray(32)
 
-        if (keyBytes != null && keyBytes.size == 33 && chainCodeBytes.size == 32) {
+        if (keyBytes.size == 33 && chainCodeBytes.size == 32) {
             try {
                 val depth = if (originPath.isEmpty()) 0 else originPath.split("/").filter { it.isNotEmpty() }.size
 

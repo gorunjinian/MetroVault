@@ -29,7 +29,7 @@ import com.gorunjinian.metrovault.lib.qrtools.DensitySettings
 import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeGenerator
 import com.gorunjinian.metrovault.lib.qrtools.QRDensity
-import com.gorunjinian.metrovault.lib.qrtools.registry.UROutputDescriptor
+import com.gorunjinian.bcur.registry.UROutputDescriptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
