@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionName = "3.7.0"
+val appVersionName = "3.8.0"
 val appVersionCode = 3
 
 configure<ApplicationExtension> {
