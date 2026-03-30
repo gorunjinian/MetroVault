@@ -16,8 +16,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
-import com.gorunjinian.metrovault.lib.qrtools.SeedQRUtils
 import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.lib.qrtools.QRModuleData
+import com.gorunjinian.metrovault.lib.qrtools.SeedQRUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -35,37 +36,47 @@ fun SeedQRScreen(
     onBackToExportOptions: () -> Unit
 ) {
     val context = LocalContext.current
-    
+
     // Format state: 0 = Standard SeedQR (default), 1 = Compact, 2 = Generic
     var selectedFormat by remember { mutableIntStateOf(0) }
-    
-    // QR code bitmap state (null = loading)
+
+    // Module data for Canvas rendering (SeedQR / Compact formats)
+    var moduleData by remember { mutableStateOf<QRModuleData?>(null) }
+
+    // Bitmap fallback for Generic format
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    
+
+    // Grid toggle state
+    var showGrid by remember { mutableStateOf(true) }
+
+    val isGridCapable = selectedFormat != 2
+
     // Security: Clear sensitive QR data when leaving the screen
     DisposableEffect(Unit) {
         onDispose {
             qrBitmap?.recycle()
             qrBitmap = null
+            moduleData = null
             System.gc() // Hint to garbage collector
         }
     }
-    
+
     // Generate QR code when format changes
     LaunchedEffect(mnemonic, selectedFormat) {
-        qrBitmap = null // Show loading immediately
-        qrBitmap = withContext(Dispatchers.IO) {
+        moduleData = null
+        qrBitmap = null
+        withContext(Dispatchers.IO) {
             when (selectedFormat) {
-                1 -> { // Compact SeedQR: binary data
+                1 -> { // Compact SeedQR: binary module data
                     val bytes = SeedQRUtils.mnemonicToCompactSeedQR(mnemonic, context)
-                    bytes?.let { QRCodeUtils.generateBinaryQRCode(it, size = 512) }
+                    moduleData = bytes?.let { QRCodeUtils.extractBinaryModuleData(it) }
                 }
-                2 -> { // Generic: plain space-separated words
-                    QRCodeUtils.generateQRCode(mnemonic.joinToString(" "), size = 512)
+                2 -> { // Generic: plain space-separated words (bitmap only)
+                    qrBitmap = QRCodeUtils.generateQRCode(mnemonic.joinToString(" "), size = 512)
                 }
-                else -> { // Standard SeedQR: digit string
+                else -> { // Standard SeedQR: digit string module data
                     val digitString = SeedQRUtils.mnemonicToStandardSeedQR(mnemonic, context)
-                    digitString?.let { QRCodeUtils.generateQRCode(it, size = 512) }
+                    moduleData = digitString?.let { QRCodeUtils.extractModuleData(it) }
                 }
             }
         }
@@ -103,7 +114,15 @@ fun SeedQRScreen(
                 onSelect = { selectedFormat = it },
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
+            // Grid overlay toggle (only for SeedQR/Compact)
+            if (isGridCapable) {
+                GridToggleRow(
+                    showGrid = showGrid,
+                    onToggle = { showGrid = it }
+                )
+            }
+
             // Security warning card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -126,21 +145,38 @@ fun SeedQRScreen(
                     .fillMaxWidth()
                     .aspectRatio(1f)
             ) {
-                if (qrBitmap != null) {
-                    Card(
-                        modifier = Modifier.fillMaxSize(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.White
-                        )
-                    ) {
-                        Image(
-                            bitmap = qrBitmap!!.asImageBitmap(),
-                            contentDescription = "SeedQR Code",
-                            modifier = Modifier.fillMaxSize()
-                        )
+                when {
+                    moduleData != null -> {
+                        Card(
+                            modifier = Modifier.fillMaxSize(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White
+                            )
+                        ) {
+                            SeedQRViewer(
+                                moduleData = moduleData!!,
+                                showGrid = showGrid,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
-                } else {
-                    CircularProgressIndicator()
+                    qrBitmap != null -> {
+                        Card(
+                            modifier = Modifier.fillMaxSize(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color.White
+                            )
+                        ) {
+                            Image(
+                                bitmap = qrBitmap!!.asImageBitmap(),
+                                contentDescription = "SeedQR Code",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                    else -> {
+                        CircularProgressIndicator()
+                    }
                 }
             }
             

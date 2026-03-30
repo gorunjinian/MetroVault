@@ -45,6 +45,23 @@ object QRCodeUtils {
     fun generateAddressQRCode(address: String, size: Int = 768): Bitmap? = 
         QRCodeGenerator.generateAddressQRCode(address, size)
 
+    // ==================== Module Data Extraction (delegates to QRCodeGenerator) ====================
+
+    /**
+     * Extracts raw QR module data for text content.
+     */
+    fun extractModuleData(
+        content: String,
+        errorCorrection: com.google.zxing.qrcode.decoder.ErrorCorrectionLevel =
+            com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M
+    ): QRModuleData? = QRCodeGenerator.extractModuleData(content, errorCorrection)
+
+    /**
+     * Extracts raw QR module data for binary content.
+     */
+    fun extractBinaryModuleData(bytes: ByteArray): QRModuleData? =
+        QRCodeGenerator.extractBinaryModuleData(bytes)
+
     // ==================== PSBT Encoding (delegates to PSBTQREncoder) ====================
 
     /**

@@ -225,7 +225,7 @@ class DescriptorQRScanner {
         if (multiKey != null) {
             val threshold = multiKey.threshold
             val hdKeys = multiKey.hdKeys
-        if (hdKeys.isEmpty()) return null
+            if (hdKeys.isEmpty()) return null
 
             val isSorted = expressions.any {
                 it == ScriptExpression.SORTED_MULTISIG

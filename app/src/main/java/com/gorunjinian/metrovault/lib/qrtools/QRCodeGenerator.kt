@@ -9,6 +9,27 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import androidx.core.graphics.createBitmap
 
 /**
+ * Raw QR code module data for Canvas-based rendering.
+ * @param modules Boolean array where true = dark module, row-major order
+ * @param moduleCount Number of modules per side (e.g., 21, 25, 29)
+ */
+data class QRModuleData(
+    val modules: BooleanArray,
+    val moduleCount: Int
+) {
+    /** Returns whether module at (col, row) is dark. */
+    fun isDark(col: Int, row: Int): Boolean = modules[row * moduleCount + col]
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is QRModuleData) return false
+        return moduleCount == other.moduleCount && modules.contentEquals(other.modules)
+    }
+
+    override fun hashCode(): Int = 31 * modules.contentHashCode() + moduleCount
+}
+
+/**
  * Basic QR code bitmap generation utilities.
  */
 object QRCodeGenerator {
@@ -132,5 +153,64 @@ object QRCodeGenerator {
      */
     fun generateAddressQRCode(address: String, size: Int = 768): Bitmap? {
         return generateQRCode("bitcoin:$address", size)
+    }
+
+    // ==================== Module Data Extraction (for Canvas-based rendering) ====================
+
+    /**
+     * Extracts raw QR module data for text content (Standard SeedQR, etc.).
+     * Returns the module grid at native QR dimensions with no margin.
+     */
+    fun extractModuleData(
+        content: String,
+        errorCorrection: ErrorCorrectionLevel = ErrorCorrectionLevel.M
+    ): QRModuleData? {
+        return try {
+            val hints = hashMapOf<EncodeHintType, Any>(
+                EncodeHintType.ERROR_CORRECTION to errorCorrection,
+                EncodeHintType.MARGIN to 0,
+                EncodeHintType.CHARACTER_SET to "UTF-8"
+            )
+            val bitMatrix = QRCodeWriter().encode(
+                content, BarcodeFormat.QR_CODE, 1, 1, hints
+            )
+            bitMatrixToModuleData(bitMatrix)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Extracts raw QR module data for binary content (Compact SeedQR).
+     * Uses ISO-8859-1 encoding and Error Correction L as per SeedQR spec.
+     */
+    fun extractBinaryModuleData(bytes: ByteArray): QRModuleData? {
+        return try {
+            val content = String(bytes, Charsets.ISO_8859_1)
+            val hints = hashMapOf<EncodeHintType, Any>(
+                EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.L,
+                EncodeHintType.MARGIN to 0,
+                EncodeHintType.CHARACTER_SET to "ISO-8859-1"
+            )
+            val bitMatrix = QRCodeWriter().encode(
+                content, BarcodeFormat.QR_CODE, 1, 1, hints
+            )
+            bitMatrixToModuleData(bitMatrix)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /** Converts a ZXing BitMatrix to QRModuleData. */
+    private fun bitMatrixToModuleData(
+        bitMatrix: com.google.zxing.common.BitMatrix
+    ): QRModuleData {
+        val size = bitMatrix.width
+        val modules = BooleanArray(size * size) { i ->
+            bitMatrix[i % size, i / size]
+        }
+        return QRModuleData(modules, size)
     }
 }
