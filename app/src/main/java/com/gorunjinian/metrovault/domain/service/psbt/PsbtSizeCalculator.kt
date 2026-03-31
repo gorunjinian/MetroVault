@@ -4,6 +4,7 @@ import com.gorunjinian.metrovault.lib.bitcoin.*
 
 /**
  * Handles transaction size calculations for PSBT fee estimation.
+ * Computes exact sizes for finalized inputs and tight estimates for unsigned inputs.
  */
 internal object PsbtSizeCalculator {
 
@@ -14,9 +15,15 @@ internal object PsbtSizeCalculator {
      */
     data class InputSizeResult(val vBytes: Double, val isSegwit: Boolean)
 
+    /** Default estimated ECDSA signature size in bytes (DER average + sighash byte). */
+    private const val ESTIMATED_ECDSA_SIG_SIZE = 72
+
+    /** Default Schnorr signature size (64 bytes for SIGHASH_DEFAULT). */
+    private const val ESTIMATED_SCHNORR_SIG_SIZE = 64
+
     /**
-     * Calculates the virtual size (vBytes) of the transaction.
-     * Uses accurate per-input calculation based on script type and multisig configuration.
+     * Calculates the virtual size (vBytes) of the final signed transaction.
+     * Uses exact sizes for finalized inputs and per-script-type estimation for unsigned inputs.
      */
     fun calculateVirtualSize(psbt: Psbt, tx: Transaction): Int {
         var hasSegwit = false
@@ -33,48 +40,118 @@ internal object PsbtSizeCalculator {
             totalOutputVBytes += calculateOutputVBytes(txOut)
         }
 
-        // Overhead: version(4) + inputCount(1) + outputCount(1) + locktime(4)
+        // Overhead: version(4) + inputCount(varint) + outputCount(varint) + locktime(4)
         // SegWit marker+flag adds 0.5 vBytes (2 bytes at witness weight)
-        val overheadVBytes = if (hasSegwit) 10.5 else 10.0
+        val baseOverhead = 4 + varIntSize(psbt.inputs.size.toLong()) + varIntSize(tx.txOut.size.toLong()) + 4
+        val overheadVBytes = if (hasSegwit) baseOverhead + 0.5 else baseOverhead.toDouble()
 
         return kotlin.math.ceil(overheadVBytes + totalInputVBytes + totalOutputVBytes).toInt()
     }
 
     /**
-     * Calculates accurate input vBytes based on script type and multisig configuration.
-     *
-     * Formula: vBytes = ceil((base_weight + witness_weight) / 4)
-     * - base_weight = non-witness bytes × 4
-     * - witness_weight = witness bytes × 1 (SegWit discount)
-     *
-     * Supports: P2PKH, P2WPKH, P2SH-P2WPKH, P2WSH, P2SH-P2WSH, P2SH bare multisig, P2TR
+     * Calculates input vBytes by dispatching on the input type.
+     * Finalized inputs yield exact sizes; partially signed inputs use estimation
+     * with actual signature sizes where available.
      */
     fun calculateInputVBytes(input: Input): InputSizeResult {
-        val scriptPubKey = PsbtUtils.getInputScriptPubKey(input) ?: return InputSizeResult(68.0, true)
+        return when (input) {
+            is Input.WitnessInput.FinalizedWitnessInput -> calculateFinalizedWitnessVBytes(input)
+            is Input.NonWitnessInput.FinalizedNonWitnessInput -> calculateFinalizedNonWitnessVBytes(input)
+            is Input.FinalizedInputWithoutUtxo -> calculateFinalizedWithoutUtxoVBytes(input)
+            is Input.WitnessInput.PartiallySignedWitnessInput -> calculatePartialWitnessVBytes(input)
+            is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> calculatePartialNonWitnessVBytes(input)
+            is Input.PartiallySignedInputWithoutUtxo -> InputSizeResult(68.0, true)
+        }
+    }
 
+    // ---- Finalized inputs: exact sizes from serialized data ----
+
+    /**
+     * Computes exact vBytes for a finalized SegWit input from its scriptSig and witness data.
+     */
+    private fun calculateFinalizedWitnessVBytes(input: Input.WitnessInput.FinalizedWitnessInput): InputSizeResult {
         return try {
-            val parsedScript = Script.parse(scriptPubKey)
+            val scriptSigSize = input.scriptSig?.let { Script.write(it).size } ?: 0
+            val witnessSize = ScriptWitness.write(input.scriptWitness).size
+            val baseSize = 36 + varIntSize(scriptSigSize.toLong()) + scriptSigSize + 4
+            val weight = 4 * baseSize + witnessSize
+            InputSizeResult(weight / 4.0, true)
+        } catch (_: Exception) {
+            InputSizeResult(68.0, true)
+        }
+    }
+
+    /**
+     * Computes exact vBytes for a finalized legacy input from its scriptSig.
+     */
+    private fun calculateFinalizedNonWitnessVBytes(input: Input.NonWitnessInput.FinalizedNonWitnessInput): InputSizeResult {
+        return try {
+            val scriptSigSize = Script.write(input.scriptSig).size
+            val totalSize = 36 + varIntSize(scriptSigSize.toLong()) + scriptSigSize + 4
+            InputSizeResult(totalSize.toDouble(), false)
+        } catch (_: Exception) {
+            InputSizeResult(148.0, false)
+        }
+    }
+
+    /**
+     * Computes exact vBytes for a finalized input without UTXO data.
+     * Determines SegWit status from the presence of witness data.
+     */
+    private fun calculateFinalizedWithoutUtxoVBytes(input: Input.FinalizedInputWithoutUtxo): InputSizeResult {
+        return try {
+            val scriptSigSize = input.scriptSig?.let { Script.write(it).size } ?: 0
+            val witness = input.scriptWitness
+
+            if (witness != null && witness.isNotNull()) {
+                val witnessSize = ScriptWitness.write(witness).size
+                val baseSize = 36 + varIntSize(scriptSigSize.toLong()) + scriptSigSize + 4
+                val weight = 4 * baseSize + witnessSize
+                InputSizeResult(weight / 4.0, true)
+            } else {
+                val totalSize = 36 + varIntSize(scriptSigSize.toLong()) + scriptSigSize + 4
+                InputSizeResult(totalSize.toDouble(), false)
+            }
+        } catch (_: Exception) {
+            InputSizeResult(68.0, true)
+        }
+    }
+
+    // ---- Partially signed inputs: estimate using actual sig sizes when available ----
+
+    /**
+     * Estimates vBytes for a partially signed SegWit input.
+     * Uses actual signature sizes from partialSigs/taprootKeySignature when present.
+     */
+    private fun calculatePartialWitnessVBytes(input: Input.WitnessInput.PartiallySignedWitnessInput): InputSizeResult {
+        return try {
+            val parsedScript = Script.parse(input.txOut.publicKeyScript)
 
             when {
-                // P2PKH (Legacy single-sig): All data in scriptSig, no witness discount
-                // Size: outpoint(36) + scriptSig(1 + 107) + sequence(4) = 148 bytes
-                Script.isPay2pkh(parsedScript) -> InputSizeResult(148.0, false)
+                // P2WPKH (Native SegWit single-sig)
+                Script.isPay2wpkh(parsedScript) -> {
+                    val sigSize = input.partialSigs.values.firstOrNull()?.size() ?: ESTIMATED_ECDSA_SIG_SIZE
+                    // Witness: items_count(1) + compact_size(sig)(1) + sig + compact_size(33)(1) + pubkey(33)
+                    val witnessSize = 1 + 1 + sigSize + 1 + 33
+                    val weight = 41 * 4 + witnessSize
+                    InputSizeResult(weight / 4.0, true)
+                }
 
-                // P2WPKH (Native SegWit single-sig): Empty scriptSig, data in witness
-                // Base: 41 bytes, Witness: ~108 bytes → vBytes ≈ 68
-                Script.isPay2wpkh(parsedScript) -> InputSizeResult(68.0, true)
+                // P2TR (Taproot key-path spend)
+                Script.isPay2tr(parsedScript) -> {
+                    val sigSize = input.taprootKeySignature?.size() ?: ESTIMATED_SCHNORR_SIG_SIZE
+                    // Witness: items_count(1) + compact_size(sig)(1) + sig
+                    val witnessSize = 1 + 1 + sigSize
+                    val weight = 41 * 4 + witnessSize
+                    InputSizeResult(weight / 4.0, true)
+                }
 
-                // P2TR (Taproot key-path spend): Empty scriptSig, Schnorr sig in witness
-                // Base: 41 bytes, Witness: ~66 bytes → vBytes ≈ 58
-                Script.isPay2tr(parsedScript) -> InputSizeResult(58.0, true)
+                // P2WSH (Native SegWit multisig)
+                Script.isPay2wsh(parsedScript) -> calculateP2wshVBytes(input.witnessScript, input.partialSigs)
 
-                // P2WSH (Native SegWit script): Calculate based on witness script
-                Script.isPay2wsh(parsedScript) -> calculateP2wshVBytes(input)
+                // P2SH (Nested SegWit: P2SH-P2WPKH or P2SH-P2WSH)
+                Script.isPay2sh(parsedScript) -> calculateP2shWrappedVBytes(input)
 
-                // P2SH: Could be nested SegWit (P2SH-P2WPKH, P2SH-P2WSH) or bare multisig
-                Script.isPay2sh(parsedScript) -> calculateP2shVBytes(input)
-
-                // Default fallback to P2WPKH
                 else -> InputSizeResult(68.0, true)
             }
         } catch (_: Exception) {
@@ -83,124 +160,185 @@ internal object PsbtSizeCalculator {
     }
 
     /**
-     * Calculates vBytes for P2WSH (Native SegWit multisig) inputs.
-     *
-     * Formula:
-     * - Base: 41 bytes (outpoint + empty scriptSig + sequence) × 4 weight
-     * - Witness: 1 (items count) + 1 (OP_0) + m×73 (signatures) + 1 (script len) + witnessScriptLen
+     * Estimates vBytes for a partially signed legacy input (P2PKH or P2SH bare multisig).
+     * Uses actual signature sizes from partialSigs when present.
      */
-    private fun calculateP2wshVBytes(input: Input): InputSizeResult {
-        val witnessScript = when (input) {
-            is Input.WitnessInput.PartiallySignedWitnessInput -> input.witnessScript
-            else -> null
-        }
+    private fun calculatePartialNonWitnessVBytes(input: Input.NonWitnessInput.PartiallySignedNonWitnessInput): InputSizeResult {
+        val scriptPubKey = PsbtUtils.getInputScriptPubKey(input) ?: return InputSizeResult(148.0, false)
 
+        return try {
+            val parsedScript = Script.parse(scriptPubKey)
+
+            when {
+                // P2PKH (Legacy single-sig)
+                Script.isPay2pkh(parsedScript) -> {
+                    val sigSize = input.partialSigs.values.firstOrNull()?.size() ?: ESTIMATED_ECDSA_SIG_SIZE
+                    // scriptSig: push_prefix(1) + sig + push_prefix(1) + pubkey(33)
+                    val scriptSigSize = 1 + sigSize + 1 + 33
+                    val totalSize = 36 + varIntSize(scriptSigSize.toLong()) + scriptSigSize + 4
+                    InputSizeResult(totalSize.toDouble(), false)
+                }
+
+                // P2SH (Legacy bare multisig)
+                Script.isPay2sh(parsedScript) -> calculateP2shBareMultisigVBytes(input.redeemScript, input.partialSigs)
+
+                else -> InputSizeResult(148.0, false)
+            }
+        } catch (_: Exception) {
+            InputSizeResult(148.0, false)
+        }
+    }
+
+    // ---- P2WSH multisig ----
+
+    /**
+     * Calculates vBytes for P2WSH (Native SegWit multisig) inputs.
+     * Uses exact witness script size and actual signature sizes when available.
+     */
+    private fun calculateP2wshVBytes(
+        witnessScript: List<ScriptElt>?,
+        partialSigs: Map<PublicKey, ByteVector>
+    ): InputSizeResult {
         if (witnessScript != null) {
-            val (isMultisig, m, n) = PsbtAnalyzer.parseMultisigScript(witnessScript)
+            val (isMultisig, m, _) = PsbtAnalyzer.parseMultisigScript(witnessScript)
             if (isMultisig) {
-                val baseWeight = 41 * 4  // 164 WU
-                val witnessScriptSize = (n * 34) + 3  // n×(33 pubkey + 1 push) + OP_m + OP_n + OP_CHECKMULTISIG
-                val witnessWeight = 1 + 1 + (m * 73) + 1 + witnessScriptSize
-                return InputSizeResult((baseWeight + witnessWeight) / 4.0, true)
+                val witnessScriptSize = Script.write(witnessScript).size
+                val witnessSize = calculateMultisigWitnessSize(m, partialSigs, witnessScriptSize)
+                val baseWeight = 41 * 4
+                return InputSizeResult((baseWeight + witnessSize) / 4.0, true)
             }
         }
-
-        // Fallback: 2-of-3 estimate ≈ 104 vBytes
+        // Fallback: 2-of-3 estimate
         return InputSizeResult(104.0, true)
     }
 
+    // ---- P2SH variants ----
+
     /**
-     * Calculates vBytes for P2SH inputs.
-     * Detects whether it's nested SegWit (P2SH-P2WPKH, P2SH-P2WSH) or bare P2SH multisig.
-     *
-     * - P2SH-P2WPKH: scriptSig has 23-byte redeem script, witness has sig+pubkey
-     * - P2SH-P2WSH: scriptSig has 35-byte redeem script, witness has multisig data
-     * - P2SH bare multisig: All data in scriptSig, no witness discount
+     * Calculates vBytes for P2SH-wrapped SegWit inputs (P2SH-P2WPKH or P2SH-P2WSH).
      */
-    private fun calculateP2shVBytes(input: Input): InputSizeResult {
-        val redeemScript = when (input) {
-            is Input.NonWitnessInput.PartiallySignedNonWitnessInput -> input.redeemScript
-            is Input.WitnessInput.PartiallySignedWitnessInput -> input.redeemScript
-            else -> null
-        }
+    private fun calculateP2shWrappedVBytes(input: Input.WitnessInput.PartiallySignedWitnessInput): InputSizeResult {
+        val redeemScript = input.redeemScript
 
         if (redeemScript != null) {
-            // Check if redeem script is P2WPKH (nested SegWit single-sig)
+            // P2SH-P2WPKH: redeem script is a P2WPKH script (OP_0 <20-byte-hash> = 22 bytes)
             if (redeemScript.size == 2 && Script.isPay2wpkh(redeemScript)) {
-                // P2SH-P2WPKH: scriptSig(23) + base(41) = 64 bytes base, witness ~108 bytes
-                // vBytes = (64×4 + 108) / 4 = 91
-                return InputSizeResult(91.0, true)
+                val sigSize = input.partialSigs.values.firstOrNull()?.size() ?: ESTIMATED_ECDSA_SIG_SIZE
+                val witnessSize = 1 + 1 + sigSize + 1 + 33
+                // scriptSig: push of 22-byte redeem script = 23 bytes
+                val baseSize = 36 + 1 + 23 + 4  // 64 bytes
+                val weight = 4 * baseSize + witnessSize
+                return InputSizeResult(weight / 4.0, true)
             }
 
-            // Check if redeem script is P2WSH (nested SegWit multisig)
+            // P2SH-P2WSH: redeem script is a P2WSH script (OP_0 <32-byte-hash> = 34 bytes)
             if (redeemScript.size == 2 && Script.isPay2wsh(redeemScript)) {
-                // Need to get the actual witness script to determine m-of-n
-                val witnessScript = when (input) {
-                    is Input.WitnessInput.PartiallySignedWitnessInput -> input.witnessScript
-                    else -> null
-                }
-
+                val witnessScript = input.witnessScript
                 if (witnessScript != null) {
-                    val (isMultisig, m, n) = PsbtAnalyzer.parseMultisigScript(witnessScript)
+                    val (isMultisig, m, _) = PsbtAnalyzer.parseMultisigScript(witnessScript)
                     if (isMultisig) {
-                        // P2SH-P2WSH: scriptSig has 35-byte P2WSH redeem script
-                        // Base: 41 + 35 = 76 bytes × 4 = 304 WU
-                        val baseWeight = 76 * 4
-                        val witnessScriptSize = (n * 34) + 3
-                        val witnessWeight = 1 + 1 + (m * 73) + 1 + witnessScriptSize
-                        return InputSizeResult((baseWeight + witnessWeight) / 4.0, true)
+                        val witnessScriptSize = Script.write(witnessScript).size
+                        val witnessSize = calculateMultisigWitnessSize(m, input.partialSigs, witnessScriptSize)
+                        // scriptSig: push of 34-byte P2WSH redeem script = 35 bytes
+                        val baseWeight = (36 + 1 + 35 + 4) * 4  // 76 * 4 = 304 WU
+                        return InputSizeResult((baseWeight + witnessSize) / 4.0, true)
                     }
                 }
-                // Fallback P2SH-P2WSH 2-of-3: ~140 vBytes
                 return InputSizeResult(140.0, true)
-            }
-
-            // Check if redeem script is bare multisig (legacy, no SegWit discount)
-            val (isMultisig, m, n) = PsbtAnalyzer.parseMultisigScript(redeemScript)
-            if (isMultisig) {
-                // P2SH bare multisig: Everything in scriptSig, counted at full weight
-                // scriptSig: 1 (OP_0) + m×73 (signatures) + 1 (redeemScript len) + redeemScriptLen
-                val redeemScriptSize = (n * 34) + 3
-                val scriptSigSize = 1 + (m * 73) + 1 + redeemScriptSize
-                // Total: outpoint(36) + scriptSigLen(1-3) + scriptSig + sequence(4)
-                val totalBytes = 36 + varIntSize(scriptSigSize) + scriptSigSize + 4
-                return InputSizeResult(totalBytes.toDouble(), false)
             }
         }
 
-        // Fallback: assume P2SH-P2WPKH (most common P2SH type now)
+        // Fallback: assume P2SH-P2WPKH
         return InputSizeResult(91.0, true)
     }
 
     /**
-     * Calculates output vBytes based on script type.
-     * Output size = 8 (value) + 1 (scriptPubKey length) + scriptPubKey
+     * Calculates vBytes for P2SH bare multisig (legacy, no SegWit discount).
+     * Uses exact redeem script size and actual signature sizes when available.
+     */
+    private fun calculateP2shBareMultisigVBytes(
+        redeemScript: List<ScriptElt>?,
+        partialSigs: Map<PublicKey, ByteVector>
+    ): InputSizeResult {
+        if (redeemScript != null) {
+            val (isMultisig, m, _) = PsbtAnalyzer.parseMultisigScript(redeemScript)
+            if (isMultisig) {
+                val redeemScriptSize = Script.write(redeemScript).size
+                val sigSizes = computeSignatureSizes(m, partialSigs)
+                // scriptSig: OP_0(1) + m×(push_prefix(1) + sig) + push_prefix + redeemScript
+                val scriptSigSize = 1 + sigSizes.sumOf { 1 + it } +
+                    scriptPushPrefixSize(redeemScriptSize) + redeemScriptSize
+                val totalSize = 36 + varIntSize(scriptSigSize.toLong()) + scriptSigSize + 4
+                return InputSizeResult(totalSize.toDouble(), false)
+            }
+        }
+        // Fallback: P2SH-P2WPKH
+        return InputSizeResult(91.0, true)
+    }
+
+    // ---- Shared helpers ----
+
+    /**
+     * Calculates the serialized witness size for a multisig input.
+     * Witness: items_count + OP_0(empty) + m×(compact_size + sig) + compact_size + witnessScript
+     */
+    private fun calculateMultisigWitnessSize(
+        m: Int,
+        partialSigs: Map<PublicKey, ByteVector>,
+        witnessScriptSize: Int
+    ): Int {
+        val sigSizes = computeSignatureSizes(m, partialSigs)
+
+        var size = 1  // items count varint (always 1 byte for < 253 items)
+        size += 1     // OP_0 empty push (compact_size(0) = 1 byte)
+        for (sigSize in sigSizes) {
+            size += varIntSize(sigSize.toLong()) + sigSize
+        }
+        size += varIntSize(witnessScriptSize.toLong()) + witnessScriptSize
+        return size
+    }
+
+    /**
+     * Builds a list of m signature sizes: uses actual sizes from partialSigs first,
+     * then fills remaining slots with estimated sizes.
+     */
+    private fun computeSignatureSizes(m: Int, partialSigs: Map<PublicKey, ByteVector>): List<Int> {
+        val existingSizes = partialSigs.values.take(m).map { it.size() }
+        val remaining = (m - existingSizes.size).coerceAtLeast(0)
+        return existingSizes + List(remaining) { ESTIMATED_ECDSA_SIG_SIZE }
+    }
+
+    /**
+     * Calculates output vBytes from the actual scriptPubKey size.
+     * Output size = 8 (amount) + varint(scriptLen) + scriptPubKey
      */
     private fun calculateOutputVBytes(txOut: TxOut): Double {
-        return try {
-            val parsedScript = Script.parse(txOut.publicKeyScript)
-            val scriptLen = when {
-                Script.isPay2pkh(parsedScript) -> 25   // OP_DUP OP_HASH160 <20> OP_EQUALVERIFY OP_CHECKSIG
-                Script.isPay2sh(parsedScript) -> 23    // OP_HASH160 <20> OP_EQUAL
-                Script.isPay2wpkh(parsedScript) -> 22  // OP_0 <20>
-                Script.isPay2wsh(parsedScript) -> 34   // OP_0 <32>
-                Script.isPay2tr(parsedScript) -> 34    // OP_1 <32>
-                else -> 22  // Default to P2WPKH
-            }
-            (8 + 1 + scriptLen).toDouble()
-        } catch (_: Exception) {
-            31.0  // Default P2WPKH output size
+        val scriptLen = txOut.publicKeyScript.size()
+        return (8 + varIntSize(scriptLen.toLong()) + scriptLen).toDouble()
+    }
+
+    /**
+     * Returns the size of a Bitcoin variable-length integer encoding.
+     */
+    private fun varIntSize(value: Long): Int {
+        return when {
+            value < 0xFD -> 1
+            value <= 0xFFFF -> 3
+            value <= 0xFFFFFFFFL -> 5
+            else -> 9
         }
     }
 
     /**
-     * Returns the size of a variable-length integer encoding.
+     * Returns the push prefix size for a data push in Bitcoin script.
+     * Different from varint: uses OP_PUSHDATA1/2/4 for data > 75 bytes.
      */
-    private fun varIntSize(value: Int): Int {
+    private fun scriptPushPrefixSize(dataLen: Int): Int {
         return when {
-            value < 0xFD -> 1
-            value <= 0xFFFF -> 3
-            else -> 9
+            dataLen <= 75 -> 1      // Single opcode encodes both push and length
+            dataLen <= 255 -> 2     // OP_PUSHDATA1 + 1-byte length
+            dataLen <= 65535 -> 3   // OP_PUSHDATA2 + 2-byte length
+            else -> 5               // OP_PUSHDATA4 + 4-byte length
         }
     }
 }
