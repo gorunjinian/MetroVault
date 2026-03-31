@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.lib.qrtools
+package com.gorunjinian.metrovault.core.qr
 
 import android.content.Context
 import android.util.Log
@@ -8,16 +8,16 @@ import java.security.MessageDigest
 
 /**
  * SeedQR encoding and decoding utilities.
- * 
+ *
  * Implements both Standard SeedQR and CompactSeedQR formats as specified in:
  * https://github.com/SeedSigner/seedsigner/blob/dev/docs/seed_qr/README.md
- * 
+ *
  * Standard SeedQR:
  * - Encodes each word as a 4-digit zero-padded index (0000-2047)
  * - 12 words = 48 digits, 24 words = 96 digits
  * - Uses QR Numeric mode for efficiency
  * - Human-readable when decoded by any QR reader
- * 
+ *
  * CompactSeedQR:
  * - Encodes entropy bits directly (excluding checksum)
  * - 12 words = 128 bits (16 bytes), 24 words = 256 bits (32 bytes)
@@ -30,7 +30,7 @@ object SeedQRUtils {
      * Converts a mnemonic word list to a Standard SeedQR digit string.
      *
      * Each word is converted to its 4-digit zero-padded index in the BIP39 wordlist.
-     * Example: "vacuum" (index 1924) → "1924", "bridge" (index 222) → "0222"
+     * Example: "vacuum" (index 1924) -> "1924", "bridge" (index 222) -> "0222"
      *
      * @param words List of mnemonic words (12 or 24 words)
      * @param context Android context for loading wordlist
@@ -203,8 +203,8 @@ object SeedQRUtils {
      * Attempts to detect the SeedQR format and decode accordingly.
      *
      * Detection logic:
-     * - If content is all digits and 48 or 96 chars → Standard SeedQR
-     * - If rawBytes is provided with size 16 or 32 → CompactSeedQR
+     * - If content is all digits and 48 or 96 chars -> Standard SeedQR
+     * - If rawBytes is provided with size 16 or 32 -> CompactSeedQR
      * - Otherwise, try to interpret content as binary/CompactSeedQR
      *
      * @param content The text content from QR scan

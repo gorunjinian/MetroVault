@@ -1,10 +1,9 @@
-package com.gorunjinian.metrovault.lib.qrtools
+package com.gorunjinian.metrovault.core.qr
 
 import com.gorunjinian.bbqr.ContinuousJoinResult
 import com.gorunjinian.bbqr.ContinuousJoiner
 import com.gorunjinian.bcur.ResultType
 import com.gorunjinian.bcur.URDecoder
-import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
 
 /**
  * Helper class to track animated QR scanning progress for PSBTs.
@@ -13,9 +12,15 @@ import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
  * For UR formats (ur:psbt/, ur:crypto-psbt/), uses bcur-kotlin's URDecoder
  * which properly handles fountain code reconstruction.
  * For BBQr formats, uses bbqr-kotlin's ContinuousJoiner for streaming decoding.
+ *
+ * @param decodeSingleFrame Optional function to decode a single-frame PSBT string
+ *   (e.g., Base64, hex) into a normalized Base64 PSBT. Callers should pass
+ *   PSBTDecoder::decode to enable single/simple frame PSBT decoding.
  */
 @Suppress("PrivatePropertyName")
-class AnimatedQRScanner {
+class AnimatedQRScanner(
+    private val decodeSingleFrame: (String) -> String? = { null }
+) {
     // For simple format only
     private val receivedFrames = mutableMapOf<Int, String>()
     private var expectedTotal: Int? = null
@@ -258,12 +263,12 @@ class AnimatedQRScanner {
                 }
             }
             "single" -> {
-                PSBTDecoder.decode(receivedFrames[1] ?: return null)
+                decodeSingleFrame(receivedFrames[1] ?: return null)
             }
             else -> {
                 val frames = receivedFrames.entries.sortedBy { it.key }.map { it.value }
                 val combined = frames.joinToString("")
-                PSBTDecoder.decode(combined) ?: combined
+                decodeSingleFrame(combined) ?: combined
             }
         }
     }

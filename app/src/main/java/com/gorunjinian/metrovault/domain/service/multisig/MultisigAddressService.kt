@@ -9,7 +9,7 @@ import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.io.readNBytes
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
-import com.gorunjinian.metrovault.domain.service.util.Bip48MultisigPrefixes
+import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.metrovault.domain.service.util.WalletConstants
 

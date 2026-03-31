@@ -16,7 +16,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.lib.qrtools.QRModuleData
+import com.gorunjinian.metrovault.core.qr.QRModuleData
 import kotlin.math.ceil
 import kotlin.math.min
 

@@ -6,7 +6,7 @@ import com.gorunjinian.metrovault.lib.bitcoin.DescriptorExtensions
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.ScriptType
-import com.gorunjinian.metrovault.domain.service.util.Bip48MultisigPrefixes
+import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 
 /**

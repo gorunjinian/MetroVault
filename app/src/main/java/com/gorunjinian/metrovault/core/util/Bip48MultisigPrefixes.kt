@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.domain.service.util
+package com.gorunjinian.metrovault.core.util
 
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 

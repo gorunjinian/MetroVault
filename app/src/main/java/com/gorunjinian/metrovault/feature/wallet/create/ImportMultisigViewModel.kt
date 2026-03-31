@@ -11,7 +11,7 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
-import com.gorunjinian.metrovault.lib.qrtools.DescriptorQRScanner
+import com.gorunjinian.metrovault.core.qr.DescriptorQRScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow

@@ -19,7 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
+import com.gorunjinian.metrovault.core.qr.QRCodeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository

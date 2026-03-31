@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.data.model
 
-import com.gorunjinian.metrovault.domain.service.util.NetworkUtils
+import com.gorunjinian.metrovault.core.util.NetworkUtils
 import org.json.JSONArray
 import org.json.JSONObject
 

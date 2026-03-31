@@ -23,11 +23,12 @@ import com.gorunjinian.metrovault.feature.transaction.components.OutputWithType
 import com.gorunjinian.metrovault.feature.transaction.components.PSBTScannerView
 import com.gorunjinian.metrovault.feature.transaction.components.SignedPSBTDisplay
 import com.gorunjinian.metrovault.feature.transaction.components.TransactionConfirmation
-import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
-import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRScanner
-import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
-import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
-import com.gorunjinian.metrovault.lib.qrtools.QRDensity
+import com.gorunjinian.metrovault.core.qr.AnimatedQRResult
+import com.gorunjinian.metrovault.core.qr.AnimatedQRScanner
+import com.gorunjinian.metrovault.core.qr.OutputFormat
+import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
+import com.gorunjinian.metrovault.core.qr.QRCodeUtils
+import com.gorunjinian.metrovault.core.qr.QRDensity
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -62,7 +63,7 @@ fun ScanPSBTScreen(
     var alternativePathsUsed by remember { mutableStateOf<List<String>>(emptyList()) }  // Track alternative paths
     
     // Animated QR scanning state
-    val animatedScanner = remember { AnimatedQRScanner() }
+    val animatedScanner = remember { AnimatedQRScanner(PSBTDecoder::decode) }
     var scanProgress by remember { mutableIntStateOf(0) }
     var isAnimatedScan by remember { mutableStateOf(false) }
     var isParsingPSBT by remember { mutableStateOf(false) }

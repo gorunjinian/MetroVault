@@ -33,7 +33,7 @@ import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.lib.bitcoin.Block
 import com.gorunjinian.metrovault.lib.bitcoin.MessageSigning
-import com.gorunjinian.metrovault.lib.qrtools.configureForQRScanning
+import com.gorunjinian.metrovault.core.qr.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import kotlinx.coroutines.Dispatchers
@@ -373,7 +373,7 @@ fun SignMessageScreen(
                     onClick = {
                         scope.launch {
                             signatureQRBitmap = withContext(Dispatchers.Default) {
-                                com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils.generateQRCode(signatureInput)
+                                com.gorunjinian.metrovault.core.qr.QRCodeUtils.generateQRCode(signatureInput)
                             }
                             showSignatureQR = true
                         }

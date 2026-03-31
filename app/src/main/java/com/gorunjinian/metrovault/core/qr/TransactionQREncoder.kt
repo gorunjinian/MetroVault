@@ -1,11 +1,11 @@
-package com.gorunjinian.metrovault.lib.qrtools
+package com.gorunjinian.metrovault.core.qr
 
 import android.graphics.Color
 import com.gorunjinian.bbqr.FileType
 import com.gorunjinian.bbqr.SplitResult
 import com.gorunjinian.bcur.UR
 import com.gorunjinian.bcur.UREncoder
-import com.gorunjinian.metrovault.domain.service.util.hexToByteArray
+import com.gorunjinian.metrovault.core.util.hexToByteArray
 
 /**
  * Encodes raw transactions into QR code formats (BC-UR, BBQr).

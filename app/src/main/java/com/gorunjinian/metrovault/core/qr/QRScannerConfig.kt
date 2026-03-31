@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.lib.qrtools
+package com.gorunjinian.metrovault.core.qr
 
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.DecodeHintType

@@ -10,7 +10,7 @@ import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.data.model.SigningResult
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
-import com.gorunjinian.metrovault.domain.service.util.hexToByteArray
+import com.gorunjinian.metrovault.core.util.hexToByteArray
 
 /**
  * Facade service for all Bitcoin-related operations.

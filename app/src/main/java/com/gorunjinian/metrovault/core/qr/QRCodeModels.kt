@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.lib.qrtools
+package com.gorunjinian.metrovault.core.qr
 
 import android.graphics.Bitmap
 import com.gorunjinian.bbqr.Encoding
@@ -38,18 +38,18 @@ internal object DensitySettings {
     const val UR_MIN_FRAG_MEDIUM = 50
     const val UR_MAX_FRAG_HIGH = 400    // Dense QR
     const val UR_MIN_FRAG_HIGH = 100
-    
+
     // BBQr max alphanumeric characters per frame
     const val BBQR_MAX_CHARS_LOW = 350    // Easy to scan
     const val BBQR_MAX_CHARS_MEDIUM = 700 // Sweet spot (~QR v27)
     const val BBQR_MAX_CHARS_HIGH = 1200  // Dense (~QR v40)
-    
+
     fun getURFragmentLengths(density: QRDensity): Pair<Int, Int> = when (density) {
         QRDensity.LOW -> Pair(UR_MAX_FRAG_LOW, UR_MIN_FRAG_LOW)
         QRDensity.MEDIUM -> Pair(UR_MAX_FRAG_MEDIUM, UR_MIN_FRAG_MEDIUM)
         QRDensity.HIGH -> Pair(UR_MAX_FRAG_HIGH, UR_MIN_FRAG_HIGH)
     }
-    
+
     fun getBBQrMaxChars(density: QRDensity): Int = when (density) {
         QRDensity.LOW -> BBQR_MAX_CHARS_LOW
         QRDensity.MEDIUM -> BBQR_MAX_CHARS_MEDIUM

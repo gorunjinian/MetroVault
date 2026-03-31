@@ -16,9 +16,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
-import com.gorunjinian.metrovault.lib.qrtools.QRCodeUtils
-import com.gorunjinian.metrovault.lib.qrtools.QRModuleData
-import com.gorunjinian.metrovault.lib.qrtools.SeedQRUtils
+import com.gorunjinian.metrovault.core.qr.QRCodeUtils
+import com.gorunjinian.metrovault.core.qr.QRModuleData
+import com.gorunjinian.metrovault.core.qr.SeedQRUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

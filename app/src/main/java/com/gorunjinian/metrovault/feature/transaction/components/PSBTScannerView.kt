@@ -12,8 +12,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRScanner
-import com.gorunjinian.metrovault.lib.qrtools.configureForQRScanning
+import com.gorunjinian.metrovault.core.qr.AnimatedQRScanner
+import com.gorunjinian.metrovault.core.qr.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel

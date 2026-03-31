@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.data.model
 
-import com.gorunjinian.metrovault.domain.service.util.NetworkUtils
+import com.gorunjinian.metrovault.core.util.NetworkUtils
 
 /**
  * Derivation path constants following BIP43/44/49/84/86

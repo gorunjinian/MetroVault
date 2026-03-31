@@ -23,8 +23,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
-import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
+import com.gorunjinian.metrovault.core.qr.AnimatedQRResult
+import com.gorunjinian.metrovault.core.qr.OutputFormat
 
 /**
  * Display component for signed PSBT QR codes.

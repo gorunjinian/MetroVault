@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.domain.service.psbt
+package com.gorunjinian.metrovault.core.qr
 
 import android.graphics.Color
 import android.util.Base64
@@ -7,11 +7,6 @@ import com.gorunjinian.bbqr.FileType
 import com.gorunjinian.bbqr.SplitResult
 import com.gorunjinian.bcur.UR
 import com.gorunjinian.bcur.UREncoder
-import com.gorunjinian.metrovault.lib.qrtools.AnimatedQRResult
-import com.gorunjinian.metrovault.lib.qrtools.DensitySettings
-import com.gorunjinian.metrovault.lib.qrtools.OutputFormat
-import com.gorunjinian.metrovault.lib.qrtools.QRCodeGenerator
-import com.gorunjinian.metrovault.lib.qrtools.QRDensity
 
 /**
  * Encodes PSBTs into QR code formats (BC-UR v1, BC-UR v2, BBQr).

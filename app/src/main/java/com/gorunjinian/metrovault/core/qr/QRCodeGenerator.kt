@@ -1,4 +1,4 @@
-package com.gorunjinian.metrovault.lib.qrtools
+package com.gorunjinian.metrovault.core.qr
 
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -70,7 +70,7 @@ object QRCodeGenerator {
             null
         }
     }
-    
+
     /**
      * Generates QR code for binary data using ISO-8859-1 encoding.
      * Used for SeedQR and other binary-encoded QR codes.
@@ -113,7 +113,7 @@ object QRCodeGenerator {
             null
         }
     }
-    
+
     /**
      * Generates multiple QR codes for animated sequences.
      * Uses parallel processing for improved performance with multiple frames.
@@ -125,15 +125,15 @@ object QRCodeGenerator {
         backgroundColor: Int = Color.WHITE
     ): List<Bitmap>? {
         if (contents.isEmpty()) return null
-        
+
         return try {
             // Use parallel stream for faster multi-frame generation
             val results = contents.parallelStream()
-                .map { content -> 
+                .map { content ->
                     content to generateQRCode(content, size, foregroundColor, backgroundColor)
                 }
                 .collect(java.util.stream.Collectors.toList())
-            
+
             // Check if all succeeded and maintain order
             val bitmaps = results.map { it.second }
             if (bitmaps.all { it != null }) {

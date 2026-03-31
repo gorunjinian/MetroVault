@@ -37,11 +37,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
-import com.gorunjinian.metrovault.lib.qrtools.SeedQRUtils
+import com.gorunjinian.metrovault.core.qr.SeedQRUtils
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
 import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
-import com.gorunjinian.metrovault.lib.qrtools.configureForQRScanning
+import com.gorunjinian.metrovault.core.qr.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.delay
 import com.gorunjinian.metrovault.data.model.DerivationPaths
