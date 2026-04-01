@@ -53,9 +53,8 @@ fun LibUsedScreen(
         // QR Code
         Library("ZXing Core", "QR Code", "Barcode/QR code processing library", "3.5.4"),
         Library("ZXing Android Embedded", "QR Code", "Android camera integration for ZXing", "4.3.0"),
-        
-        // Data & Serialization
-        Library("CBOR", "Data", "Concise Binary Object Representation", "0.9"),
+        Library("BC-UR Kotlin", "QR Code", "BC-UR v1/v2 encoding with CBOR serialization", "1.0.5"),
+        Library("BBQr", "QR Code", "Multi-frame QR code encoding/decoding", "1.0.2"),
         
         // Concurrency
         Library("Kotlin Coroutines", "Concurrency", "Asynchronous programming support", "1.10.2"),
