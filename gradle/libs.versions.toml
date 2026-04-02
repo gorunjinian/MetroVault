@@ -1,6 +1,6 @@
 [versions]
 agp = "9.1.0"
-bbqr = "1.0.2"
+bbqr = "1.0.3"
 bcur-kotlin = "1.0.5"
 kotlin = "2.3.20"
 core-ktx = "1.18.0"
