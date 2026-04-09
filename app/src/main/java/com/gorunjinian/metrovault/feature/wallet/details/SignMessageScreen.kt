@@ -456,7 +456,7 @@ fun SignMessageScreen(
                                     addressInput.trim().startsWith("n") -> Block.Testnet4GenesisBlock.hash
                                     else -> Block.LivenetGenesisBlock.hash
                                 }
-                                val isValid = withContext(Dispatchers.Default) {
+                                val result = withContext(Dispatchers.Default) {
                                     MessageSigning.verifyMessage(
                                         message = messageInput,
                                         signatureBase64 = signatureInput.trim(),
@@ -464,11 +464,13 @@ fun SignMessageScreen(
                                         chainHash = chainHash
                                     )
                                 }
-                                successMessage = if (isValid) {
-                                    "Signature is valid ✓"
+                                if (result.isValid) {
+                                    val formatName = result.detectedFormat?.displayName ?: "Unknown"
+                                    successMessage = "Signature is valid ✓ (Format: $formatName)"
+                                    result.detectedFormat?.let { signatureFormat = it }
                                 } else {
                                     errorMessage = "Signature is invalid ✗"
-                                    ""
+                                    successMessage = ""
                                 }
                             }
                         } catch (e: Exception) {

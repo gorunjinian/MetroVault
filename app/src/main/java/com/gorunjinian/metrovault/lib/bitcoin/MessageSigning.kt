@@ -136,13 +136,24 @@ object MessageSigning {
     }
     
     /**
-     * Verify a signed message.
-     * 
+     * Result of message verification with auto-detected signature format.
+     */
+    data class VerificationResult(
+        val isValid: Boolean,
+        val detectedFormat: SignatureFormat? = null
+    )
+
+    /**
+     * Verify a signed message, auto-detecting the signature format.
+     *
+     * Tries formats in sequence: Electrum → BIP-137, returning the first match.
+     * This matches Sparrow's verification behavior.
+     *
      * @param message The original message
      * @param signatureBase64 The Base64-encoded signature
      * @param address The expected Bitcoin address
      * @param chainHash The chain (mainnet, testnet, etc.)
-     * @return true if the signature is valid for the given address
+     * @return VerificationResult with validity and detected format
      */
     @JvmStatic
     fun verifyMessage(
@@ -150,55 +161,77 @@ object MessageSigning {
         signatureBase64: String,
         address: String,
         chainHash: BlockHash
-    ): Boolean {
+    ): VerificationResult {
         return try {
             val sigBytes = Base64.decode(signatureBase64, Base64.DEFAULT)
-            
+
             if (sigBytes.size != 65) {
-                return false
+                return VerificationResult(false)
             }
-            
+
             val header = sigBytes[0].toInt() and 0xFF
-            
-            // Determine if compressed and extract recovery ID
-            val (_, recoveryId) = when (header) {
-                in 27..30 -> false to (header - 27)
-                in 31..34 -> true to (header - 31)
-                else -> return false // Invalid header
-            }
-            
-            // Extract r and s components
             val compactSig = ByteVector64(sigBytes.sliceArray(1..64))
-            
-            // Hash the message
             val hash = formatMessageForSigning(message)
-            
-            // Recover the public key
-            val recoveredPubKey = Crypto.recoverPublicKey(compactSig, hash, recoveryId)
-            
-            // Get the address from the recovered public key based on address format
-            val derivedAddress = when {
-                // Native SegWit (bc1q...)
-                address.startsWith("bc1q") || address.startsWith("tb1q") || address.startsWith("bcrt1q") -> {
-                    recoveredPubKey.p2wpkhAddress(chainHash)
-                }
-                // Taproot (bc1p...) - not typically used for message signing, but support it
-                address.startsWith("bc1p") || address.startsWith("tb1p") || address.startsWith("bcrt1p") -> {
-                    recoveredPubKey.xOnly().p2trAddress(chainHash)
-                }
-                // Nested SegWit (3... or 2...)
-                address.startsWith("3") || address.startsWith("2") -> {
-                    recoveredPubKey.p2shOfP2wpkhAddress(chainHash)
-                }
-                // Legacy P2PKH (1... or m/n...)
-                else -> {
-                    recoveredPubKey.p2pkhAddress(chainHash)
+
+            // Try Electrum format first (headers 27-34)
+            if (header in 27..34) {
+                val recoveryId = if (header in 27..30) header - 27 else header - 31
+                if (tryVerify(compactSig, hash, recoveryId, address, chainHash)) {
+                    return VerificationResult(true, SignatureFormat.ELECTRUM)
                 }
             }
-            
+
+            // Try BIP-137 format (headers 35-42)
+            if (header in 35..42) {
+                val recoveryId = if (header in 35..38) header - 35 else header - 39
+                if (tryVerify(compactSig, hash, recoveryId, address, chainHash)) {
+                    return VerificationResult(true, SignatureFormat.BIP137)
+                }
+            }
+
+            VerificationResult(false)
+        } catch (_: Exception) {
+            VerificationResult(false)
+        }
+    }
+
+    /**
+     * Attempt verification with a specific recovery ID.
+     * Recovers the public key and derives an address matching the provided address's type.
+     */
+    private fun tryVerify(
+        compactSig: ByteVector64,
+        hash: ByteArray,
+        recoveryId: Int,
+        address: String,
+        chainHash: BlockHash
+    ): Boolean {
+        return try {
+            val recoveredPubKey = Crypto.recoverPublicKey(compactSig, hash, recoveryId)
+            val derivedAddress = deriveAddressForVerification(recoveredPubKey, address, chainHash)
             derivedAddress == address
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * Derive an address from a public key, matching the type of the provided address.
+     */
+    private fun deriveAddressForVerification(
+        publicKey: PublicKey,
+        address: String,
+        chainHash: BlockHash
+    ): String {
+        return when {
+            address.startsWith("bc1q") || address.startsWith("tb1q") || address.startsWith("bcrt1q") ->
+                publicKey.p2wpkhAddress(chainHash)
+            address.startsWith("bc1p") || address.startsWith("tb1p") || address.startsWith("bcrt1p") ->
+                publicKey.xOnly().p2trAddress(chainHash)
+            address.startsWith("3") || address.startsWith("2") ->
+                publicKey.p2shOfP2wpkhAddress(chainHash)
+            else ->
+                publicKey.p2pkhAddress(chainHash)
         }
     }
     
