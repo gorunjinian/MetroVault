@@ -45,6 +45,8 @@ fun SignedPSBTDisplay(
     isPaused: Boolean,
     isLoading: Boolean = false,
     alternativePathsUsed: List<String> = emptyList(),
+    addressLookupFallbackUsed: Boolean = false,
+    addressLookupInputIndices: List<Int> = emptyList(),
     canFinalize: Boolean = false,
     isFinalized: Boolean = false,
     onFinalize: () -> Unit = {},
@@ -131,7 +133,7 @@ fun SignedPSBTDisplay(
             }
         }
         
-        // Alternative path warning card
+        // Alternative path warning card (Stage 2 fallback)
         if (alternativePathsUsed.isNotEmpty()) {
             Spacer(modifier = Modifier.height(12.dp))
             Card(
@@ -161,6 +163,60 @@ fun SignedPSBTDisplay(
                     Text(
                         text  = "Signing used a different derivation path than specified in this wallet. " +
                                "This can happen when coordinator wallets convert paths.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+        }
+
+        // Address-lookup fallback warning card (Stage 3 fallback)
+        //
+        // Fires when Stage 1 (BIP-174 fingerprint match) missed for at least one
+        // input and Stage 3 (script-derivation from the wallet's own seed) had to
+        // rescue the signing. The PSBT is malformed in the sense that it doesn't
+        // declare which of its inputs belong to this wallet via
+        // PSBT_IN_BIP32_DERIVATION. Signing still succeeded (and the plan's Part 2
+        // fix wrote the missing derivation fields back onto the signed output), but
+        // the user's source wallet should be fixed — otherwise every future PSBT
+        // from it will also hit this fallback, and hardware wallets using strict
+        // fingerprint matching (Jade, Coldcard, etc.) will reject them entirely.
+        if (addressLookupFallbackUsed) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_warning),
+                        contentDescription = "Warning",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "PSBT Missing Key Origin",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val inputCount = addressLookupInputIndices.size
+                    val inputsDescription = when {
+                        inputCount == 0 -> "inputs"  // defensive; shouldn't happen
+                        inputCount == 1 -> "input #${addressLookupInputIndices.first()}"
+                        inputCount <= 5 -> "inputs #${addressLookupInputIndices.joinToString(", #")}"
+                        else -> "$inputCount inputs"
+                    }
+                    Text(
+                        text = "Signed $inputsDescription by address matching. " +
+                                "Hardware wallets may reject this PSBT — re-import your wallet from the device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer
                     )

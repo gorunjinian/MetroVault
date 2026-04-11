@@ -623,10 +623,19 @@ class   Wallet(context: Context) {
          * Signing succeeded.
          * @property signedPsbt The signed PSBT in base64 format
          * @property alternativePathsUsed List of alternative derivation paths used (for diagnostics)
+         * @property usedAddressLookupFallback true if Stage 3 (script-derivation address
+         *   lookup) fired for any input. When true, the incoming PSBT did not declare
+         *   the input via PSBT_IN_BIP32_DERIVATION with a matching fingerprint and
+         *   MetroVault matched it by deriving addresses from the seed. UI should
+         *   surface a non-blocking warning to the user.
+         * @property addressLookupInputIndices The input indices that were signed via
+         *   Stage 3 fallback. Empty when `usedAddressLookupFallback` is false.
          */
         data class Success(
             val signedPsbt: String,
-            val alternativePathsUsed: List<String> = emptyList()
+            val alternativePathsUsed: List<String> = emptyList(),
+            val usedAddressLookupFallback: Boolean = false,
+            val addressLookupInputIndices: List<Int> = emptyList(),
         ) : PsbtSigningResult()
 
         /**
@@ -648,7 +657,12 @@ class   Wallet(context: Context) {
             val result = signingService.signSingleSig(psbtString, statelessState, isTestnet)
             return when (result) {
                 is WalletSigningService.SigningResult.Success ->
-                    PsbtSigningResult.Success(result.signedPsbt, result.alternativePathsUsed)
+                    PsbtSigningResult.Success(
+                        signedPsbt = result.signedPsbt,
+                        alternativePathsUsed = result.alternativePathsUsed,
+                        usedAddressLookupFallback = result.usedAddressLookupFallback,
+                        addressLookupInputIndices = result.addressLookupInputIndices,
+                    )
                 is WalletSigningService.SigningResult.Failure ->
                     PsbtSigningResult.Failure(result.error, result.message)
             }
@@ -683,7 +697,12 @@ class   Wallet(context: Context) {
         // Map signing service result to public API result
         return when (result) {
             is WalletSigningService.SigningResult.Success ->
-                PsbtSigningResult.Success(result.signedPsbt, result.alternativePathsUsed)
+                PsbtSigningResult.Success(
+                    signedPsbt = result.signedPsbt,
+                    alternativePathsUsed = result.alternativePathsUsed,
+                    usedAddressLookupFallback = result.usedAddressLookupFallback,
+                    addressLookupInputIndices = result.addressLookupInputIndices,
+                )
             is WalletSigningService.SigningResult.Failure ->
                 PsbtSigningResult.Failure(result.error, result.message)
         }

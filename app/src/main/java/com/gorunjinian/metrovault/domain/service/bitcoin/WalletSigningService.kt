@@ -7,6 +7,7 @@ import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
+import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
 
 /**
  * Orchestrates PSBT signing for both single-sig and multi-sig wallets.
@@ -35,10 +36,17 @@ class WalletSigningService(
          * Signing succeeded.
          * @property signedPsbt The signed PSBT in base64 format
          * @property alternativePathsUsed List of alternative derivation paths used (for diagnostics)
+         * @property usedAddressLookupFallback true if any input was signed via Stage 3
+         *   (address-lookup fallback) rather than via BIP-174 derivation path matching.
+         *   UI should surface a non-blocking warning when this is true.
+         * @property addressLookupInputIndices The input indices that fell through to
+         *   Stage 3. Empty when `usedAddressLookupFallback` is false.
          */
         data class Success(
             val signedPsbt: String,
-            val alternativePathsUsed: List<String> = emptyList()
+            val alternativePathsUsed: List<String> = emptyList(),
+            val usedAddressLookupFallback: Boolean = false,
+            val addressLookupInputIndices: List<Int> = emptyList(),
         ) : SigningResult()
 
         /**
@@ -91,16 +99,23 @@ class WalletSigningService(
         }
 
         val scriptType = DerivationPaths.getScriptType(walletState.derivationPath)
+        val accountPath = KeyPath(walletState.derivationPath)
         val signingResult = bitcoinService.signPsbt(
             psbtString,
             masterPrivateKey,
             accountPrivateKey,
             scriptType,
-            isTestnet
+            isTestnet,
+            accountPath,
         )
 
         return if (signingResult != null) {
-            SigningResult.Success(signingResult.signedPsbt, signingResult.alternativePathsUsed)
+            SigningResult.Success(
+                signedPsbt = signingResult.signedPsbt,
+                alternativePathsUsed = signingResult.alternativePathsUsed,
+                usedAddressLookupFallback = signingResult.usedAddressLookupFallback,
+                addressLookupInputIndices = signingResult.addressLookupInputIndices,
+            )
         } else {
             SigningResult.Failure(
                 SigningError.SIGNING_FAILED,
@@ -149,6 +164,8 @@ class WalletSigningService(
         var signedPsbt = psbtString
         var signedCount = 0
         val allAlternativePathsUsed = mutableListOf<String>()
+        var anyUsedAddressLookupFallback = false
+        val allAddressLookupInputIndices = sortedSetOf<Int>()
         val failedKeys = mutableListOf<String>()
 
         for (keyId in keyIds) {
@@ -170,8 +187,12 @@ class WalletSigningService(
             }
 
             if (result != null) {
-                signedPsbt = result.first
-                allAlternativePathsUsed.addAll(result.second)
+                signedPsbt = result.signedPsbt
+                allAlternativePathsUsed.addAll(result.alternativePathsUsed)
+                if (result.usedAddressLookupFallback) {
+                    anyUsedAddressLookupFallback = true
+                    allAddressLookupInputIndices.addAll(result.addressLookupInputIndices)
+                }
                 signedCount++
                 Log.d(TAG, "Successfully signed portion of PSBT with key: $keyId")
             }
@@ -179,7 +200,12 @@ class WalletSigningService(
 
         return if (signedCount > 0) {
             Log.d(TAG, "Multisig signing complete: $signedCount/${keyIds.size} keys signed")
-            SigningResult.Success(signedPsbt, allAlternativePathsUsed)
+            SigningResult.Success(
+                signedPsbt = signedPsbt,
+                alternativePathsUsed = allAlternativePathsUsed,
+                usedAddressLookupFallback = anyUsedAddressLookupFallback,
+                addressLookupInputIndices = allAddressLookupInputIndices.toList(),
+            )
         } else {
             val errorMsg = if (failedKeys.isNotEmpty()) {
                 "Failed to load ${failedKeys.size} key(s). Ensure the wallet is properly loaded."
@@ -205,19 +231,40 @@ class WalletSigningService(
     }
 
     /**
+     * Intermediate per-key sign result used by the multisig aggregation loop.
+     * Carries the same fields the inner [com.gorunjinian.metrovault.data.model.SigningResult]
+     * does, so the outer multisig `SigningResult.Success` can be built without
+     * losing fallback-tracking information.
+     */
+    private data class PerKeySignResult(
+        val signedPsbt: String,
+        val alternativePathsUsed: List<String>,
+        val usedAddressLookupFallback: Boolean,
+        val addressLookupInputIndices: List<Int>,
+    )
+
+    /**
      * Sign using an already-loaded wallet state.
      */
     private fun signWithLoadedState(
         psbt: String,
         state: WalletState
-    ): Pair<String, List<String>>? {
+    ): PerKeySignResult? {
         val masterKey = state.getMasterPrivateKey() ?: return null
         val accountKey = state.getAccountPrivateKey() ?: return null
         val scriptType = DerivationPaths.getScriptType(state.derivationPath)
         val isTestnet = DerivationPaths.isTestnet(state.derivationPath)
+        val accountPath = KeyPath(state.derivationPath)
 
-        val result = bitcoinService.signPsbt(psbt, masterKey, accountKey, scriptType, isTestnet)
-        return result?.let { it.signedPsbt to it.alternativePathsUsed }
+        val result = bitcoinService.signPsbt(psbt, masterKey, accountKey, scriptType, isTestnet, accountPath)
+        return result?.let {
+            PerKeySignResult(
+                signedPsbt = it.signedPsbt,
+                alternativePathsUsed = it.alternativePathsUsed,
+                usedAddressLookupFallback = it.usedAddressLookupFallback,
+                addressLookupInputIndices = it.addressLookupInputIndices,
+            )
+        }
     }
 
     /**
@@ -229,7 +276,7 @@ class WalletSigningService(
         key: WalletKeys,
         config: MultisigConfig,
         sessionSeed: String?
-    ): Pair<String, List<String>>? {
+    ): PerKeySignResult? {
         Log.d(TAG, "Direct derivation signing for key: ${key.fingerprint}")
 
         val cosigner = config.cosigners.find {
@@ -257,14 +304,23 @@ class WalletSigningService(
 
         val scriptType = DerivationPaths.getScriptType(derivationPath)
         val isTestnet = DerivationPaths.isTestnet(derivationPath)
+        val accountPath = KeyPath(derivationPath)
 
         val result = bitcoinService.signPsbt(
             psbt,
             walletResult.masterPrivateKey,
             walletResult.accountPrivateKey,
             scriptType,
-            isTestnet
+            isTestnet,
+            accountPath,
         )
-        return result?.let { it.signedPsbt to it.alternativePathsUsed }
+        return result?.let {
+            PerKeySignResult(
+                signedPsbt = it.signedPsbt,
+                alternativePathsUsed = it.alternativePathsUsed,
+                usedAddressLookupFallback = it.usedAddressLookupFallback,
+                addressLookupInputIndices = it.addressLookupInputIndices,
+            )
+        }
     }
 }

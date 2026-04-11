@@ -60,7 +60,12 @@ fun ScanPSBTScreen(
     var errorMessage by remember { mutableStateOf("") }
     var hasCameraPermission by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
-    var alternativePathsUsed by remember { mutableStateOf<List<String>>(emptyList()) }  // Track alternative paths
+    var alternativePathsUsed by remember { mutableStateOf<List<String>>(emptyList()) }  // Track alternative paths (Stage 2)
+    // Track when Stage 3 (address-lookup fallback) fired. Surfaces a warning banner
+    // in the signed-transaction display so users notice when their coordinator/source
+    // wallet is producing PSBTs without correct BIP32 derivation metadata.
+    var addressLookupFallbackUsed by remember { mutableStateOf(false) }
+    var addressLookupInputIndices by remember { mutableStateOf<List<Int>>(emptyList()) }
     
     // Animated QR scanning state
     val animatedScanner = remember { AnimatedQRScanner(PSBTDecoder::decode) }
@@ -148,6 +153,8 @@ fun ScanPSBTScreen(
         signedQRResult = null
         errorMessage = ""
         alternativePathsUsed = emptyList()
+        addressLookupFallbackUsed = false
+        addressLookupInputIndices = emptyList()
         animatedScanner.reset()
         scanProgress = 0
         isAnimatedScan = false
@@ -300,6 +307,8 @@ fun ScanPSBTScreen(
                         isPaused = isQRPaused,
                         isLoading = isRegeneratingQR,
                         alternativePathsUsed = alternativePathsUsed,
+                        addressLookupFallbackUsed = addressLookupFallbackUsed,
+                        addressLookupInputIndices = addressLookupInputIndices,
                         canFinalize = canFinalize,
                         isFinalized = isFinalized,
                         onFinalize = {
@@ -432,8 +441,12 @@ fun ScanPSBTScreen(
                                         is Wallet.PsbtSigningResult.Success -> {
                                             val signed = signingResult.signedPsbt
 
-                                            // Track alternative paths used
+                                            // Track alternative paths used (Stage 2)
                                             alternativePathsUsed = signingResult.alternativePathsUsed
+                                            // Track Stage 3 fallback — surfaces a warning banner
+                                            // on the signed-display screen.
+                                            addressLookupFallbackUsed = signingResult.usedAddressLookupFallback
+                                            addressLookupInputIndices = signingResult.addressLookupInputIndices
 
                                             // Check if this PSBT can be finalized (all required signatures present)
                                             canFinalize = withContext(Dispatchers.Default) {

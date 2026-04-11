@@ -38,9 +38,19 @@ data class PsbtOutput(
 /**
  * Result of PSBT signing operation.
  * Contains the signed PSBT and information about any alternative paths used.
+ *
+ * @property usedAddressLookupFallback true if Stage 3 (script-derivation fallback
+ *   via buildAddressLookup) fired for any input. When true, the incoming PSBT
+ *   did not correctly declare the input as belonging to this wallet via
+ *   PSBT_IN_BIP32_DERIVATION — MetroVault matched it by deriving addresses
+ *   from the loaded seed. Surfaces a user warning in the confirmation UI.
+ * @property addressLookupInputIndices The input indices that were signed via
+ *   Stage 3 fallback. Empty when `usedAddressLookupFallback` is false.
  */
 data class SigningResult(
     val signedPsbt: String,
     val usedAlternativePath: Boolean,
-    val alternativePathsUsed: List<String> = emptyList()
+    val alternativePathsUsed: List<String> = emptyList(),
+    val usedAddressLookupFallback: Boolean = false,
+    val addressLookupInputIndices: List<Int> = emptyList(),
 )

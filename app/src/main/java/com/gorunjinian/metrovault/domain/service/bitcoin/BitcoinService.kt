@@ -200,8 +200,11 @@ class BitcoinService {
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         scriptType: ScriptType,
-        isTestnet: Boolean = false
-    ): SigningResult? = psbtService.signPsbt(psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet)
+        isTestnet: Boolean = false,
+        accountPath: KeyPath,
+    ): SigningResult? = psbtService.signPsbt(
+        psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath
+    )
 
     @Suppress("unused") // Public API for future use/testing
     fun isPsbtFullySigned(psbtBase64: String): Boolean = psbtService.isPsbtFullySigned(psbtBase64)

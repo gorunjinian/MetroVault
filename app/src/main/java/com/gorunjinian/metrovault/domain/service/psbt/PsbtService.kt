@@ -4,6 +4,7 @@ import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.data.model.SigningResult
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
 
 /**
  * Service responsible for PSBT (Partially Signed Bitcoin Transaction) operations.
@@ -37,9 +38,10 @@ class PsbtService {
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         scriptType: ScriptType,
-        isTestnet: Boolean = false
+        isTestnet: Boolean = false,
+        accountPath: KeyPath,
     ): SigningResult? = PsbtSigner.signPsbt(
-        psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet
+        psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath
     )
 
     /**

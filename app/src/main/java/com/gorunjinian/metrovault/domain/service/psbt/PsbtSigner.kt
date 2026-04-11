@@ -41,7 +41,8 @@ internal object PsbtSigner {
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         scriptType: ScriptType,
-        isTestnet: Boolean = false
+        isTestnet: Boolean = false,
+        accountPath: KeyPath,
     ): SigningResult? {
         return try {
             val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
@@ -69,7 +70,8 @@ internal object PsbtSigner {
 
             var signedPsbt = psbt
             var signedCount = 0
-            val alternativePathsUsed = mutableListOf<String>()  // Track when alternative paths are used
+            val alternativePathsUsed = mutableListOf<String>()  // Track when alternative paths are used (Stage 2)
+            val addressLookupInputIndices = mutableListOf<Int>()  // Track when Stage 3 fallback was used
 
             Log.d(TAG, "Signing PSBT with ${psbt.inputs.size} inputs, wallet fingerprint: ${walletFingerprint.toString(16)}")
 
@@ -88,12 +90,17 @@ internal object PsbtSigner {
                     } ?: Log.d(TAG, "Input $index signed via BIP-174")
                 } else {
                     Log.d(TAG, "Input $index BIP-174 failed, trying address lookup")
-                    // Fallback to address scanning
-                    val result = signInputWithAddressLookup(signedPsbt, index, input, accountPrivateKey, addressToKeyInfo)
+                    // Fallback to address scanning (Stage 3)
+                    val result = signInputWithAddressLookup(
+                        signedPsbt, index, input, accountPrivateKey, addressToKeyInfo,
+                        accountPath, walletFingerprint,
+                    )
                     if (result != null) {
                         signedPsbt = result
                         signedCount++
-                        Log.d(TAG, "Input $index signed via address lookup")
+                        addressLookupInputIndices.add(index)
+                        Log.w(TAG, "Input $index signed via address lookup (Stage 3 fallback) — " +
+                                "PSBT did not declare this input via PSBT_IN_BIP32_DERIVATION with a matching fingerprint")
                     } else {
                         Log.d(TAG, "Input $index: no signature possible")
                     }
@@ -111,7 +118,9 @@ internal object PsbtSigner {
             SigningResult(
                 signedPsbt = signedBase64,
                 usedAlternativePath = alternativePathsUsed.isNotEmpty(),
-                alternativePathsUsed = alternativePathsUsed
+                alternativePathsUsed = alternativePathsUsed,
+                usedAddressLookupFallback = addressLookupInputIndices.isNotEmpty(),
+                addressLookupInputIndices = addressLookupInputIndices,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Exception during PSBT signing: ${e.message}", e)
@@ -311,14 +320,31 @@ internal object PsbtSigner {
     }
 
     /**
-     * Signs an input using address lookup fallback.
+     * Signs an input using address lookup fallback (Stage 3).
+     *
+     * When the incoming PSBT does not declare an input's key via
+     * PSBT_IN_BIP32_DERIVATION (or the fingerprint doesn't match), this
+     * method falls back to deriving addresses from the wallet's own seed
+     * and matching by scriptPubKey. Before signing, it writes the full
+     * (fingerprint, derivation path) entry back into the input's
+     * derivationPaths map so the resulting signed PSBT carries correct
+     * provenance for downstream tools (BIP-174 §4.1.1). Without this,
+     * coordinators and multisig aggregators cannot verify which key
+     * produced the signature.
+     *
+     * @param accountPath The wallet's account-level derivation path
+     *   (e.g. m/84'/0'/0'), used to build the full per-input path.
+     * @param walletFingerprint The wallet's computed master fingerprint,
+     *   used in the written-back KeyPathWithMaster entry.
      */
     private fun signInputWithAddressLookup(
         psbt: Psbt,
         inputIndex: Int,
         input: Input,
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
-        addressLookup: Map<ByteVector, AddressKeyInfo>
+        addressLookup: Map<ByteVector, AddressKeyInfo>,
+        accountPath: KeyPath,
+        walletFingerprint: Long,
     ): Psbt? {
         return try {
             val scriptPubKey = PsbtUtils.getInputScriptPubKey(input) ?: return null
@@ -330,9 +356,66 @@ internal object PsbtSigner {
                 .derivePrivateKey(keyInfo.addressIndex)
                 .privateKey
 
-            signInput(psbt, inputIndex, input, signingPrivateKey, keyInfo.publicKey)
-        } catch (_: Exception) {
+            // Build the full derivation path for the signed key so we can
+            // write it back into PSBT_IN_BIP32_DERIVATION. The account path
+            // is m/84'/0'/0' (or equivalent for the script type); we append
+            // the change/address indices from the address-lookup match.
+            val fullPath = KeyPath(
+                accountPath.path + listOf(keyInfo.changeIndex, keyInfo.addressIndex)
+            )
+            val derivation = KeyPathWithMaster(walletFingerprint, fullPath)
+
+            // Splice the derivation entry into the input BEFORE calling
+            // Psbt.sign() so that (a) downstream tools can verify signing
+            // provenance and (b) Psbt.sign itself sees a well-formed input.
+            val inputWithDerivation = addDerivationToInput(input, keyInfo.publicKey, derivation)
+            val psbtWithDerivation = if (inputWithDerivation !== input) {
+                val updatedInputs = psbt.inputs.toMutableList()
+                updatedInputs[inputIndex] = inputWithDerivation
+                psbt.copy(inputs = updatedInputs)
+            } else {
+                psbt
+            }
+
+            signInput(psbtWithDerivation, inputIndex, inputWithDerivation, signingPrivateKey, keyInfo.publicKey)
+        } catch (e: Exception) {
+            Log.w(TAG, "signInputWithAddressLookup: exception", e)
             null
+        }
+    }
+
+    /**
+     * Splices a (publicKey → derivation) entry into an input's derivationPaths map.
+     *
+     * Because [Input] is a sealed hierarchy with three un-finalized subtypes
+     * (each of which stores its own derivationPaths), we need a `when` over
+     * the subclasses to call the correct `.copy()`. Finalized inputs cannot
+     * accept new derivations and are returned unchanged — in practice Stage 3
+     * only fires for un-finalized inputs, so the finalized branch is
+     * effectively unreachable but kept for totality.
+     *
+     * TODO: taproot derivation fields (taprootDerivationPaths) are not yet
+     * repopulated. Stage 3's address lookup currently doesn't derive taproot
+     * xonly keys either, so this only matters if buildAddressLookup is
+     * extended to cover P2TR in the future.
+     */
+    private fun addDerivationToInput(
+        input: Input,
+        publicKey: PublicKey,
+        derivation: KeyPathWithMaster,
+    ): Input {
+        val mergedPaths = input.derivationPaths + (publicKey to derivation)
+        return when (input) {
+            is Input.WitnessInput.PartiallySignedWitnessInput ->
+                input.copy(derivationPaths = mergedPaths)
+            is Input.NonWitnessInput.PartiallySignedNonWitnessInput ->
+                input.copy(derivationPaths = mergedPaths)
+            is Input.PartiallySignedInputWithoutUtxo ->
+                input.copy(derivationPaths = mergedPaths)
+            else -> {
+                Log.w(TAG, "addDerivationToInput: cannot add derivation to finalized input ${input::class.simpleName}")
+                input
+            }
         }
     }
 
