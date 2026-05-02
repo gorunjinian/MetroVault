@@ -141,7 +141,7 @@ class KeyEncodingService {
         isTestnet: Boolean = false
     ): String {
         val fp = fingerprint.toLongOrNull(16) ?: 0L
-        val xpub = getAccountXpub(accountPublicKey, scriptType, isTestnet)
+        val xpub = encodeBip32Public(accountPublicKey, isTestnet)
         return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpub, scriptType)
     }
 
@@ -164,7 +164,7 @@ class KeyEncodingService {
         isTestnet: Boolean = false
     ): String {
         val fp = fingerprint.toLongOrNull(16) ?: 0L
-        val xpriv = getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
+        val xpriv = encodeBip32Private(accountPrivateKey, isTestnet)
         return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpriv, scriptType)
     }
 
@@ -350,7 +350,7 @@ class KeyEncodingService {
             val bip48Path = DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(bip48Path)
             val accountPublicKey = accountPrivateKey.extendedPublicKey
-            val xpub = getBip48Xpub(accountPublicKey, bip48ScriptType, isTestnet)
+            val xpub = encodeBip32Public(accountPublicKey, isTestnet)
             val fp = fingerprint.toLongOrNull(16) ?: 0L
             val isWrapped = bip48ScriptType == DerivationPaths.Bip48ScriptType.P2SH_P2WSH
             DescriptorExtensions.getBip48Descriptor(fp, bip48Path, xpub, isWrapped)
@@ -381,7 +381,7 @@ class KeyEncodingService {
         return try {
             val bip48Path = DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(bip48Path)
-            val xpriv = getBip48Xpriv(accountPrivateKey, bip48ScriptType, isTestnet)
+            val xpriv = encodeBip32Private(accountPrivateKey, isTestnet)
             val fp = fingerprint.toLongOrNull(16) ?: 0L
             val isWrapped = bip48ScriptType == DerivationPaths.Bip48ScriptType.P2SH_P2WSH
             DescriptorExtensions.getBip48Descriptor(fp, bip48Path, xpriv, isWrapped)
@@ -420,6 +420,15 @@ class KeyEncodingService {
     }
 
     // ==================== Private Helpers ====================
+
+    // Descriptors always carry BIP32-format inner keys (xpub/tpub, xprv/tprv) regardless of
+    // script type — the wrapper (wpkh/sh/wsh/tr) conveys the script type. SLIP132 prefixes
+    // (zpub/Zpub/etc.) are reserved for the standalone Account Keys export.
+    private fun encodeBip32Public(key: DeterministicWallet.ExtendedPublicKey, isTestnet: Boolean): String =
+        key.encode(if (isTestnet) DeterministicWallet.tpub else DeterministicWallet.xpub)
+
+    private fun encodeBip32Private(key: DeterministicWallet.ExtendedPrivateKey, isTestnet: Boolean): String =
+        key.encode(if (isTestnet) DeterministicWallet.tprv else DeterministicWallet.xprv)
 
     private fun getPublicKeyPrefix(scriptType: ScriptType, isTestnet: Boolean): Int {
         return if (isTestnet) {
