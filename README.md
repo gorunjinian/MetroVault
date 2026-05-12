@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <img src="Screenshot_1.png" alt="Screenshot 1" width="200">
-  <img src="Screenshot_2.png" alt="Screenshot 2" width="200">
-  <img src="Screenshot_3.png" alt="Screenshot 3" width="200">
-  <img src="Screenshot_4.png" alt="Screenshot 4" width="200">
+  <img src="docs/screenshots/Screenshot_1.png" alt="Screenshot 1" width="200">
+  <img src="docs/screenshots/Screenshot_2.png" alt="Screenshot 2" width="200">
+  <img src="docs/screenshots/Screenshot_3.png" alt="Screenshot 3" width="200">
+  <img src="docs/screenshots/Screenshot_4.png" alt="Screenshot 4" width="200">
 </p>
 
 <p align="center">
@@ -153,8 +153,8 @@ Detailed documentation is available in the repository:
 
 | Document | Description |
 |----------|-------------|
-| [SECURITY.md](./SECURITY.md) | Complete security architecture and encryption model |
-| [SEED_GENERATION.md](./SEED_GENERATION.md) | How wallets are generated, stored, and used |
+| [SECURITY.md](./docs/SECURITY.md) | Complete security architecture and encryption model |
+| [SEED_GENERATION.md](./docs/SEED_GENERATION.md) | How wallets are generated, stored, and used |
 
 ## 🤝 Contributing
 
@@ -164,7 +164,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 - **Bugs**: Open a GitHub issue with reproduction steps
 - **Features**: Open a discussion or issue with your proposal
-- **Security**: See [SECURITY.md](./SECURITY.md) for responsible disclosure
+- **Security**: See [SECURITY.md](./docs/SECURITY.md) for responsible disclosure
 
 ## 🙏 Acknowledgments
 

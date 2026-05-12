@@ -9,6 +9,8 @@ plugins {
 }
 
 val appVersionName = "3.8.0"
+val targetSdkValue = 36
+val minSdkValue = 26
 val appVersionCode = 3
 
 configure<ApplicationExtension> {
@@ -17,8 +19,8 @@ configure<ApplicationExtension> {
 
     defaultConfig {
         applicationId = "com.gorunjinian.metrovault"
-        minSdk = 26
-        targetSdk = 36
+        minSdk = minSdkValue
+        targetSdk = targetSdkValue
         versionCode = appVersionCode
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -108,6 +110,7 @@ dependencies {
 
     // Material 3
     implementation(libs.material)
+
     implementation(libs.compose.material.icons.extended)
 
     // Reorderable drag-and-drop for LazyColumn
