@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -20,13 +21,13 @@ import com.gorunjinian.metrovault.data.model.PsbtDetails
 
 /**
  * Transaction confirmation component for reviewing PSBT details before signing.
- * 
+ *
  * Displays:
  * - Inputs with addresses/UTXOs and amounts
- * - Outputs with change detection
- * - Transaction Summary (net amount sent, tx size, fee rate, structure)
+ * - Outputs labelled CHANGE or RECEIVE when the address belongs to this wallet
+ * - Transaction Summary (net amount sent externally, tx size, fee rate, structure)
  * - Network fee
- * - Total amount
+ * - Total amount — excludes any output returning to this wallet (change AND receive self-spends)
  * - Sign and Cancel buttons
  */
 @Composable
@@ -355,27 +356,42 @@ fun TransactionConfirmation(
                                     Text(
                                         text = outputWithType.output.address,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = if (outputWithType.isChangeAddress == true) 
-                                            MaterialTheme.colorScheme.onSurfaceVariant 
+                                        color = if (outputWithType.isOurAddress)
+                                            MaterialTheme.colorScheme.onSurfaceVariant
                                             else MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
                                         softWrap = false
                                     )
                                 }
-                                // Change badge
-                                if (outputWithType.isChangeAddress == true) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "CHANGE",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier
-                                            .background(
-                                                MaterialTheme.colorScheme.secondaryContainer,
-                                                RoundedCornerShape(4.dp)
-                                            )
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
+                                when {
+                                    outputWithType.isChangeAddress == true -> {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "CHANGE",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier
+                                                .background(
+                                                    MaterialTheme.colorScheme.secondaryContainer,
+                                                    RoundedCornerShape(4.dp)
+                                                )
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    outputWithType.isOurAddress -> {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "RECEIVE",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            modifier = Modifier
+                                                .background(
+                                                    MaterialTheme.colorScheme.tertiaryContainer,
+                                                    RoundedCornerShape(4.dp)
+                                                )
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -384,8 +400,8 @@ fun TransactionConfirmation(
                             text = formatAmount(outputWithType.output.value, showInSats),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (outputWithType.isChangeAddress == true) 
-                                MaterialTheme.colorScheme.onSurfaceVariant 
+                            color = if (outputWithType.isOurAddress)
+                                MaterialTheme.colorScheme.onSurfaceVariant
                                 else MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -399,8 +415,8 @@ fun TransactionConfirmation(
         Spacer(modifier = Modifier.height(16.dp))
         
         // ==================== TRANSACTION SUMMARY ====================
-        // Calculate values for the summary
-        val netSent = outputsWithType.filter { it.isChangeAddress != true }.sumOf { it.output.value }
+        // Sum of outputs leaving this wallet (excludes both change and receive self-spends).
+        val netSent = outputsWithType.filter { !it.isOurAddress }.sumOf { it.output.value }
         val feeRate = if (psbtDetails.fee != null && psbtDetails.virtualSize > 0) {
             psbtDetails.fee.toDouble() / psbtDetails.virtualSize
         } else null
@@ -526,9 +542,8 @@ fun TransactionConfirmation(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Total amount (only count payments going out, not change returning to us)
-        val totalSent = outputsWithType.filter { it.isChangeAddress != true }.sumOf { it.output.value }
-        val totalAmount = totalSent + (psbtDetails.fee ?: 0)
+        // Total amount (only count payments leaving the wallet; ignore change AND receive self-spends)
+        val totalAmount = netSent + (psbtDetails.fee ?: 0)
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -536,22 +551,33 @@ fun TransactionConfirmation(
                 containerColor = MaterialTheme.colorScheme.primaryContainer
             )
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Total Amount:",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = formatAmount(totalAmount, showInSats),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Total Amount:",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = formatAmount(totalAmount, showInSats),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                if (netSent == 0L) {
+                    Text(
+                        text = "Self-Send — only the fee leaves your wallet",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+                    )
+                }
             }
         }
 
