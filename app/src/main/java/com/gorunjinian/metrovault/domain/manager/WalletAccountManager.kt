@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.manager
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +51,7 @@ class WalletAccountManager(
                     walletsFlow.value = walletList.toList()
                 }
             }
-            Log.d(TAG, "Added account $accountNumber to wallet $walletId")
+            AppLog.d(TAG) { "Added account $accountNumber" }
             true
         } else false
     }
@@ -90,7 +90,7 @@ class WalletAccountManager(
                     walletsFlow.value = walletList.toList()
                 }
             }
-            Log.d(TAG, "Removed account $accountNumber from wallet $walletId")
+            AppLog.d(TAG) { "Removed account $accountNumber" }
             true
         } else false
     }
@@ -133,7 +133,7 @@ class WalletAccountManager(
             // Reload wallet with new account path
             onUnloadWallet(walletId)
             val reloaded = onOpenWallet(walletId)
-            Log.d(TAG, "Switched to account $accountNumber: reload=$reloaded")
+            AppLog.d(TAG) { "Switched to account $accountNumber: reload=$reloaded" }
             reloaded
         } else false
     }
@@ -178,7 +178,7 @@ class WalletAccountManager(
                     walletsFlow.value = walletList.toList()
                 }
             }
-            Log.d(TAG, "Renamed account $accountNumber to '$trimmedName' in wallet $walletId")
+            AppLog.d(TAG) { "Renamed account $accountNumber" }
             true
         } else false
     }

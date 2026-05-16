@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import fr.acinq.secp256k1.Hex
@@ -204,13 +204,13 @@ internal object PsbtFinalizer {
                     val tx = extractResult.value
                     val txBytes = Transaction.write(tx)
                     val txHex = Hex.encode(txBytes)
-                    Log.d(TAG, "Successfully finalized PSBT, tx size: ${txBytes.size} bytes")
+                    AppLog.d(TAG) { "Successfully finalized PSBT, tx size: ${txBytes.size} bytes" }
                     FinalizePsbtResult.Success(txHex)
                 }
                 is Either.Left -> FinalizePsbtResult.Failure("Failed to extract transaction: ${extractResult.value}")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception during PSBT finalization: ${e.message}", e)
+            AppLog.e(TAG, e) { "Exception during PSBT finalization: ${e.message}" }
             FinalizePsbtResult.Failure("Finalization error: ${e.message}")
         }
     }
@@ -234,7 +234,7 @@ internal object PsbtFinalizer {
             .filter { it.data.size() == 33 || it.data.size() == 65 } // Compressed or uncompressed pubkeys
             .map { it.data.toByteArray().toList() }
 
-        Log.d(TAG, "orderSignaturesByScript: Script has ${scriptPubKeys.size} pubkeys, partialSigs has ${partialSigs.size}")
+        AppLog.d(TAG) { "orderSignaturesByScript: Script has ${scriptPubKeys.size} pubkeys, partialSigs has ${partialSigs.size}" }
 
         // Order signatures by matching public key order
         val orderedSigs = mutableListOf<ByteVector>()
@@ -245,7 +245,7 @@ internal object PsbtFinalizer {
             }
             if (matchingSig != null) {
                 orderedSigs.add(matchingSig.value)
-                Log.d(TAG, "orderSignaturesByScript: Found sig for pubkey at position ${orderedSigs.size}")
+                AppLog.d(TAG) { "orderSignaturesByScript: Found sig for pubkey at position ${orderedSigs.size}" }
             }
         }
 

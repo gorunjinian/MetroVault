@@ -18,6 +18,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.bbqr.FileType
@@ -358,7 +359,7 @@ private fun generateDescriptorURv1(content: String): AnimatedQRResult? {
             }
         }
     } catch (e: Exception) {
-        android.util.Log.e("ExportMultiSigScreen", "BC-UR v1 generation failed: ${e.message}")
+        AppLog.e("ExportMultiSigScreen") { "BC-UR v1 generation failed: ${e.message}" }
         // Fall back to plain text
         val bitmap = QRCodeGenerator.generateQRCode(content, size = 512)
         bitmap?.let {
@@ -379,12 +380,12 @@ private fun generateDescriptorBBQr(descriptor: String): AnimatedQRResult? {
     return try {
         val descriptorBytes = descriptor.toByteArray(Charsets.UTF_8)
         val options = DensitySettings.getBBQrSplitOptions(QRDensity.LOW)
-        android.util.Log.d("ExportMultiSigScreen", "BBQr descriptor: ${descriptorBytes.size} bytes")
+        AppLog.d("ExportMultiSigScreen") { "BBQr descriptor: ${descriptorBytes.size} bytes" }
 
         val splitResult = SplitResult.fromData(descriptorBytes, FileType.UnicodeText, options)
         val frameContents = splitResult.parts
 
-        android.util.Log.d("ExportMultiSigScreen", "BBQr descriptor: ${frameContents.size} frames (version=${splitResult.version})")
+        AppLog.d("ExportMultiSigScreen") { "BBQr descriptor: ${frameContents.size} frames (version=${splitResult.version})" }
 
         val bitmaps = if (frameContents.size > 1) {
             QRCodeGenerator.generateConsistentQRCodes(frameContents, size = 512)
@@ -404,7 +405,7 @@ private fun generateDescriptorBBQr(descriptor: String): AnimatedQRResult? {
             )
         }
     } catch (e: Exception) {
-        android.util.Log.e("ExportMultiSigScreen", "BBQr generation failed: ${e.message}")
+        AppLog.e("ExportMultiSigScreen") { "BBQr generation failed: ${e.message}" }
         null
     }
 }
@@ -464,7 +465,7 @@ private fun generateDescriptorURv2(content: String, contentFormat: ContentFormat
             }
         }
     } catch (e: Exception) {
-        android.util.Log.e("ExportMultiSigScreen", "BC-UR v2 generation failed: ${e.message}")
+        AppLog.e("ExportMultiSigScreen") { "BC-UR v2 generation failed: ${e.message}" }
         // Fall back to plain text
         val bitmap = QRCodeGenerator.generateQRCode(content, size = 512)
         bitmap?.let {

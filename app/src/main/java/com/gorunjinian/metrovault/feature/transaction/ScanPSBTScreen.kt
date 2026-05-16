@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
+import com.gorunjinian.metrovault.core.logging.AppLog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.gorunjinian.metrovault.domain.Wallet
@@ -241,7 +242,7 @@ fun ScanPSBTScreen(
                                                         signedQRResult = newQR
                                                     } else {
                                                         signedQRResult = previousResult
-                                                        android.util.Log.w("ScanPSBTScreen", "QR generation failed for density $density, keeping previous")
+                                                        AppLog.w("ScanPSBTScreen") { "QR generation failed for density $density, keeping previous" }
                                                     }
                                                     isRegeneratingQR = false
                                                 }
@@ -335,7 +336,7 @@ fun ScanPSBTScreen(
                                         }
                                     }
                                     is com.gorunjinian.metrovault.domain.service.psbt.PsbtService.FinalizePsbtResult.Failure -> {
-                                        android.util.Log.e("ScanPSBTScreen", "Finalization failed: ${result.message}")
+                                        AppLog.e("ScanPSBTScreen") { "Finalization failed: ${result.message}" }
                                     }
                                 }
                                 isRegeneratingQR = false
@@ -410,7 +411,7 @@ fun ScanPSBTScreen(
                                 } else {
                                     // Keep previous result and revert format selection
                                     signedQRResult = previousResult
-                                    android.util.Log.w("ScanPSBTScreen", "QR generation failed for format $newFormat, keeping previous")
+                                    AppLog.w("ScanPSBTScreen") { "QR generation failed for format $newFormat, keeping previous" }
                                 }
                                 isRegeneratingQR = false
                             }

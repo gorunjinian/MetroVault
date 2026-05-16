@@ -2,11 +2,11 @@ package com.gorunjinian.metrovault.core.qr
 
 import android.graphics.Color
 import android.util.Base64
-import android.util.Log
 import com.gorunjinian.bbqr.FileType
 import com.gorunjinian.bbqr.SplitResult
 import com.gorunjinian.bcur.UR
 import com.gorunjinian.bcur.UREncoder
+import com.gorunjinian.metrovault.core.logging.AppLog
 
 /**
  * Encodes PSBTs into QR code formats (BC-UR v1, BC-UR v2, BBQr).
@@ -36,7 +36,7 @@ object PSBTQREncoder {
                 if (result != null) {
                     result
                 } else {
-                    Log.w("PSBTQREncoder", "BC-UR v1 returned null, falling back to BBQr")
+                    AppLog.w("PSBTQREncoder") { "BC-UR v1 returned null, falling back to BBQr" }
                     generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor, density)
                 }
             }
@@ -47,7 +47,7 @@ object PSBTQREncoder {
                 if (result != null) {
                     result
                 } else {
-                    Log.w("PSBTQREncoder", "BC-UR v2 returned null, falling back to BBQr")
+                    AppLog.w("PSBTQREncoder") { "BC-UR v2 returned null, falling back to BBQr" }
                     generateBBQrPSBT(psbt, size, foregroundColor, backgroundColor, density)
                 }
             }
@@ -75,7 +75,7 @@ object PSBTQREncoder {
 
             // Get fragment lengths based on selected density
             val (maxFragmentLen, minFragmentLen) = DensitySettings.getURFragmentLengths(density)
-            Log.d("PSBTQREncoder", "BC-UR v1 using density=$density, maxFrag=$maxFragmentLen, minFrag=$minFragmentLen")
+            AppLog.d("PSBTQREncoder") { "BC-UR v1 using density=$density, maxFrag=$maxFragmentLen, minFrag=$minFragmentLen" }
 
             // Create encoder with fountain code support
             val encoder = UREncoder(ur, maxFragmentLen, minFragmentLen, 0)
@@ -83,10 +83,10 @@ object PSBTQREncoder {
             if (encoder.isSinglePart()) {
                 // Single frame - simple case
                 val urString = encoder.nextPart()
-                Log.d("PSBTQREncoder", "BC-UR v1 single part: ${urString.length} chars")
+                AppLog.d("PSBTQREncoder") { "BC-UR v1 single part: ${urString.length} chars" }
                 val bitmap = QRCodeGenerator.generateQRCode(urString.uppercase(), size, foregroundColor, backgroundColor)
                 if (bitmap != null) {
-                    Log.d("PSBTQREncoder", "BC-UR v1 single part: bitmap generated successfully")
+                    AppLog.d("PSBTQREncoder") { "BC-UR v1 single part: bitmap generated successfully" }
                     AnimatedQRResult(
                         frames = listOf(bitmap),
                         totalParts = 1,
@@ -94,13 +94,13 @@ object PSBTQREncoder {
                         format = OutputFormat.UR_LEGACY
                     )
                 } else {
-                    Log.e("PSBTQREncoder", "BC-UR v1 single part: bitmap generation failed!")
+                    AppLog.e("PSBTQREncoder") { "BC-UR v1 single part: bitmap generation failed!" }
                     null
                 }
             } else {
                 // Multi-frame with fountain codes
                 val seqLen = encoder.seqLen
-                Log.d("PSBTQREncoder", "BC-UR v1 multi-part: seqLen=$seqLen")
+                AppLog.d("PSBTQREncoder") { "BC-UR v1 multi-part: seqLen=$seqLen" }
 
                 val frameStrings = mutableListOf<String>()
                 repeat(seqLen) {
@@ -110,7 +110,7 @@ object PSBTQREncoder {
                 // Generate QR codes for all frames
                 val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
                 if (!bitmaps.isNullOrEmpty()) {
-                    Log.d("PSBTQREncoder", "BC-UR v1: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)")
+                    AppLog.d("PSBTQREncoder") { "BC-UR v1: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)" }
                     AnimatedQRResult(
 
                         frames = bitmaps,
@@ -120,12 +120,12 @@ object PSBTQREncoder {
                         format = OutputFormat.UR_LEGACY
                     )
                 } else {
-                    Log.e("PSBTQREncoder", "BC-UR v1 multi-part: bitmap generation failed!")
+                    AppLog.e("PSBTQREncoder") { "BC-UR v1 multi-part: bitmap generation failed!" }
                     null
                 }
             }
         } catch (e: Exception) {
-            Log.e("PSBTQREncoder", "BC-UR v1 encoding failed: ${e.message}")
+            AppLog.e("PSBTQREncoder") { "BC-UR v1 encoding failed: ${e.message}" }
             e.printStackTrace()
             null
         }
@@ -152,7 +152,7 @@ object PSBTQREncoder {
 
             // Get fragment lengths based on selected density
             val (maxFragmentLen, minFragmentLen) = DensitySettings.getURFragmentLengths(density)
-            Log.d("PSBTQREncoder", "BC-UR v2 using density=$density, maxFrag=$maxFragmentLen, minFrag=$minFragmentLen")
+            AppLog.d("PSBTQREncoder") { "BC-UR v2 using density=$density, maxFrag=$maxFragmentLen, minFrag=$minFragmentLen" }
 
             // Create encoder with fountain code support
             val encoder = UREncoder(ur, maxFragmentLen, minFragmentLen, 0)
@@ -160,10 +160,10 @@ object PSBTQREncoder {
             if (encoder.isSinglePart()) {
                 // Single frame - simple case
                 val urString = encoder.nextPart()
-                Log.d("PSBTQREncoder", "BC-UR v2 single part: ${urString.length} chars")
+                AppLog.d("PSBTQREncoder") { "BC-UR v2 single part: ${urString.length} chars" }
                 val bitmap = QRCodeGenerator.generateQRCode(urString.uppercase(), size, foregroundColor, backgroundColor)
                 if (bitmap != null) {
-                    Log.d("PSBTQREncoder", "BC-UR v2 single part: bitmap generated successfully")
+                    AppLog.d("PSBTQREncoder") { "BC-UR v2 single part: bitmap generated successfully" }
                     AnimatedQRResult(
                         frames = listOf(bitmap),
                         totalParts = 1,
@@ -171,13 +171,13 @@ object PSBTQREncoder {
                         format = OutputFormat.UR_MODERN
                     )
                 } else {
-                    Log.e("PSBTQREncoder", "BC-UR v2 single part: bitmap generation failed!")
+                    AppLog.e("PSBTQREncoder") { "BC-UR v2 single part: bitmap generation failed!" }
                     null
                 }
             } else {
                 // Multi-frame with fountain codes
                 val seqLen = encoder.seqLen
-                Log.d("PSBTQREncoder", "BC-UR v2 multi-part: seqLen=$seqLen")
+                AppLog.d("PSBTQREncoder") { "BC-UR v2 multi-part: seqLen=$seqLen" }
 
                 val frameStrings = mutableListOf<String>()
                 repeat(seqLen) {
@@ -187,7 +187,7 @@ object PSBTQREncoder {
                 // Generate QR codes for all frames
                 val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
                 if (!bitmaps.isNullOrEmpty()) {
-                    Log.d("PSBTQREncoder", "BC-UR v2: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)")
+                    AppLog.d("PSBTQREncoder") { "BC-UR v2: Generated ${bitmaps.size} frames (seqLen=$seqLen, ${psbtBytes.size} bytes)" }
                     AnimatedQRResult(
                         frames = bitmaps,
                         totalParts = bitmaps.size,
@@ -196,12 +196,12 @@ object PSBTQREncoder {
                         format = OutputFormat.UR_MODERN
                     )
                 } else {
-                    Log.e("PSBTQREncoder", "BC-UR v2 multi-part: bitmap generation failed!")
+                    AppLog.e("PSBTQREncoder") { "BC-UR v2 multi-part: bitmap generation failed!" }
                     null
                 }
             }
         } catch (e: Exception) {
-            Log.e("PSBTQREncoder", "BC-UR v2 encoding failed: ${e.message}")
+            AppLog.e("PSBTQREncoder") { "BC-UR v2 encoding failed: ${e.message}" }
             e.printStackTrace()
             null
         }
@@ -220,12 +220,12 @@ object PSBTQREncoder {
         return try {
             val psbtBytes = Base64.decode(psbt, Base64.NO_WRAP)
             val options = DensitySettings.getBBQrSplitOptions(density)
-            Log.d("PSBTQREncoder", "BBQr generation starting, PSBT size: ${psbtBytes.size} bytes, density=$density")
+            AppLog.d("PSBTQREncoder") { "BBQr generation starting, PSBT size: ${psbtBytes.size} bytes, density=$density" }
 
             val splitResult = SplitResult.fromData(psbtBytes, FileType.Psbt, options)
             val bbqrFrames = splitResult.parts
 
-            Log.d("PSBTQREncoder", "BBQr encoded to ${bbqrFrames.size} frames (version=${splitResult.version}, encoding=${splitResult.encoding})")
+            AppLog.d("PSBTQREncoder") { "BBQr encoded to ${bbqrFrames.size} frames (version=${splitResult.version}, encoding=${splitResult.encoding})" }
 
             // Generate consistent QR codes for all frames
             val bitmaps = if (bbqrFrames.size > 1) {
@@ -237,7 +237,7 @@ object PSBTQREncoder {
             }
 
             if (bitmaps != null && bitmaps.size == bbqrFrames.size) {
-                Log.d("PSBTQREncoder", "BBQr generation successful: ${bitmaps.size} frames")
+                AppLog.d("PSBTQREncoder") { "BBQr generation successful: ${bitmaps.size} frames" }
                 AnimatedQRResult(
                     frames = bitmaps,
                     totalParts = bitmaps.size,
@@ -246,11 +246,11 @@ object PSBTQREncoder {
                     format = OutputFormat.BBQR
                 )
             } else {
-                Log.e("PSBTQREncoder", "BBQr bitmap generation failed: got ${bitmaps?.size ?: 0} bitmaps for ${bbqrFrames.size} frames")
+                AppLog.e("PSBTQREncoder") { "BBQr bitmap generation failed: got ${bitmaps?.size ?: 0} bitmaps for ${bbqrFrames.size} frames" }
                 null
             }
         } catch (e: Exception) {
-            Log.e("PSBTQREncoder", "BBQr generation exception: ${e.message}")
+            AppLog.e("PSBTQREncoder") { "BBQr generation exception: ${e.message}" }
             e.printStackTrace()
             null
         }

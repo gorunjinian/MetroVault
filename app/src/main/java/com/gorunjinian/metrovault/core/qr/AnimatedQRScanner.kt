@@ -4,6 +4,7 @@ import com.gorunjinian.bbqr.ContinuousJoinResult
 import com.gorunjinian.bbqr.ContinuousJoiner
 import com.gorunjinian.bcur.ResultType
 import com.gorunjinian.bcur.URDecoder
+import com.gorunjinian.metrovault.core.logging.AppLog
 
 /**
  * Helper class to track animated QR scanning progress for PSBTs.
@@ -56,7 +57,7 @@ class AnimatedQRScanner(
                 content.startsWith(ANIMATED_PREFIX) -> "simple"
                 else -> "single"
             }
-            android.util.Log.d("AnimatedQRScanner", "Detected format: $detectedFormat")
+            AppLog.d("AnimatedQRScanner") { "Detected format: $detectedFormat" }
         }
 
         // Handle UR formats with URDecoder (fountain code support)
@@ -75,7 +76,7 @@ class AnimatedQRScanner(
         try {
             if (urDecoder == null) {
                 urDecoder = URDecoder()
-                android.util.Log.d("AnimatedQRScanner", "Initialized URDecoder for fountain codes")
+                AppLog.d("AnimatedQRScanner") { "Initialized URDecoder for fountain codes" }
             }
 
             val decoder = urDecoder!!
@@ -88,11 +89,11 @@ class AnimatedQRScanner(
             }
 
             val percentComplete = (progress * 100).toInt().coerceIn(0, 100)
-            android.util.Log.d("AnimatedQRScanner", "UR frame $urFrameCount received, progress: $percentComplete%, expected parts: $urEstimatedTotal")
+            AppLog.d("AnimatedQRScanner") { "UR frame $urFrameCount received, progress: $percentComplete%, expected parts: $urEstimatedTotal" }
 
             return percentComplete
         } catch (e: Exception) {
-            android.util.Log.e("AnimatedQRScanner", "Error processing UR frame: ${e.message}")
+            AppLog.e("AnimatedQRScanner") { "Error processing UR frame: ${e.message}" }
             e.printStackTrace()
             return null
         }
@@ -110,12 +111,12 @@ class AnimatedQRScanner(
                 if (expectedTotal == null) {
                     expectedTotal = totalParts
                 } else if (expectedTotal != totalParts) {
-                    android.util.Log.w("AnimatedQRScanner", "Total parts changed, resetting")
+                    AppLog.w("AnimatedQRScanner") { "Total parts changed, resetting" }
                     reset()
                     expectedTotal = totalParts
                 }
                 receivedFrames[partNum] = data
-                android.util.Log.d("AnimatedQRScanner", "Got frame $partNum/$totalParts, have ${receivedFrames.size} frames")
+                AppLog.d("AnimatedQRScanner") { "Got frame $partNum/$totalParts, have ${receivedFrames.size} frames" }
                 ((receivedFrames.size * 100) / totalParts)
             }
             "single" -> {
@@ -140,7 +141,7 @@ class AnimatedQRScanner(
 
             return when (result) {
                 is ContinuousJoinResult.NotStarted -> {
-                    android.util.Log.d("AnimatedQRScanner", "BBQr: not started yet")
+                    AppLog.d("AnimatedQRScanner") { "BBQr: not started yet" }
                     0
                 }
                 is ContinuousJoinResult.InProgress -> {
@@ -149,17 +150,17 @@ class AnimatedQRScanner(
                         bbqrTotalParts = bbqrReceivedParts + result.partsLeft
                     }
                     val progress = ((bbqrTotalParts - result.partsLeft) * 100) / bbqrTotalParts
-                    android.util.Log.d("AnimatedQRScanner", "BBQr: ${result.partsLeft} parts left, progress: $progress%")
+                    AppLog.d("AnimatedQRScanner") { "BBQr: ${result.partsLeft} parts left, progress: $progress%" }
                     progress
                 }
                 is ContinuousJoinResult.Complete -> {
                     bbqrCompleteData = result.joined.data
-                    android.util.Log.d("AnimatedQRScanner", "BBQr: complete, ${bbqrCompleteData!!.size} bytes")
+                    AppLog.d("AnimatedQRScanner") { "BBQr: complete, ${bbqrCompleteData!!.size} bytes" }
                     100
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("AnimatedQRScanner", "Error processing BBQr frame: ${e.message}")
+            AppLog.e("AnimatedQRScanner") { "Error processing BBQr frame: ${e.message}" }
             return null
         }
     }
@@ -217,7 +218,7 @@ class AnimatedQRScanner(
         if (detectedFormat == "ur-psbt-v1" || detectedFormat == "ur-psbt-v2" || detectedFormat == "ur") {
             val result = urDecoder?.result
             if (result != null) {
-                android.util.Log.d("AnimatedQRScanner", "URDecoder complete, result type: ${result.type}")
+                AppLog.d("AnimatedQRScanner") { "URDecoder complete, result type: ${result.type}" }
                 return result.type == ResultType.SUCCESS
             }
             return false
@@ -246,20 +247,20 @@ class AnimatedQRScanner(
                     try {
                         val ur = result.ur!!
                         val psbtBytes = ur.toBytes()
-                        android.util.Log.d("AnimatedQRScanner", "URDecoder success, PSBT size: ${psbtBytes.size} bytes")
+                        AppLog.d("AnimatedQRScanner") { "URDecoder success, PSBT size: ${psbtBytes.size} bytes" }
                         android.util.Base64.encodeToString(psbtBytes, android.util.Base64.NO_WRAP)
                     } catch (e: Exception) {
-                        android.util.Log.e("AnimatedQRScanner", "Failed to get UR result: ${e.message}")
+                        AppLog.e("AnimatedQRScanner") { "Failed to get UR result: ${e.message}" }
                         null
                     }
                 } else {
-                    android.util.Log.w("AnimatedQRScanner", "URDecoder result not successful: ${result?.type}")
+                    AppLog.w("AnimatedQRScanner") { "URDecoder result not successful: ${result?.type}" }
                     null
                 }
             }
             "bbqr" -> {
                 bbqrCompleteData?.let { bytes ->
-                    android.util.Log.d("AnimatedQRScanner", "BBQr result: ${bytes.size} bytes")
+                    AppLog.d("AnimatedQRScanner") { "BBQr result: ${bytes.size} bytes" }
                     android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                 }
             }

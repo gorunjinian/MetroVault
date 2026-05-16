@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.ScriptType
@@ -56,7 +56,7 @@ class AddressService {
                 scriptType = scriptType
             )
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to generate address at index $index")
+            AppLog.e(TAG) { "Failed to generate address at index $index" }
             null
         }
     }
@@ -100,7 +100,7 @@ class AddressService {
                 privateKeyWIF = privateKey.toBase58(wifPrefix)
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to get address keys at index $index: ${e.message}")
+            AppLog.e(TAG) { "Failed to get address keys at index $index: ${e.message}" }
             null
         }
     }
@@ -134,7 +134,7 @@ class AddressService {
 
             AddressCheckResult(false, null, null, null)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to check address")
+            AppLog.e(TAG) { "Failed to check address" }
             null
         }
     }

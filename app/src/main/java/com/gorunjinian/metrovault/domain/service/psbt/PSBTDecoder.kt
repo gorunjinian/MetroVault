@@ -1,12 +1,12 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
 import android.util.Base64
-import android.util.Log
 import com.gorunjinian.bbqr.FileType
 import com.gorunjinian.bbqr.Joined
 import com.gorunjinian.bbqr.SplitOptions
 import com.gorunjinian.bbqr.SplitResult
 import com.gorunjinian.bcur.UR
+import com.gorunjinian.metrovault.core.logging.AppLog
 
 /**
  * Decodes PSBTs from various QR code formats used by different wallets.
@@ -55,12 +55,12 @@ object PSBTDecoder {
                 isValidHexPsbt(trimmed) -> hexToBase64(trimmed)
 
                 else -> {
-                    Log.w(TAG, "Unknown PSBT format, attempting Base64 decode")
+                    AppLog.w(TAG) { "Unknown PSBT format, attempting Base64 decode" }
                     if (isValidBase64Psbt(trimmed)) trimmed else null
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to decode PSBT: ${e.message}")
+            AppLog.e(TAG) { "Failed to decode PSBT: ${e.message}" }
             null
         }
     }
@@ -74,13 +74,13 @@ object PSBTDecoder {
             val bytes = joined.data
 
             if (bytes.size < 5 || !bytes.take(5).toByteArray().contentEquals(PSBT_MAGIC)) {
-                Log.w(TAG, "Invalid PSBT magic bytes after BBQr decode")
+                AppLog.w(TAG) { "Invalid PSBT magic bytes after BBQr decode" }
                 return null
             }
 
             Base64.encodeToString(bytes, Base64.NO_WRAP)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to decode BBQr single: ${e.message}")
+            AppLog.e(TAG) { "Failed to decode BBQr single: ${e.message}" }
             null
         }
     }
@@ -102,7 +102,7 @@ object PSBTDecoder {
             // BBQr parts are 0-indexed, convert to 1-indexed
             return Triple(part + 1, total, input)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse BBQr header: ${e.message}")
+            AppLog.e(TAG) { "Failed to parse BBQr header: ${e.message}" }
             return null
         }
     }
@@ -118,13 +118,13 @@ object PSBTDecoder {
             val bytes = joined.data
 
             if (bytes.size < 5 || !bytes.take(5).toByteArray().contentEquals(PSBT_MAGIC)) {
-                Log.w(TAG, "Invalid PSBT magic after BBQr reassembly")
+                AppLog.w(TAG) { "Invalid PSBT magic after BBQr reassembly" }
                 return null
             }
 
             Base64.encodeToString(bytes, Base64.NO_WRAP)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to decode BBQr frames: ${e.message}")
+            AppLog.e(TAG) { "Failed to decode BBQr frames: ${e.message}" }
             null
         }
     }
@@ -140,11 +140,11 @@ object PSBTDecoder {
             if (psbtBytes.size >= 5 && psbtBytes.take(5).toByteArray().contentEquals(PSBT_MAGIC)) {
                 Base64.encodeToString(psbtBytes, Base64.NO_WRAP)
             } else {
-                Log.w(TAG, "Invalid PSBT magic in UR content (got ${psbtBytes.take(5).map { it.toInt() and 0xFF }})")
+                AppLog.w(TAG) { "Invalid PSBT magic in UR content (got ${psbtBytes.take(5).map { it.toInt() and 0xFF }})" }
                 null
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to decode UR PSBT: ${e.message}")
+            AppLog.w(TAG) { "Failed to decode UR PSBT: ${e.message}" }
             null
         }
     }
@@ -180,10 +180,10 @@ object PSBTDecoder {
                     val isFountainCode = seqNum > fragLen
 
                     if (isFountainCode) {
-                        Log.d(TAG, "Detected UR fountain code: seq=$seqNum, fragLen=$fragLen")
+                        AppLog.d(TAG) { "Detected UR fountain code: seq=$seqNum, fragLen=$fragLen" }
                         Triple(seqNum, fragLen, input)
                     } else {
-                        Log.d(TAG, "Parsed UR frame $seqNum of $fragLen")
+                        AppLog.d(TAG) { "Parsed UR frame $seqNum of $fragLen" }
                         Triple(seqNum, fragLen, input)
                     }
                 }
@@ -192,17 +192,17 @@ object PSBTDecoder {
                     val seqParts = parts[0].split("of")
                     val seq = seqParts[0].toInt()
                     val total = seqParts[1].toInt()
-                    Log.d(TAG, "Parsed UR frame $seq of $total (of-format)")
+                    AppLog.d(TAG) { "Parsed UR frame $seq of $total (of-format)" }
                     Triple(seq, total, input)
                 }
                 // Single part (no sequence info) - complete UR in one frame
                 else -> {
-                    Log.d(TAG, "Single-part UR detected")
+                    AppLog.d(TAG) { "Single-part UR detected" }
                     Triple(1, 1, input)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse UR frame: ${e.message}")
+            AppLog.e(TAG) { "Failed to parse UR frame: ${e.message}" }
             null
         }
     }
@@ -215,7 +215,7 @@ object PSBTDecoder {
             val ur = UR.parse(input)
             Base64.encodeToString(ur.toBytes(), Base64.NO_WRAP)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to decode UR bytes: ${e.message}")
+            AppLog.w(TAG) { "Failed to decode UR bytes: ${e.message}" }
             null
         }
     }
@@ -231,7 +231,7 @@ object PSBTDecoder {
             val result = SplitResult.fromData(psbtBytes, FileType.Psbt, options)
             result.parts
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to encode PSBT to BBQr: ${e.message}")
+            AppLog.e(TAG) { "Failed to encode PSBT to BBQr: ${e.message}" }
             null
         }
     }

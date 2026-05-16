@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.core.crypto
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -75,7 +75,7 @@ class SecureSeedCache {
             secureArray.asString(Charsets.UTF_8)
         } catch (_: IllegalStateException) {
             // SecureByteArray was already closed
-            Log.w(TAG, "Attempted to read closed seed for wallet: $walletId")
+            AppLog.w(TAG) { "Attempted to read closed seed" }
             cache.remove(walletId)
             null
         }
@@ -98,7 +98,7 @@ class SecureSeedCache {
         val removed = cache.remove(walletId)
         removed?.close()
         if (removed != null) {
-            Log.d(TAG, "Removed and wiped seed for wallet: $walletId")
+            AppLog.d(TAG) { "Removed and wiped seed" }
         }
         return removed != null
     }
@@ -121,12 +121,12 @@ class SecureSeedCache {
                 try {
                     secureArray.close()
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error closing SecureByteArray during clear: ${e.message}")
+                    AppLog.w(TAG) { "Error closing SecureByteArray during clear: ${e.message}" }
                 }
             }
             // Then clear the map
             cache.clear()
-            Log.d(TAG, "Cleared and wiped $count seed(s) from cache")
+            AppLog.d(TAG) { "Cleared and wiped $count seed(s) from cache" }
         }
     }
 
@@ -136,7 +136,7 @@ class SecureSeedCache {
      */
     protected fun finalize() {
         if (cache.isNotEmpty()) {
-            Log.w(TAG, "SecureSeedCache finalized with ${cache.size} seeds - should call clear() explicitly")
+            AppLog.w(TAG) { "SecureSeedCache finalized with ${cache.size} seeds - should call clear() explicitly" }
             clear()
         }
     }

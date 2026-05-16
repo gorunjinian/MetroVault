@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.multisig
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.CosignerInfo
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
@@ -68,49 +68,49 @@ class MultisigDescriptorParser {
      */
     fun parse(descriptor: String, localFingerprints: List<String>): Result<MultisigConfig, String> {
         try {
-            Log.d(TAG, "Parsing descriptor: ${descriptor.take(100)}...")
-            Log.d(TAG, "Local fingerprints to match: $localFingerprints")
+            AppLog.d(TAG) { "Parsing descriptor" }
+            AppLog.d(TAG) { "Matching against ${localFingerprints.size} local fingerprint(s)" }
 
             // Use BSMS module to extract descriptor from BSMS or plain format
             val bsmsData = extractFromBsmsOrPlain(descriptor)
             val extractedDescriptor = bsmsData.descriptor
             val verificationAddress = bsmsData.verificationAddress
 
-            Log.d(TAG, "Extracted descriptor: ${extractedDescriptor.take(100)}...")
+            AppLog.d(TAG) { "Extracted descriptor" }
             if (bsmsData.isBsmsFormat) {
-                Log.d(TAG, "Input was BSMS format")
+                AppLog.d(TAG) { "Input was BSMS format" }
             }
             if (verificationAddress != null) {
-                Log.d(TAG, "BSMS verification address: $verificationAddress")
+                AppLog.d(TAG) { "BSMS verification address present" }
             }
             if (bsmsData.pathRestrictions != null) {
-                Log.d(TAG, "BSMS path restrictions: ${bsmsData.pathRestrictions}")
+                AppLog.d(TAG) { "BSMS path restrictions present" }
             }
 
             // Remove checksum if present (everything after #)
             val cleanDescriptor = extractedDescriptor.substringBefore("#").trim()
-            Log.d(TAG, "Clean descriptor (no checksum): ${cleanDescriptor.take(100)}...")
+            AppLog.d(TAG) { "Clean descriptor (no checksum)" }
 
             // Detect script type
             val scriptType = MultisigScriptType.fromDescriptor(cleanDescriptor)
-            Log.d(TAG, "Detected script type: $scriptType")
+            AppLog.d(TAG) { "Detected script type: $scriptType" }
 
             // Extract threshold
             val thresholdMatch = THRESHOLD_PATTERN.find(cleanDescriptor)
             if (thresholdMatch == null) {
-                Log.e(TAG, "Could not find threshold pattern in: ${cleanDescriptor.take(200)}")
+                AppLog.e(TAG) { "Could not find threshold pattern in descriptor" }
                 return Result.Error("Could not find multisig threshold in descriptor")
             }
             val threshold = thresholdMatch.groupValues[1].toIntOrNull()
                 ?: return Result.Error("Invalid threshold value")
-            Log.d(TAG, "Threshold (m): $threshold")
+            AppLog.d(TAG) { "Threshold (m): $threshold" }
 
             // Extract all keys
             val keyMatches = KEY_PATTERN.findAll(cleanDescriptor).toList()
-            Log.d(TAG, "Key matches found: ${keyMatches.size}")
+            AppLog.d(TAG) { "Key matches found: ${keyMatches.size}" }
 
             if (keyMatches.isEmpty()) {
-                Log.e(TAG, "No keys matched. Descriptor content around keys: ${cleanDescriptor.take(500)}")
+                AppLog.e(TAG) { "No keys matched in descriptor" }
                 return Result.Error("No valid keys found in descriptor. Make sure the descriptor is in standard format.")
             }
 
@@ -120,7 +120,7 @@ class MultisigDescriptorParser {
                 val xpub = match.groupValues[3]
                 val isLocal = localFingerprints.any { it.equals(fingerprint, ignoreCase = true) }
 
-                Log.d(TAG, "Found key: fingerprint=$fingerprint, path=$path, isLocal=$isLocal")
+                AppLog.d(TAG) { "Found cosigner key (isLocal=$isLocal)" }
 
                 CosignerInfo(
                     xpub = xpub,
@@ -131,7 +131,7 @@ class MultisigDescriptorParser {
             }
 
             val n = cosigners.size
-            Log.d(TAG, "Total cosigners (n): $n")
+            AppLog.d(TAG) { "Total cosigners (n): $n" }
 
             // Validate threshold
             if (threshold > n) {
@@ -146,7 +146,7 @@ class MultisigDescriptorParser {
             if (localKeys.isEmpty()) {
                 return Result.Error("None of the cosigner keys match your local wallets. Import the corresponding single-sig wallet first.")
             }
-            Log.d(TAG, "Local keys found: ${localKeys.size}")
+            AppLog.d(TAG) { "Local keys found: ${localKeys.size}" }
 
             val config = MultisigConfig(
                 m = threshold,
@@ -160,7 +160,7 @@ class MultisigDescriptorParser {
             return Result.Success(config)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse descriptor: ${e.message}", e)
+            AppLog.e(TAG, e) { "Failed to parse descriptor: ${e.message}" }
             return Result.Error("Failed to parse descriptor: ${e.message}")
         }
     }

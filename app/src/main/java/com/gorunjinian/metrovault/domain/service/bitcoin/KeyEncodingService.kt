@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.Descriptor
 import com.gorunjinian.metrovault.lib.bitcoin.DescriptorExtensions
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
@@ -56,7 +56,7 @@ class KeyEncodingService {
             val accountPublicKey = accountPrivateKey.extendedPublicKey
             getAccountXpub(accountPublicKey, scriptType, isTestnet)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to derive xpub for account $accountNumber")
+            AppLog.e(TAG) { "Failed to derive xpub for account $accountNumber" }
             ""
         }
     }
@@ -98,7 +98,7 @@ class KeyEncodingService {
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
             getAccountXpriv(accountPrivateKey, scriptType, isTestnet)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to derive xpriv for account $accountNumber")
+            AppLog.e(TAG) { "Failed to derive xpriv for account $accountNumber" }
             ""
         }
     }
@@ -117,7 +117,7 @@ class KeyEncodingService {
             val chainHash = BitcoinUtils.getChainHash(isTestnet)
             Descriptor.BIP84Descriptors(chainHash, masterPrivateKey)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to generate wallet descriptors")
+            AppLog.e(TAG) { "Failed to generate wallet descriptors" }
             null
         }
     }
@@ -194,7 +194,7 @@ class KeyEncodingService {
             val accountPublicKey = accountPrivateKey.extendedPublicKey
             getWalletDescriptor(fingerprint, accountPath, accountPublicKey, scriptType, isTestnet)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to generate unified descriptor for account $accountNumber")
+            AppLog.e(TAG) { "Failed to generate unified descriptor for account $accountNumber" }
             ""
         }
     }
@@ -224,7 +224,7 @@ class KeyEncodingService {
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(accountPath)
             getPrivateWalletDescriptor(fingerprint, accountPath, accountPrivateKey, scriptType, isTestnet)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to generate private descriptor for account $accountNumber")
+            AppLog.e(TAG) { "Failed to generate private descriptor for account $accountNumber" }
             ""
         }
     }
@@ -244,7 +244,7 @@ class KeyEncodingService {
         return try {
             masterPrivateKey.encode(isTestnet)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to encode BIP32 root key")
+            AppLog.e(TAG) { "Failed to encode BIP32 root key" }
             ""
         }
     }
@@ -307,7 +307,7 @@ class KeyEncodingService {
             val accountPublicKey = accountPrivateKey.extendedPublicKey
             getBip48Xpub(accountPublicKey, bip48ScriptType, isTestnet)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to derive BIP48 xpub for account $accountNumber")
+            AppLog.e(TAG) { "Failed to derive BIP48 xpub for account $accountNumber" }
             ""
         }
     }
@@ -333,7 +333,7 @@ class KeyEncodingService {
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(bip48Path)
             getBip48Xpriv(accountPrivateKey, bip48ScriptType, isTestnet)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to derive BIP48 xpriv for account $accountNumber")
+            AppLog.e(TAG) { "Failed to derive BIP48 xpriv for account $accountNumber" }
             ""
         }
     }
@@ -355,7 +355,7 @@ class KeyEncodingService {
             val isWrapped = bip48ScriptType == DerivationPaths.Bip48ScriptType.P2SH_P2WSH
             DescriptorExtensions.getBip48Descriptor(fp, bip48Path, xpub, isWrapped)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to generate BIP48 descriptor for account $accountNumber")
+            AppLog.e(TAG) { "Failed to generate BIP48 descriptor for account $accountNumber" }
             ""
         }
     }
@@ -386,7 +386,7 @@ class KeyEncodingService {
             val isWrapped = bip48ScriptType == DerivationPaths.Bip48ScriptType.P2SH_P2WSH
             DescriptorExtensions.getBip48Descriptor(fp, bip48Path, xpriv, isWrapped)
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to generate BIP48 private descriptor for account $accountNumber")
+            AppLog.e(TAG) { "Failed to generate BIP48 private descriptor for account $accountNumber" }
             ""
         }
     }

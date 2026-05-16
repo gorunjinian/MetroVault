@@ -5,6 +5,7 @@ import com.gorunjinian.bbqr.FileType
 import com.gorunjinian.bbqr.SplitResult
 import com.gorunjinian.bcur.UR
 import com.gorunjinian.bcur.UREncoder
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.util.hexToByteArray
 
 /**
@@ -34,7 +35,7 @@ object TransactionQREncoder {
         return try {
             // Convert hex string to bytes
             val txBytes = txHex.hexToByteArray()
-            android.util.Log.d("TransactionQREncoder", "Generating raw tx QR: ${txBytes.size} bytes, format=$format")
+            AppLog.d("TransactionQREncoder") { "Generating raw tx QR: ${txBytes.size} bytes, format=$format" }
 
             when (format) {
                 OutputFormat.UR_LEGACY, OutputFormat.UR_MODERN -> {
@@ -47,7 +48,7 @@ object TransactionQREncoder {
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("TransactionQREncoder", "Raw tx QR generation failed: ${e.message}")
+            AppLog.e("TransactionQREncoder") { "Raw tx QR generation failed: ${e.message}" }
             e.printStackTrace()
             null
         }
@@ -70,7 +71,7 @@ object TransactionQREncoder {
 
             // Get fragment lengths based on selected density
             val (maxFragmentLen, minFragmentLen) = DensitySettings.getURFragmentLengths(density)
-            android.util.Log.d("TransactionQREncoder", "UR bytes using density=$density, maxFrag=$maxFragmentLen, minFrag=$minFragmentLen")
+            AppLog.d("TransactionQREncoder") { "UR bytes using density=$density, maxFrag=$maxFragmentLen, minFrag=$minFragmentLen" }
 
             // Create encoder with fountain code support
             val encoder = UREncoder(ur, maxFragmentLen, minFragmentLen, 0)
@@ -78,7 +79,7 @@ object TransactionQREncoder {
             if (encoder.isSinglePart()) {
                 // Single frame
                 val urString = encoder.nextPart()
-                android.util.Log.d("TransactionQREncoder", "UR bytes single part: ${urString.length} chars")
+                AppLog.d("TransactionQREncoder") { "UR bytes single part: ${urString.length} chars" }
                 val bitmap = QRCodeGenerator.generateQRCode(urString.uppercase(), size, foregroundColor, backgroundColor)
                 if (bitmap != null) {
                     AnimatedQRResult(
@@ -91,7 +92,7 @@ object TransactionQREncoder {
             } else {
                 // Multi-frame with fountain codes
                 val seqLen = encoder.seqLen
-                android.util.Log.d("TransactionQREncoder", "UR bytes multi-part: seqLen=$seqLen")
+                AppLog.d("TransactionQREncoder") { "UR bytes multi-part: seqLen=$seqLen" }
 
                 val frameStrings = mutableListOf<String>()
                 repeat(seqLen) {
@@ -100,7 +101,7 @@ object TransactionQREncoder {
 
                 val bitmaps = QRCodeGenerator.generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
                 if (!bitmaps.isNullOrEmpty()) {
-                    android.util.Log.d("TransactionQREncoder", "UR bytes: Generated ${bitmaps.size} frames")
+                    AppLog.d("TransactionQREncoder") { "UR bytes: Generated ${bitmaps.size} frames" }
                     AnimatedQRResult(
                         frames = bitmaps,
                         totalParts = bitmaps.size,
@@ -111,7 +112,7 @@ object TransactionQREncoder {
                 } else null
             }
         } catch (e: Exception) {
-            android.util.Log.e("TransactionQREncoder", "UR bytes encoding failed: ${e.message}")
+            AppLog.e("TransactionQREncoder") { "UR bytes encoding failed: ${e.message}" }
             null
         }
     }
@@ -130,12 +131,12 @@ object TransactionQREncoder {
         return try {
             val txBytes = txHex.hexToByteArray()
             val options = DensitySettings.getBBQrSplitOptions(density)
-            android.util.Log.d("TransactionQREncoder", "BBQr transaction: ${txBytes.size} bytes, density=$density")
+            AppLog.d("TransactionQREncoder") { "BBQr transaction: ${txBytes.size} bytes, density=$density" }
 
             val splitResult = SplitResult.fromData(txBytes, FileType.Transaction, options)
             val frameStrings = splitResult.parts
 
-            android.util.Log.d("TransactionQREncoder", "BBQr tx: ${frameStrings.size} frames (version=${splitResult.version}, encoding=${splitResult.encoding})")
+            AppLog.d("TransactionQREncoder") { "BBQr tx: ${frameStrings.size} frames (version=${splitResult.version}, encoding=${splitResult.encoding})" }
 
             val bitmaps = if (frameStrings.size > 1) {
                 QRCodeGenerator.generateConsistentQRCodes(frameStrings, size, foregroundColor, backgroundColor)
@@ -144,7 +145,7 @@ object TransactionQREncoder {
             }
 
             if (bitmaps != null && bitmaps.size == frameStrings.size) {
-                android.util.Log.d("TransactionQREncoder", "BBQr tx: Generated ${bitmaps.size} frames")
+                AppLog.d("TransactionQREncoder") { "BBQr tx: Generated ${bitmaps.size} frames" }
                 AnimatedQRResult(
                     frames = bitmaps,
                     totalParts = bitmaps.size,
@@ -153,11 +154,11 @@ object TransactionQREncoder {
                     format = OutputFormat.BBQR
                 )
             } else {
-                android.util.Log.e("TransactionQREncoder", "BBQr tx bitmap generation failed")
+                AppLog.e("TransactionQREncoder") { "BBQr tx bitmap generation failed" }
                 null
             }
         } catch (e: Exception) {
-            android.util.Log.e("TransactionQREncoder", "BBQr tx exception: ${e.message}")
+            AppLog.e("TransactionQREncoder") { "BBQr tx exception: ${e.message}" }
             null
         }
     }

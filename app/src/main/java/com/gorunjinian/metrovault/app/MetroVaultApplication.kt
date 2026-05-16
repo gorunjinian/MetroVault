@@ -1,9 +1,9 @@
 package com.gorunjinian.metrovault.app
 
 import android.app.Application
-import android.util.Log
-import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.crypto.SecureMemoryManager
+import com.gorunjinian.metrovault.core.logging.AppLog
+import com.gorunjinian.metrovault.domain.Wallet
 
 /**
  * - SecureMemoryManager for lifecycle-based memory wiping
@@ -23,7 +23,7 @@ class MetroVaultApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "MetroVault application starting")
+        AppLog.d(TAG) { "MetroVault application starting" }
 
         // Initialize Wallet
         wallet = Wallet.getInstance(this)
@@ -32,12 +32,12 @@ class MetroVaultApplication : Application() {
         secureMemoryManager = SecureMemoryManager.initialize(this)
         secureMemoryManager.setWallet(wallet)
 
-        Log.d(TAG, "Security components initialized")
+        AppLog.d(TAG) { "Security components initialized" }
     }
 
     override fun onTerminate() {
         super.onTerminate()
-        Log.w(TAG, "Application terminating - performing emergency wipe")
+        AppLog.w(TAG) { "Application terminating - performing emergency wipe" }
 
         // Emergency wipe on app termination
         secureMemoryManager.performEmergencyWipe()
@@ -45,13 +45,13 @@ class MetroVaultApplication : Application() {
 
     override fun onLowMemory() {
         super.onLowMemory()
-        Log.w(TAG, "Low memory condition")
+        AppLog.w(TAG) { "Low memory condition" }
         // SecureMemoryManager handles this via ComponentCallbacks2
     }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        Log.d(TAG, "Memory trim requested: level=$level")
+        AppLog.d(TAG) { "Memory trim requested: level=$level" }
         // SecureMemoryManager handles this via ComponentCallbacks2
     }
 }

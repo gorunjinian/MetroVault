@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.multisig
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
@@ -112,7 +112,7 @@ class MultisigAddressService {
                 )
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to generate multisig address: ${e.message}", e)
+            AppLog.e(TAG, e) { "Failed to generate multisig address: ${e.message}" }
             Result.Error("Failed to generate address: ${e.message}")
         }
     }
@@ -175,7 +175,7 @@ class MultisigAddressService {
 
             PublicKey(level2.first.byteVector())
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to derive child key from xpub: ${e.message}")
+            AppLog.e(TAG) { "Failed to derive child key from xpub: ${e.message}" }
             null
         }
     }
@@ -217,14 +217,14 @@ class MultisigAddressService {
             // Validate it's an xpub-type prefix
             // Includes both single-sig (lowercase) and BIP48 multisig (uppercase) prefixes
             if (!Bip48MultisigPrefixes.isValidXpubPrefix(prefix)) {
-                Log.e(TAG, "Invalid xpub prefix: $prefix (hex: ${prefix.toLong().toString(16)})")
+                AppLog.e(TAG) { "Invalid xpub prefix" }
                 return null
             }
 
             // Parse xpub structure (78 bytes after prefix):
             // depth (1) + parent (4) + childNumber (4) + chaincode (32) + publicKey (33) = 74 bytes
             if (bin.size < 74) {
-                Log.e(TAG, "xpub data too short: ${bin.size}")
+                AppLog.e(TAG) { "xpub data too short" }
                 return null
             }
 
@@ -237,13 +237,13 @@ class MultisigAddressService {
 
             // Validate public key is valid
             if (!Crypto.isPubKeyValid(publicKeyBytes)) {
-                Log.e(TAG, "Invalid public key in xpub")
+                AppLog.e(TAG) { "Invalid public key in xpub" }
                 return null
             }
 
             RawXpubData(publicKeyBytes, chaincode)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to decode xpub raw: ${e.message} (len=${cleanedXpub.length})")
+            AppLog.e(TAG) { "Failed to decode xpub raw: ${e.message}" }
             null
         }
     }
@@ -262,7 +262,7 @@ class MultisigAddressService {
         return try {
             // Cannot derive hardened keys from public keys
             if (DeterministicWallet.isHardened(index)) {
-                Log.e(TAG, "Cannot derive hardened key from public key")
+                AppLog.e(TAG) { "Cannot derive hardened key from public key" }
                 return null
             }
 
@@ -275,7 +275,7 @@ class MultisigAddressService {
 
             // Validate IL is a valid private key
             if (!Crypto.isPrivKeyValid(IL)) {
-                Log.e(TAG, "IL is not a valid private key")
+                AppLog.e(TAG) { "IL is not a valid private key" }
                 return null
             }
 
@@ -288,13 +288,13 @@ class MultisigAddressService {
 
             // Validate result
             if (!Crypto.isPubKeyValid(childPublicKey)) {
-                Log.e(TAG, "Derived child key is invalid")
+                AppLog.e(TAG) { "Derived child key is invalid" }
                 return null
             }
 
             Pair(childPublicKey, IR)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to derive child key: ${e.message}")
+            AppLog.e(TAG) { "Failed to derive child key: ${e.message}" }
             null
         }
     }
@@ -320,7 +320,7 @@ class MultisigAddressService {
             val hrp = if (chainHash == Block.LivenetGenesisBlock.hash) "bc" else "tb"
             Bech32.encodeWitnessAddress(hrp, 0, witnessProgram)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to compute P2WSH address: ${e.message}")
+            AppLog.e(TAG) { "Failed to compute P2WSH address: ${e.message}" }
             null
         }
     }
@@ -347,7 +347,7 @@ class MultisigAddressService {
 
             Base58Check.encode(prefix, scriptHash)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to compute P2SH-P2WSH address: ${e.message}")
+            AppLog.e(TAG) { "Failed to compute P2SH-P2WSH address: ${e.message}" }
             null
         }
     }
@@ -374,7 +374,7 @@ class MultisigAddressService {
 
             Base58Check.encode(prefix, scriptHash)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to compute P2SH address: ${e.message}")
+            AppLog.e(TAG) { "Failed to compute P2SH address: ${e.message}" }
             null
         }
     }

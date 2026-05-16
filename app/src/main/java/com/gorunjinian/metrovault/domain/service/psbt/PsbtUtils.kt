@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import java.io.ByteArrayOutputStream
@@ -19,7 +19,7 @@ internal object PsbtUtils {
         val psbtBytes = try {
             android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
         } catch (e: Exception) {
-            Log.e(TAG, "Base64 decode failed: ${e.message}")
+            AppLog.e(TAG) { "Base64 decode failed: ${e.message}" }
             return null
         }
 
@@ -142,7 +142,7 @@ internal object PsbtUtils {
                     writeVarint(valueLen, output)
                     output.write(psbtBytes, valueStart, valueLen.toInt())
                 } else {
-                    Log.d(TAG, "Stripping global xpub entry")
+                    AppLog.d(TAG) { "Stripping global xpub entry" }
                 }
             }
 
@@ -153,7 +153,7 @@ internal object PsbtUtils {
 
             output.toByteArray()
         } catch (e: Exception) {
-            Log.e(TAG, "Error stripping global xpubs: ${e.message}")
+            AppLog.e(TAG) { "Error stripping global xpubs: ${e.message}" }
             null
         }
     }

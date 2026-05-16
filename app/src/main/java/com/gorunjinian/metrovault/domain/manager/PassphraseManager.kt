@@ -1,7 +1,7 @@
 package com.gorunjinian.metrovault.domain.manager
 
-import android.util.Log
 import com.gorunjinian.metrovault.core.crypto.SecureSeedCache
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
@@ -65,7 +65,7 @@ class PassphraseManager(
             try {
                 val seedHex = seedBytes.toHexString()
                 sessionSeeds.store(keyId, seedHex)
-                Log.d(TAG, "Session seed set for key: $keyId (from wallet: $walletId)")
+                AppLog.d(TAG) { "Session seed activated" }
             } finally {
                 seedBytes.fill(0)
             }
@@ -149,7 +149,7 @@ class PassphraseManager(
             try {
                 val seedHex = seedBytes.toHexString()
                 sessionSeeds.store(keyId, seedHex)
-                Log.d(TAG, "Session seed set for key: $keyId")
+                AppLog.d(TAG) { "Session seed activated" }
             } finally {
                 seedBytes.fill(0)
             }
@@ -227,7 +227,7 @@ class PassphraseManager(
                     ?: return@withContext null
                 walletKey.mnemonic.split(" ")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to get mnemonic for wallet: ${e.message}")
+                AppLog.e(TAG) { "Failed to get mnemonic for wallet: ${e.message}" }
                 null
             }
         }
@@ -238,6 +238,6 @@ class PassphraseManager(
     fun clearAll() {
         val count = sessionSeeds.size
         sessionSeeds.clear()
-        Log.d(TAG, "Cleared $count session seed(s)")
+        AppLog.d(TAG) { "Cleared $count session seed(s)" }
     }
 }

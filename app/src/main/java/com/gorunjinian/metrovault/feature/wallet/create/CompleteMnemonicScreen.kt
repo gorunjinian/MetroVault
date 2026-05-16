@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import com.gorunjinian.metrovault.lib.bitcoin.BIP39Wordlist
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
@@ -318,11 +319,11 @@ private fun calculatePossibleLastWords(context: android.content.Context, incompl
         val bip39Words = BIP39Wordlist.getEnglishWordlist(context)
 
         if (bip39Words.isEmpty()) {
-            android.util.Log.e("CompleteMnemonic", "Failed to load BIP39 wordlist")
+            AppLog.e("CompleteMnemonic") { "Failed to load BIP39 wordlist" }
             return emptyList()
         }
 
-        android.util.Log.d("CompleteMnemonic", "Loaded ${bip39Words.size} BIP39 words")
+        AppLog.d("CompleteMnemonic") { "Loaded ${bip39Words.size} BIP39 words" }
 
         // Try each word from the wordlist as the last word
         for (candidateWord in bip39Words) {
@@ -337,10 +338,10 @@ private fun calculatePossibleLastWords(context: android.content.Context, incompl
             }
         }
 
-        android.util.Log.d("CompleteMnemonic", "Found ${validLastWords.size} valid last words")
+        AppLog.d("CompleteMnemonic") { "Found ${validLastWords.size} valid last words" }
 
     } catch (e: Exception) {
-        android.util.Log.e("CompleteMnemonic", "Error calculating last words: ${e.message}", e)
+        AppLog.e("CompleteMnemonic", e) { "Error calculating last words: ${e.message}" }
     }
 
     return validLastWords.sorted()

@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.manager
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
@@ -50,7 +50,7 @@ class StatelessWalletManager(
             val walletResult = bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, derivationPath)
             walletResult?.fingerprint?.lowercase()
         } catch (e: Exception) {
-            Log.e(TAG, "Error computing fingerprint: ${e.message}")
+            AppLog.e(TAG) { "Error computing fingerprint: ${e.message}" }
             null
         }
     }
@@ -75,14 +75,14 @@ class StatelessWalletManager(
         return try {
             // Validate mnemonic
             if (!bitcoinService.validateMnemonic(mnemonic)) {
-                Log.e(TAG, "Invalid mnemonic for stateless wallet")
+                AppLog.e(TAG) { "Invalid mnemonic for stateless wallet" }
                 return null
             }
             
             // Create wallet in memory (no persistence)
             val walletResult = bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, derivationPath)
             if (walletResult == null) {
-                Log.e(TAG, "Failed to create stateless wallet from mnemonic")
+                AppLog.e(TAG) { "Failed to create stateless wallet from mnemonic" }
                 return null
             }
             
@@ -98,10 +98,10 @@ class StatelessWalletManager(
             )
             
             state = walletState
-            Log.d(TAG, "Stateless wallet created with fingerprint: ${walletState.fingerprint}")
+            AppLog.d(TAG) { "Stateless wallet created" }
             walletState
         } catch (e: Exception) {
-            Log.e(TAG, "Error creating stateless wallet: ${e.message}", e)
+            AppLog.e(TAG, e) { "Error creating stateless wallet: ${e.message}" }
             null
         }
     }
@@ -119,9 +119,9 @@ class StatelessWalletManager(
         state?.let { walletState ->
             try {
                 walletState.wipe()
-                Log.d(TAG, "Stateless wallet wiped from memory")
+                AppLog.d(TAG) { "Stateless wallet wiped from memory" }
             } catch (e: Exception) {
-                Log.e(TAG, "Error wiping stateless wallet: ${e.message}")
+                AppLog.e(TAG) { "Error wiping stateless wallet: ${e.message}" }
             }
         }
         state = null

@@ -1,7 +1,7 @@
 package com.gorunjinian.metrovault.data.repository
 
-import android.util.Log
 import com.gorunjinian.metrovault.core.crypto.SecureByteArray
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
@@ -53,10 +53,10 @@ class WalletRepository(
                 walletMetadataList.addAll(list)
                 walletsFlow.value = walletMetadataList.toList()
             }
-            Log.d(TAG, "Loaded ${list.size} wallets")
+            AppLog.d(TAG) { "Loaded ${list.size} wallets" }
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load wallet list: ${e.message}", e)
+            AppLog.e(TAG, e) { "Failed to load wallet list: ${e.message}" }
             false
         }
     }
@@ -86,20 +86,20 @@ class WalletRepository(
 
                 // Special handling for multisig wallets - they don't have secrets
                 if (metadata.isMultisig) {
-                    Log.d(TAG, "Multisig wallet activated: $walletId")
+                    AppLog.d(TAG) { "Multisig wallet activated" }
                     return@withContext Pair(true, null)
                 }
 
                 // Load key material from WalletKey (single-sig wallets have exactly one keyId)
                 val keyId = metadata.keyIds.firstOrNull()
                 if (keyId == null) {
-                    Log.e(TAG, "No keyId found for wallet $walletId")
+                    AppLog.e(TAG) { "No keyId found for wallet" }
                     return@withContext Pair(false, null)
                 }
 
                 val walletKey = secureStorage.loadWalletKey(keyId, getIsDecoyMode())
                 if (walletKey == null) {
-                    Log.e(TAG, "Failed to load WalletKey $keyId for wallet $walletId")
+                    AppLog.e(TAG) { "Failed to load WalletKey for wallet" }
                     return@withContext Pair(false, null)
                 }
 
@@ -138,10 +138,10 @@ class WalletRepository(
                 )
 
                 walletStates[walletId] = walletState
-                Log.d(TAG, "Wallet loaded: $walletId (fingerprint=${walletResult.fingerprint})")
+                AppLog.d(TAG) { "Wallet loaded" }
                 Pair(true, walletState)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to load wallet: ${e.message}", e)
+                AppLog.e(TAG, e) { "Failed to load wallet: ${e.message}" }
                 Pair(false, null)
             }
         }
@@ -178,10 +178,10 @@ class WalletRepository(
                 secureStorage.deleteKeyIfUnreferenced(keyId, getIsDecoyMode())
             }
 
-            Log.d(TAG, "Wallet deleted: $walletId")
+            AppLog.d(TAG) { "Wallet deleted" }
             deleted
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delete wallet: ${e.message}", e)
+            AppLog.e(TAG, e) { "Failed to delete wallet: ${e.message}" }
             false
         }
     }
@@ -207,11 +207,11 @@ class WalletRepository(
                         }
                     }
                     walletStates[walletId]?.rename(newName)
-                    Log.d(TAG, "Wallet renamed: $walletId -> $newName")
+                    AppLog.d(TAG) { "Wallet renamed" }
                     true
                 } else false
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to rename wallet: ${e.message}", e)
+                AppLog.e(TAG, e) { "Failed to rename wallet: ${e.message}" }
                 false
             }
         }
@@ -227,7 +227,7 @@ class WalletRepository(
                 walletMetadataList[index1] = walletMetadataList[index2]
                 walletMetadataList[index2] = temp
                 walletsFlow.value = walletMetadataList.toList()
-                Log.d(TAG, "Wallets swapped: index $index1 <-> $index2")
+                AppLog.d(TAG) { "Wallets swapped: index $index1 <-> $index2" }
             }
         }
     }
@@ -242,10 +242,10 @@ class WalletRepository(
                 walletMetadataList.map { it.id }
             }
             val success = secureStorage.saveWalletOrder(orderedIds, getIsDecoyMode())
-            if (success) Log.d(TAG, "Wallet order saved")
+            if (success) AppLog.d(TAG) { "Wallet order saved" }
             success
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save wallet order: ${e.message}", e)
+            AppLog.e(TAG, e) { "Failed to save wallet order: ${e.message}" }
             false
         }
     }
@@ -258,7 +258,7 @@ class WalletRepository(
     fun unloadWallet(walletId: String) {
         walletStates[walletId]?.wipe()
         walletStates.remove(walletId)
-        Log.d(TAG, "Wallet unloaded: $walletId")
+        AppLog.d(TAG) { "Wallet unloaded" }
     }
 
     /**
@@ -271,7 +271,7 @@ class WalletRepository(
         walletStates.values.forEach { it.wipe() }
         walletStates.clear()
         passphraseManager.clearAll()  // Clear all passphrase-derived seeds
-        Log.d(TAG, "Wiped $count wallet key(s) + session seeds from memory")
+        AppLog.d(TAG) { "Wiped $count wallet key(s) + session seeds from memory" }
     }
 
     /**
@@ -287,10 +287,7 @@ class WalletRepository(
             walletMetadataList.clear()
             walletsFlow.value = emptyList()
         }
-        Log.d(
-            TAG,
-            "Full session wipe: $keyCount keys + $metadataCount metadata cleared"
-        )
+        AppLog.d(TAG) { "Full session wipe: $keyCount keys + $metadataCount metadata cleared" }
     }
 
 }

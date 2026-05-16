@@ -2,9 +2,9 @@ package com.gorunjinian.metrovault.feature.wallet.create
 
 import android.annotation.SuppressLint
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.Wallet
@@ -159,10 +159,10 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
         }
 
         if (descriptor != null) {
-            Log.d(TAG, "Scan complete, descriptor: ${descriptor.take(100)}...")
+            AppLog.d(TAG) { "Scan complete" }
             processDescriptor(descriptor)
         } else {
-            Log.e(TAG, "Scanner returned null result")
+            AppLog.e(TAG) { "Scanner returned null result" }
             showError("Failed to decode QR code. Please try again.")
         }
     }
@@ -174,7 +174,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
      */
     private suspend fun processDescriptor(descriptor: String) {
         try {
-            Log.d(TAG, "Processing descriptor: ${descriptor.take(100)}...")
+            AppLog.d(TAG) { "Processing descriptor" }
 
             _uiState.update { it.copy(isScanning = false) }
 
@@ -184,15 +184,15 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
             val verificationAddress = bsmsData.verificationAddress
 
             if (isBsmsFormat) {
-                Log.d(TAG, "Detected BSMS format")
+                AppLog.d(TAG) { "Detected BSMS format" }
                 if (verificationAddress != null) {
-                    Log.d(TAG, "BSMS verification address: $verificationAddress")
+                    AppLog.d(TAG) { "BSMS verification address present" }
                 }
             }
 
             // Get local wallet fingerprints for matching
             val localFingerprints = getLocalWalletFingerprints()
-            Log.d(TAG, "Local fingerprints: $localFingerprints")
+            AppLog.d(TAG) { "Matching against ${localFingerprints.size} local fingerprint(s)" }
 
             // Parse the descriptor
             val result = withContext(Dispatchers.Default) {
@@ -210,7 +210,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
                         addressVerified = withContext(Dispatchers.Default) {
                             verifyBsmsAddress(config, verificationAddress)
                         }
-                        Log.d(TAG, "BSMS address verification result: $addressVerified")
+                        AppLog.d(TAG) { "BSMS address verification result: $addressVerified" }
                     }
 
                     _uiState.update {
@@ -229,7 +229,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error processing descriptor: ${e.message}", e)
+            AppLog.e(TAG, e) { "Error processing descriptor: ${e.message}" }
             showError("Failed to process descriptor: ${e.message}")
         }
     }
@@ -257,17 +257,17 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
                     val generatedAddress = bitcoinAddress.address
                     val matches = generatedAddress == expectedAddress
                     if (!matches) {
-                        Log.w(TAG, "BSMS address mismatch: expected=$expectedAddress, generated=$generatedAddress")
+                        AppLog.w(TAG) { "BSMS address mismatch between expected and generated" }
                     }
                     matches
                 }
                 is Result.Error -> {
-                    Log.e(TAG, "Failed to generate address for verification: ${result.error}")
+                    AppLog.e(TAG) { "Failed to generate address for verification: ${result.error}" }
                     false
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "BSMS address verification error: ${e.message}", e)
+            AppLog.e(TAG, e) { "BSMS address verification error: ${e.message}" }
             false
         }
     }
@@ -296,14 +296,14 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
                 _uiState.update { it.copy(isImporting = false) }
 
                 if (success) {
-                    Log.d(TAG, "Multisig wallet imported successfully")
+                    AppLog.d(TAG) { "Multisig wallet imported successfully" }
                     _events.emit(ImportEvent.WalletImported)
                 } else {
                     showError("Failed to import multisig wallet")
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Error importing multisig wallet: ${e.message}", e)
+                AppLog.e(TAG, e) { "Error importing multisig wallet: ${e.message}" }
                 _uiState.update { it.copy(isImporting = false) }
                 showError("Import failed: ${e.message}")
             }

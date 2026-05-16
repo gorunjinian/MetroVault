@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.DerivationPaths
@@ -63,7 +63,7 @@ class BitcoinService {
             val masterPrivateKey = DeterministicWallet.generate(seedBytes.byteVector())
             BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to calculate fingerprint from seed: ${e.message}")
+            AppLog.e(TAG) { "Failed to calculate fingerprint from seed: ${e.message}" }
             null
         }
     }
@@ -91,7 +91,7 @@ class BitcoinService {
                 fingerprint = fingerprint
             )
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to create wallet from mnemonic")
+            AppLog.e(TAG) { "Failed to create wallet from mnemonic" }
             null
         }
     }
@@ -101,18 +101,17 @@ class BitcoinService {
         derivationPath: String
     ): DerivedWalletKeys? {
         return try {
-            Log.d(TAG, "createWalletFromSeed: path=$derivationPath, seedLen=${seedHex.length}")
+            AppLog.d(TAG) { "createWalletFromSeed" }
             val seedBytes = seedHex.hexToByteArray()
-            Log.d(TAG, "Seed bytes length: ${seedBytes.size}")
             val masterPrivateKey = DeterministicWallet.generate(seedBytes.byteVector())
-            Log.d(TAG, "Master key generated")
+            AppLog.d(TAG) { "Master key generated" }
             val path = BitcoinUtils.parseDerivationPath(derivationPath)
-            Log.d(TAG, "Parsed path: $path")
+            AppLog.d(TAG) { "Parsed derivation path" }
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(path)
             val accountPublicKey = accountPrivateKey.extendedPublicKey
 
             val fingerprint = BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
-            Log.d(TAG, "Wallet created, fingerprint: $fingerprint")
+            AppLog.d(TAG) { "Wallet created" }
 
             DerivedWalletKeys(
                 masterPrivateKey = masterPrivateKey,
@@ -121,7 +120,7 @@ class BitcoinService {
                 fingerprint = fingerprint
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create wallet from seed: ${e.message}", e)
+            AppLog.e(TAG, e) { "Failed to create wallet from seed: ${e.message}" }
             null
         }
     }

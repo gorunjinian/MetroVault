@@ -1,7 +1,7 @@
 package com.gorunjinian.metrovault.core.qr
 
 import android.content.Context
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.BIP39Wordlist
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import java.security.MessageDigest
@@ -49,7 +49,7 @@ object SeedQRUtils {
                 index.toString().padStart(4, '0')
             }
         } catch (e: Exception) {
-            Log.e("SeedQRUtils", "Error encoding to Standard SeedQR: ${e.message}")
+            AppLog.e("SeedQRUtils") { "Error encoding to Standard SeedQR: ${e.message}" }
             null
         }
     }
@@ -83,7 +83,7 @@ object SeedQRUtils {
             MnemonicCode.validate(words)
             words
         } catch (e: Exception) {
-            Log.e("SeedQRUtils", "Error decoding Standard SeedQR: ${e.message}")
+            AppLog.e("SeedQRUtils") { "Error decoding Standard SeedQR: ${e.message}" }
             null
         }
     }
@@ -130,7 +130,7 @@ object SeedQRUtils {
                 }.toByte()
             }.toByteArray()
         } catch (e: Exception) {
-            Log.e("SeedQRUtils", "Error encoding to CompactSeedQR: ${e.message}")
+            AppLog.e("SeedQRUtils") { "Error encoding to CompactSeedQR: ${e.message}" }
             null
         }
     }
@@ -194,7 +194,7 @@ object SeedQRUtils {
             MnemonicCode.validate(words)
             words
         } catch (e: Exception) {
-            Log.e("SeedQRUtils", "Error decoding CompactSeedQR: ${e.message}")
+            AppLog.e("SeedQRUtils") { "Error decoding CompactSeedQR: ${e.message}" }
             null
         }
     }

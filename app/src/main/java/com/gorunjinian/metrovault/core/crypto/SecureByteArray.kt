@@ -1,7 +1,7 @@
 package com.gorunjinian.metrovault.core.crypto
 
 import android.os.Build
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import java.io.Closeable
 import java.util.Arrays
 
@@ -196,7 +196,7 @@ class SecureByteArray(size: Int) : Closeable {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             if (!closed) {
                 // Log warning to help developers identify missing close() calls
-                Log.w(TAG, "SecureByteArray cleaned up by finalize() - call close() explicitly for better security")
+                AppLog.w(TAG) { "SecureByteArray cleaned up by finalize() - call close() explicitly for better security" }
                 data?.let { Arrays.fill(it, 0.toByte()) }
                 data = null
                 closed = true

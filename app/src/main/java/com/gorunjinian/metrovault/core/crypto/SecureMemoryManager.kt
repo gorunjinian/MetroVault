@@ -3,7 +3,7 @@ package com.gorunjinian.metrovault.core.crypto
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.res.Configuration
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.domain.Wallet
 
 /**
@@ -23,7 +23,7 @@ class SecureMemoryManager private constructor(application: Application) : Compon
     }
 
     fun performEmergencyWipe() {
-        Log.w(TAG, "Performing emergency memory wipe")
+        AppLog.w(TAG) { "Performing emergency memory wipe" }
         wallet?.emergencyWipe()
         // Suggest garbage collection
         System.gc()
@@ -34,14 +34,14 @@ class SecureMemoryManager private constructor(application: Application) : Compon
         when (level) {
             ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> {
                 // App is about to be killed - perform emergency wipe
-                Log.w(TAG, "TRIM_MEMORY_COMPLETE - performing emergency wipe")
+                AppLog.w(TAG) { "TRIM_MEMORY_COMPLETE - performing emergency wipe" }
                 performEmergencyWipe()
             }
 
             ComponentCallbacks2.TRIM_MEMORY_MODERATE,
             ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> {
                 // App is in background but not critical - keep session alive
-                Log.d(TAG, "Memory trim level $level - session remains active")
+                AppLog.d(TAG) { "Memory trim level $level - session remains active" }
                 // Do NOT wipe - we want to keep the session alive when backgrounded
             }
 
@@ -50,14 +50,14 @@ class SecureMemoryManager private constructor(application: Application) : Compon
             ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> {
                 // App is running but memory is low - keep session alive
                 // User is actively using the app, don't wipe data
-                Log.d(TAG, "Memory trim level $level while running - session remains active")
+                AppLog.d(TAG) { "Memory trim level $level while running - session remains active" }
                 // Do NOT wipe - app is actively being used
             }
 
             ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> {
                 // UI is hidden (user pressed home or switched apps)
                 // Wipe sensitive data for security - user must re-authenticate when returning
-                Log.d(TAG, "UI hidden - performing security wipe")
+                AppLog.d(TAG) { "UI hidden - performing security wipe" }
                 performEmergencyWipe()
             }
         }
@@ -69,7 +69,7 @@ class SecureMemoryManager private constructor(application: Application) : Compon
 
     @Deprecated("Deprecated in Java")
     override fun onLowMemory() {
-        Log.w(TAG, "Low memory warning - wiping sensitive data")
+        AppLog.w(TAG) { "Low memory warning - wiping sensitive data" }
         performEmergencyWipe()
     }
 

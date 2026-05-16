@@ -2,8 +2,8 @@ package com.gorunjinian.metrovault.domain
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Log
 import androidx.compose.runtime.Stable
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.data.model.ScriptType
@@ -200,7 +200,7 @@ class   Wallet(context: Context) {
 
             val (canCreate, errorMsg) = canCreateWallet()
             if (!canCreate) {
-                Log.e(TAG, "Cannot create wallet: $errorMsg")
+                AppLog.e(TAG) { "Cannot create wallet: $errorMsg" }
                 return@withContext WalletCreationResult.Error(WalletCreationError.MAX_WALLETS_REACHED)
             }
 
@@ -241,7 +241,7 @@ class   Wallet(context: Context) {
                 if (existingKey != null) {
                     // Reuse existing key
                     keyId = existingKey.keyId
-                    Log.d(TAG, "Reusing existing key $keyId for new wallet")
+                    AppLog.d(TAG) { "Reusing existing key for new wallet" }
                 } else {
                     // Create new WalletKey
                     keyId = java.util.UUID.randomUUID().toString()
@@ -258,7 +258,7 @@ class   Wallet(context: Context) {
                     if (!secureStorage.saveWalletKey(walletKeys, isDecoyMode)) {
                         return@withContext WalletCreationResult.Error(WalletCreationError.STORAGE_FAILED)
                     }
-                    Log.d(TAG, "Created new key $keyId ($keyLabel)")
+                    AppLog.d(TAG) { "Created new key" }
                 }
 
                 val metadata = WalletMetadata(
@@ -303,7 +303,7 @@ class   Wallet(context: Context) {
                 seedBytes?.fill(0)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Create wallet failed: ${e.message}", e)
+            AppLog.e(TAG, e) { "Create wallet failed: ${e.message}" }
             WalletCreationResult.Error(WalletCreationError.UNKNOWN_ERROR)
         }
     }
@@ -326,13 +326,13 @@ class   Wallet(context: Context) {
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             if (!sessionKeyManager.isSessionActive.value) {
-                Log.e(TAG, "Cannot create multisig wallet: not authenticated")
+                AppLog.e(TAG) { "Cannot create multisig wallet: not authenticated" }
                 return@withContext false
             }
 
             val (canCreate, errorMsg) = canCreateWallet()
             if (!canCreate) {
-                Log.e(TAG, "Cannot create multisig wallet: $errorMsg")
+                AppLog.e(TAG) { "Cannot create multisig wallet: $errorMsg" }
                 return@withContext false
             }
 
@@ -350,7 +350,7 @@ class   Wallet(context: Context) {
             
             // Validate we have at least one local key (signing device app requirement)
             if (keyIds.isEmpty()) {
-                Log.e(TAG, "Cannot create multisig wallet: no local keys match cosigner fingerprints")
+                AppLog.e(TAG) { "Cannot create multisig wallet: no local keys match cosigner fingerprints" }
                 return@withContext false
             }
 
@@ -360,7 +360,7 @@ class   Wallet(context: Context) {
             // Safe: keyIds is non-empty, so at least one cosigner has isLocal=true
             val localCosigner = updatedCosigners.firstOrNull { it.isLocal }
             if (localCosigner == null) {
-                Log.e(TAG, "Cannot create multisig wallet: inconsistent state - keyIds present but no local cosigner")
+                AppLog.e(TAG) { "Cannot create multisig wallet: inconsistent state - keyIds present but no local cosigner" }
                 return@withContext false
             }
             val primaryFingerprint = localCosigner.fingerprint.lowercase()
@@ -392,7 +392,7 @@ class   Wallet(context: Context) {
 
             // Save metadata only - no secrets stored for multisig wallets
             if (!secureStorage.saveWalletMetadata(metadata, isDecoyMode)) {
-                Log.e(TAG, "Failed to save multisig wallet metadata")
+                AppLog.e(TAG) { "Failed to save multisig wallet metadata" }
                 return@withContext false
             }
 
@@ -408,11 +408,11 @@ class   Wallet(context: Context) {
                 _wallets.value = _walletMetadataList.toList()
             }
             
-            Log.d(TAG, "Multisig wallet created: $walletId (${config.m}-of-${config.n}) with ${keyIds.size} local key(s)")
+            AppLog.d(TAG) { "Multisig wallet created (${config.m}-of-${config.n}) with ${keyIds.size} local key(s)" }
             true
             
         } catch (e: Exception) {
-            Log.e(TAG, "Create multisig wallet failed: ${e.message}", e)
+            AppLog.e(TAG, e) { "Create multisig wallet failed: ${e.message}" }
             false
         }
     }
@@ -453,10 +453,10 @@ class   Wallet(context: Context) {
     fun setActiveWallet(walletId: String): Boolean {
         return if (walletStates.containsKey(walletId)) {
             activeWalletId = walletId
-            Log.d(TAG, "Active wallet set: $walletId")
+            AppLog.d(TAG) { "Active wallet set" }
             true
         } else {
-            Log.w(TAG, "Cannot set active: wallet not loaded")
+            AppLog.w(TAG) { "Cannot set active: wallet not loaded" }
             false
         }
     }
@@ -1044,7 +1044,7 @@ class   Wallet(context: Context) {
             val mnemonic = state.getMnemonic() ?: return null
             mnemonic.asString().split(" ")
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to retrieve mnemonic")
+            AppLog.e(TAG) { "Failed to retrieve mnemonic" }
             null
         }
     }

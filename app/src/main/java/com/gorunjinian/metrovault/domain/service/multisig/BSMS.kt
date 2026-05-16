@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.multisig
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 
 object BSMS {
 
@@ -70,7 +70,7 @@ object BSMS {
 
         // Check for BSMS format
         if (lines.isNotEmpty() && lines[0].uppercase().startsWith("BSMS")) {
-            Log.d(TAG, "Detected BSMS format")
+            AppLog.d(TAG) { "Detected BSMS format" }
 
             var descriptor: String? = null
             var pathRestrictions: String? = null
@@ -97,7 +97,7 @@ object BSMS {
                     isBsmsFormat = true
                 )
             }
-            Log.w(TAG, "BSMS format detected but no descriptor found, falling back to raw")
+            AppLog.w(TAG) { "BSMS format detected but no descriptor found, falling back to raw" }
         }
 
         // Handle plain descriptor format (with optional comments)

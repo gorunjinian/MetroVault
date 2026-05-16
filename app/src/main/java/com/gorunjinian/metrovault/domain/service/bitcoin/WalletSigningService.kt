@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigConfig
@@ -142,10 +142,10 @@ class WalletSigningService(
         getSessionKeySeed: (String) -> String?
     ): SigningResult {
         val keyIds = metadata.keyIds
-        Log.d(TAG, "Multisig signing: keyIds=$keyIds")
+        AppLog.d(TAG) { "Multisig signing: ${keyIds.size} local key(s)" }
 
         if (keyIds.isEmpty()) {
-            Log.e(TAG, "No keyIds found for multisig wallet")
+            AppLog.e(TAG) { "No keyIds found for multisig wallet" }
             return SigningResult.Failure(
                 SigningError.NO_LOCAL_KEYS,
                 "This multisig wallet has no local signing keys. Import a key that matches one of the cosigner fingerprints."
@@ -154,7 +154,7 @@ class WalletSigningService(
 
         val config = metadata.multisigConfig
         if (config == null) {
-            Log.e(TAG, "No multisigConfig found")
+            AppLog.e(TAG) { "No multisigConfig found" }
             return SigningResult.Failure(
                 SigningError.INVALID_MULTISIG_CONFIG,
                 "Multisig configuration is missing. Re-import the wallet descriptor."
@@ -169,10 +169,10 @@ class WalletSigningService(
         val failedKeys = mutableListOf<String>()
 
         for (keyId in keyIds) {
-            Log.d(TAG, "Processing keyId: $keyId")
+            AppLog.d(TAG) { "Processing local key" }
             val key = secureStorage.loadWalletKey(keyId, isDecoyMode)
             if (key == null) {
-                Log.e(TAG, "Failed to load WalletKey for keyId: $keyId")
+                AppLog.e(TAG) { "Failed to load WalletKey" }
                 failedKeys.add(keyId)
                 continue
             }
@@ -194,12 +194,12 @@ class WalletSigningService(
                     allAddressLookupInputIndices.addAll(result.addressLookupInputIndices)
                 }
                 signedCount++
-                Log.d(TAG, "Successfully signed portion of PSBT with key: $keyId")
+                AppLog.d(TAG) { "Successfully signed portion of PSBT" }
             }
         }
 
         return if (signedCount > 0) {
-            Log.d(TAG, "Multisig signing complete: $signedCount/${keyIds.size} keys signed")
+            AppLog.d(TAG) { "Multisig signing complete: $signedCount/${keyIds.size} keys signed" }
             SigningResult.Success(
                 signedPsbt = signedPsbt,
                 alternativePathsUsed = allAlternativePathsUsed,
@@ -277,28 +277,28 @@ class WalletSigningService(
         config: MultisigConfig,
         sessionSeed: String?
     ): PerKeySignResult? {
-        Log.d(TAG, "Direct derivation signing for key: ${key.fingerprint}")
+        AppLog.d(TAG) { "Direct derivation signing for local key" }
 
         val cosigner = config.cosigners.find {
             it.fingerprint.equals(key.fingerprint, ignoreCase = true)
         }
         if (cosigner == null) {
-            Log.e(TAG, "No cosigner found matching fingerprint: ${key.fingerprint}")
-            Log.d(TAG, "Available cosigners: ${config.cosigners.map { it.fingerprint }}")
+            AppLog.e(TAG) { "No cosigner found matching local key fingerprint" }
+            AppLog.d(TAG) { "Available cosigners: ${config.cosigners.size}" }
             return null
         }
 
         // Ensure m/ prefix on derivation path
         val rawPath = cosigner.derivationPath
         val derivationPath = if (rawPath.startsWith("m/")) rawPath else "m/$rawPath"
-        Log.d(TAG, "Using derivation path: $derivationPath (raw: $rawPath)")
+        AppLog.d(TAG) { "Resolved derivation path for signing" }
 
         // Use session seed if available, otherwise use stored seed
         val seedToUse = sessionSeed ?: key.bip39Seed
 
         val walletResult = bitcoinService.createWalletFromSeed(seedToUse, derivationPath)
         if (walletResult == null) {
-            Log.e(TAG, "Failed to derive wallet from key: ${key.fingerprint}")
+            AppLog.e(TAG) { "Failed to derive wallet from local key" }
             return null
         }
 

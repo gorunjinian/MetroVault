@@ -18,6 +18,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.gorunjinian.metrovault.R
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.core.qr.configureForQRScanning
@@ -77,7 +78,7 @@ fun CheckAddressScreen(
             try {
                 barcodeView?.resume()
             } catch (e: Exception) {
-                android.util.Log.e("CheckAddressScreen", "Failed to resume scanner in LaunchedEffect", e)
+                AppLog.e("CheckAddressScreen", e) { "Failed to resume scanner in LaunchedEffect" }
             }
         }
     }
@@ -93,14 +94,14 @@ fun CheckAddressScreen(
                         try {
                             scanner.resume()
                         } catch (e: Exception) {
-                            android.util.Log.e("CheckAddressScreen", "Failed to resume scanner", e)
+                            AppLog.e("CheckAddressScreen", e) { "Failed to resume scanner" }
                         }
                     }
                     Lifecycle.Event.ON_PAUSE -> {
                         try {
                             scanner.pause()
                         } catch (e: Exception) {
-                            android.util.Log.e("CheckAddressScreen", "Failed to pause scanner", e)
+                            AppLog.e("CheckAddressScreen", e) { "Failed to pause scanner" }
                         }
                     }
                     else -> {}
@@ -115,7 +116,7 @@ fun CheckAddressScreen(
             try {
                 barcodeView?.pause()
             } catch (e: Exception) {
-                android.util.Log.e("CheckAddressScreen", "Failed to pause scanner on dispose", e)
+                AppLog.e("CheckAddressScreen", e) { "Failed to pause scanner on dispose" }
             }
         }
     }
@@ -126,7 +127,7 @@ fun CheckAddressScreen(
             try {
                 barcodeView?.pause()
             } catch (e: Exception) {
-                android.util.Log.e("CheckAddressScreen", "Failed to pause scanner", e)
+                AppLog.e("CheckAddressScreen", e) { "Failed to pause scanner" }
             }
         }
     }

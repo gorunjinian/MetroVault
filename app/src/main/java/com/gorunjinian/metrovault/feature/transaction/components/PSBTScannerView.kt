@@ -12,6 +12,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.qr.AnimatedQRScanner
 import com.gorunjinian.metrovault.core.qr.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
@@ -94,7 +95,7 @@ fun PSBTScannerView(
                         }
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("PSBTScanner", "Frame processing failed: ${e.message}", e)
+                    AppLog.e("PSBTScanner", e) { "Frame processing failed: ${e.message}" }
                 }
             }
         }
@@ -132,7 +133,7 @@ fun PSBTScannerView(
                                     // Debug: Log raw QR content header for BBQr frames
                                     if (text.startsWith("B$") && text.length >= 8) {
                                         val header = text.take(8)
-                                        android.util.Log.d("PSBTScanner", "Raw BBQr header: $header")
+                                        AppLog.d("PSBTScanner") { "Raw BBQr header: $header" }
                                     }
 
                                     // Skip duplicate frames

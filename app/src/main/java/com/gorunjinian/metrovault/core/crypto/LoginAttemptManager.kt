@@ -3,6 +3,7 @@ package com.gorunjinian.metrovault.core.crypto
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.gorunjinian.metrovault.core.logging.AppLog
 
 /**
  * Enforces rate limiting on login attempts to prevent brute force attacks
@@ -62,7 +63,7 @@ class LoginAttemptManager(context: Context) {
                 putLong(KEY_LOCKOUT_UNTIL, lockoutUntil)
                 putLong(KEY_LAST_ATTEMPT, System.currentTimeMillis())
             }
-            android.util.Log.w(TAG, "SECURITY: Permanent lockout triggered after $newAttempts attempts")
+            AppLog.w(TAG) { "SECURITY: Permanent lockout triggered after $newAttempts attempts" }
             return lockoutUntil
         }
 
@@ -77,7 +78,7 @@ class LoginAttemptManager(context: Context) {
             putLong(KEY_LAST_ATTEMPT, System.currentTimeMillis())
         }
 
-        android.util.Log.w(TAG, "Failed attempt #$newAttempts. Locked out for ${delay/1000}s")
+        AppLog.w(TAG) { "Failed attempt #$newAttempts. Locked out for ${delay/1000}s" }
 
         return lockoutUntil
     }
@@ -109,7 +110,7 @@ class LoginAttemptManager(context: Context) {
      */
     fun resetAttempts() {
         prefs.edit { clear() }
-        android.util.Log.d(TAG, "Login attempts reset after successful authentication")
+        AppLog.d(TAG) { "Login attempts reset after successful authentication" }
     }
 
     /**

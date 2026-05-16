@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.Crypto
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
@@ -84,7 +84,7 @@ class MnemonicService {
             true
         } catch (_: Exception) {
             // Don't log exception details - might contain partial mnemonic info
-            Log.w(TAG, "Mnemonic validation failed")
+            AppLog.w(TAG) { "Mnemonic validation failed" }
             false
         }
     }
@@ -102,7 +102,7 @@ class MnemonicService {
             val masterPrivateKey = DeterministicWallet.generate(seed.byteVector())
             BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
         } catch (_: Exception) {
-            Log.w(TAG, "Failed to calculate fingerprint")
+            AppLog.w(TAG) { "Failed to calculate fingerprint" }
             null
         } finally {
             // Securely wipe seed from memory

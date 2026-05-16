@@ -10,6 +10,7 @@ import com.gorunjinian.bcur.registry.CryptoHDKey
 import com.gorunjinian.bcur.registry.CryptoOutput
 import com.gorunjinian.bcur.registry.ScriptExpression
 import com.gorunjinian.bcur.registry.UROutputDescriptor
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector
@@ -57,7 +58,7 @@ class DescriptorQRScanner {
                 lower.startsWith("tr(") -> "plain"
                 else -> "unknown"
             }
-            android.util.Log.d("DescriptorQRScanner", "Detected format: $detectedFormat")
+            AppLog.d("DescriptorQRScanner") { "Detected format: $detectedFormat" }
         }
 
         return when (detectedFormat) {
@@ -82,7 +83,7 @@ class DescriptorQRScanner {
         try {
             if (urDecoder == null) {
                 urDecoder = URDecoder()
-                android.util.Log.d("DescriptorQRScanner", "Initialized URDecoder for fountain codes")
+                AppLog.d("DescriptorQRScanner") { "Initialized URDecoder for fountain codes" }
             }
 
             val decoder = urDecoder!!
@@ -95,11 +96,11 @@ class DescriptorQRScanner {
             }
 
             val percentComplete = (progress * 100).toInt().coerceIn(0, 100)
-            android.util.Log.d("DescriptorQRScanner", "UR frame $urFrameCount received, progress: $percentComplete%")
+            AppLog.d("DescriptorQRScanner") { "UR frame $urFrameCount received, progress: $percentComplete%" }
 
             return percentComplete
         } catch (e: Exception) {
-            android.util.Log.e("DescriptorQRScanner", "Error processing UR frame: ${e.message}")
+            AppLog.e("DescriptorQRScanner") { "Error processing UR frame: ${e.message}" }
             return null
         }
     }
@@ -115,7 +116,7 @@ class DescriptorQRScanner {
 
             return when (val result = bbqrJoiner!!.addPart(content)) {
                 is ContinuousJoinResult.NotStarted -> {
-                    android.util.Log.d("DescriptorQRScanner", "BBQr: not started yet")
+                    AppLog.d("DescriptorQRScanner") { "BBQr: not started yet" }
                     0
                 }
                 is ContinuousJoinResult.InProgress -> {
@@ -124,17 +125,17 @@ class DescriptorQRScanner {
                         bbqrTotalParts = bbqrReceivedParts + result.partsLeft
                     }
                     val progress = ((bbqrTotalParts - result.partsLeft) * 100) / bbqrTotalParts
-                    android.util.Log.d("DescriptorQRScanner", "BBQr: ${result.partsLeft} parts left, progress: $progress%")
+                    AppLog.d("DescriptorQRScanner") { "BBQr: ${result.partsLeft} parts left, progress: $progress%" }
                     progress
                 }
                 is ContinuousJoinResult.Complete -> {
                     bbqrCompleteData = result.joined.data
-                    android.util.Log.d("DescriptorQRScanner", "BBQr: complete, ${bbqrCompleteData!!.size} bytes")
+                    AppLog.d("DescriptorQRScanner") { "BBQr: complete, ${bbqrCompleteData!!.size} bytes" }
                     100
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("DescriptorQRScanner", "Error processing BBQr frame: ${e.message}")
+            AppLog.e("DescriptorQRScanner") { "Error processing BBQr frame: ${e.message}" }
             return null
         }
     }
@@ -179,12 +180,12 @@ class DescriptorQRScanner {
                                 decoded.source
                             }
                             else -> {
-                                android.util.Log.w("DescriptorQRScanner", "Unknown UR type: ${ur.type}")
+                                AppLog.w("DescriptorQRScanner") { "Unknown UR type: ${ur.type}" }
                                 null
                             }
                         }
                     } catch (e: Exception) {
-                        android.util.Log.e("DescriptorQRScanner", "Failed to decode UR result: ${e.message}")
+                        AppLog.e("DescriptorQRScanner") { "Failed to decode UR result: ${e.message}" }
                         null
                     }
                 } else null
@@ -196,10 +197,10 @@ class DescriptorQRScanner {
                         val ur = result.ur!!
                         val bytes = ur.toBytes()
                         val content = String(bytes, Charsets.UTF_8)
-                        android.util.Log.d("DescriptorQRScanner", "UR:BYTES decoded: ${content.take(100)}...")
+                        AppLog.d("DescriptorQRScanner") { "UR:BYTES decoded (${content.length} chars)" }
                         content
                     } catch (e: Exception) {
-                        android.util.Log.e("DescriptorQRScanner", "Failed to decode UR:BYTES: ${e.message}")
+                        AppLog.e("DescriptorQRScanner") { "Failed to decode UR:BYTES: ${e.message}" }
                         null
                     }
                 } else null
@@ -310,7 +311,7 @@ class DescriptorQRScanner {
                 }
                 sb.append(extPubKey.encode(prefix))
             } catch (e: Exception) {
-                android.util.Log.e("DescriptorQRScanner", "Failed to encode xpub: ${e.message}")
+                AppLog.e("DescriptorQRScanner") { "Failed to encode xpub: ${e.message}" }
                 return ""
             }
         }

@@ -18,6 +18,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
@@ -143,25 +144,25 @@ fun AppNavigation(
 
         // Guard against re-entry - prevents race condition where effect triggers multiple times
         if (isProcessingAutoOpen) {
-            android.util.Log.d("AppNavigation", "Already processing auto-open, skipping")
+            AppLog.d("AppNavigation") { "Already processing auto-open, skipping" }
             return@LaunchedEffect
         }
         isProcessingAutoOpen = true
 
-        android.util.Log.d("AppNavigation", "LaunchedEffect triggered: autoOpen=$autoOpen")
+        AppLog.d("AppNavigation") { "LaunchedEffect triggered: autoOpen=$autoOpen" }
 
         try {
             if (autoOpen) {
                 // Auto-open: Load the wallet before navigating
                 val wallets = wallet.wallets.value
-                android.util.Log.d("AppNavigation", "Checking wallets: size=${wallets.size}")
+                AppLog.d("AppNavigation") { "Checking wallets: size=${wallets.size}" }
                 if (wallets.size == 1) {
                     val singleWallet = wallets.first()
-                    android.util.Log.d("AppNavigation", "Loading wallet: ${singleWallet.id}")
+                    AppLog.d("AppNavigation") { "Loading single wallet" }
                     val loaded = withContext(kotlinx.coroutines.Dispatchers.IO) {
                         wallet.openWallet(singleWallet.id, showLoading = false)
                     }
-                    android.util.Log.d("AppNavigation", "Wallet loaded: $loaded")
+                    AppLog.d("AppNavigation") { "Wallet loaded: $loaded" }
 
                     if (loaded) {
                         // Clear pending state
@@ -169,7 +170,7 @@ fun AppNavigation(
 
                         // Navigate to wallet details with Home as back destination
                         // First navigate to Home, clearing the unlock screen
-                        android.util.Log.d("AppNavigation", "Navigating to Home then WalletDetails")
+                        AppLog.d("AppNavigation") { "Navigating to Home then WalletDetails" }
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.Unlock.route) { inclusive = true }
                         }
@@ -180,14 +181,14 @@ fun AppNavigation(
                         navController.navigate(Screen.WalletDetails.route) {
                             launchSingleTop = true // Prevent duplicate entries
                         }
-                        android.util.Log.d("AppNavigation", "Navigation complete")
+                        AppLog.d("AppNavigation") { "Navigation complete" }
                         return@LaunchedEffect
                     }
                 }
             }
 
             // Default: navigate to home
-            android.util.Log.d("AppNavigation", "Default: navigating to Home")
+            AppLog.d("AppNavigation") { "Default: navigating to Home" }
             pendingAutoOpen = null
             navController.navigate(Screen.Home.route) {
                 popUpTo(Screen.Unlock.route) { inclusive = true }
@@ -200,7 +201,7 @@ fun AppNavigation(
     // Debug: Track all destination changes
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     LaunchedEffect(currentBackStackEntry) {
-        android.util.Log.d("AppNavigation", "DESTINATION CHANGED: ${currentBackStackEntry?.destination?.route}")
+        AppLog.d("AppNavigation") { "DESTINATION CHANGED: ${currentBackStackEntry?.destination?.route}" }
     }
 
     // Track lifecycle state to avoid navigating when app is backgrounded
@@ -230,7 +231,7 @@ fun AppNavigation(
             currentRoute != null &&
             currentRoute != Screen.Unlock.route &&
             currentRoute != Screen.SetupPassword.route) {
-            android.util.Log.d("AppNavigation", "Session expired while app resumed - navigating to unlock screen")
+            AppLog.d("AppNavigation") { "Session expired while app resumed - navigating to unlock screen" }
             // Wipe stateless wallet on session lock
             wallet.wipeStatelessWallet()
             navController.navigate(Screen.Unlock.route) {

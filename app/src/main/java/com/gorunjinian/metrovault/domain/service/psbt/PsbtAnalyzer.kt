@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.data.model.PsbtInput
 import com.gorunjinian.metrovault.data.model.PsbtOutput
@@ -34,7 +34,7 @@ internal object PsbtAnalyzer {
                 }
             }
         } catch (_: Exception) {
-            Log.e(TAG, "Failed to check PSBT signatures")
+            AppLog.e(TAG) { "Failed to check PSBT signatures" }
             false
         }
     }
@@ -103,7 +103,7 @@ internal object PsbtAnalyzer {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to check if PSBT can be finalized: ${e.message}")
+            AppLog.e(TAG) { "Failed to check if PSBT can be finalized: ${e.message}" }
             false
         }
     }
@@ -113,7 +113,7 @@ internal object PsbtAnalyzer {
      */
     fun getPsbtDetails(psbtBase64: String, isTestnet: Boolean = false): PsbtDetails? {
         return try {
-            Log.d(TAG, "getPsbtDetails called, base64 length: ${psbtBase64.length}")
+            AppLog.d(TAG) { "getPsbtDetails called, base64 length: ${psbtBase64.length}" }
 
             val chainHash = BitcoinUtils.getChainHash(isTestnet)
             val psbt = PsbtUtils.parsePsbt(psbtBase64) ?: return null

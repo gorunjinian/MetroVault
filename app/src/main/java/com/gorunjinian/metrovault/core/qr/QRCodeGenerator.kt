@@ -7,6 +7,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import androidx.core.graphics.createBitmap
+import com.gorunjinian.metrovault.core.logging.AppLog
 
 /**
  * Raw QR code module data for Canvas-based rendering.
@@ -108,7 +109,7 @@ object QRCodeGenerator {
             bitmap.setPixels(pixels, 0, size, 0, 0, size, size)
             bitmap
         } catch (e: Exception) {
-            android.util.Log.e("QRCodeGenerator", "generateBinaryQRCode failed: ${e.message}")
+            AppLog.e("QRCodeGenerator") { "generateBinaryQRCode failed: ${e.message}" }
             e.printStackTrace()
             null
         }

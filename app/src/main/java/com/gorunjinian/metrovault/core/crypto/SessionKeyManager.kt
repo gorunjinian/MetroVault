@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.core.crypto
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,7 +65,7 @@ class SessionKeyManager private constructor() {
      * @return The derived master key (for password verification)
      */
     fun initializeSession(password: String, salt: ByteArray): ByteArray {
-        Log.d(TAG, "Initializing session - deriving master key")
+        AppLog.d(TAG) { "Initializing session - deriving master key" }
         val startTime = System.currentTimeMillis()
 
         // PBKDF2 key derivation (slow but secure)
@@ -82,7 +82,7 @@ class SessionKeyManager private constructor() {
         _isSessionActive.value = true
 
         val duration = System.currentTimeMillis() - startTime
-        Log.d(TAG, "Session initialized in ${duration}ms")
+        AppLog.d(TAG) { "Session initialized in ${duration}ms" }
 
         return derivedKey
     }
@@ -151,7 +151,7 @@ class SessionKeyManager private constructor() {
      * Call this on logout, lock, or app termination.
      */
     fun clearSession() {
-        Log.d(TAG, "Clearing session - wiping all keys")
+        AppLog.d(TAG) { "Clearing session - wiping all keys" }
 
         masterKey?.fill(0)
         masterKey = null

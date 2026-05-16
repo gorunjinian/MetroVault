@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.manager
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,7 +33,7 @@ class WalletSessionManager(
         withContext(Dispatchers.IO) {
             secureStorage.runMigrationIfNeeded(isDecoy)
         }
-        Log.d(TAG, "Session set: isDecoy=$isDecoy")
+        AppLog.d(TAG) { "Session set" }
     }
 
     /**
@@ -46,7 +46,7 @@ class WalletSessionManager(
         passphraseManager.clearAll()
         secureStorage.clearSession()
         onUnloadWallets()
-        Log.d(TAG, "Session cleared")
+        AppLog.d(TAG) { "Session cleared" }
     }
 
     /**
@@ -56,7 +56,7 @@ class WalletSessionManager(
      * @param onClearSession Callback to clear the full session
      */
     fun emergencyWipe(onClearSession: () -> Unit) {
-        Log.w(TAG, "EMERGENCY WIPE - Clearing all wallet data from memory")
+        AppLog.w(TAG) { "EMERGENCY WIPE - Clearing all wallet data from memory" }
         passphraseManager.clearAll()
         onClearSession()
         System.gc()

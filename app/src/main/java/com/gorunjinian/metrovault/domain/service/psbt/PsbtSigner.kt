@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
-import android.util.Log
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import com.gorunjinian.metrovault.data.model.ScriptType
@@ -73,10 +73,10 @@ internal object PsbtSigner {
             val alternativePathsUsed = mutableListOf<String>()  // Track when alternative paths are used (Stage 2)
             val addressLookupInputIndices = mutableListOf<Int>()  // Track when Stage 3 fallback was used
 
-            Log.d(TAG, "Signing PSBT with ${psbt.inputs.size} inputs, wallet fingerprint: ${walletFingerprint.toString(16)}")
+            AppLog.d(TAG) { "Signing PSBT with ${psbt.inputs.size} inputs" }
 
             psbt.inputs.forEachIndexed { index, input ->
-                Log.d(TAG, "Processing input $index, derivationPaths: ${input.derivationPaths.size}, taprootPaths: ${input.taprootDerivationPaths.size}")
+                AppLog.d(TAG) { "Processing input $index, derivationPaths: ${input.derivationPaths.size}, taprootPaths: ${input.taprootDerivationPaths.size}" }
                 // Try BIP-174 derivation path first (with path-agnostic fallback)
                 val signResult = trySignWithDerivationPath(
                     signedPsbt, index, input, masterPrivateKey, walletFingerprint, isTestnet
@@ -84,12 +84,14 @@ internal object PsbtSigner {
                 if (signResult != null) {
                     signedPsbt = signResult.first
                     signedCount++
-                    signResult.second?.let { altPath ->
-                        alternativePathsUsed.add(altPath)
-                        Log.d(TAG, "Input $index signed via alternative path: $altPath")
-                    } ?: Log.d(TAG, "Input $index signed via BIP-174")
+                    if (signResult.second != null) {
+                        AppLog.d(TAG) { "Input $index signed via alternative path" }
+                        alternativePathsUsed.add(signResult.second!!)
+                    } else {
+                        AppLog.d(TAG) { "Input $index signed via BIP-174" }
+                    }
                 } else {
-                    Log.d(TAG, "Input $index BIP-174 failed, trying address lookup")
+                    AppLog.d(TAG) { "Input $index BIP-174 failed, trying address lookup" }
                     // Fallback to address scanning (Stage 3)
                     val result = signInputWithAddressLookup(
                         signedPsbt, index, input, accountPrivateKey, addressToKeyInfo,
@@ -99,15 +101,17 @@ internal object PsbtSigner {
                         signedPsbt = result
                         signedCount++
                         addressLookupInputIndices.add(index)
-                        Log.w(TAG, "Input $index signed via address lookup (Stage 3 fallback) — " +
-                                "PSBT did not declare this input via PSBT_IN_BIP32_DERIVATION with a matching fingerprint")
+                        AppLog.w(TAG) {
+                            "Input $index signed via address lookup (Stage 3 fallback) — " +
+                                "PSBT did not declare this input via PSBT_IN_BIP32_DERIVATION with a matching fingerprint"
+                        }
                     } else {
-                        Log.d(TAG, "Input $index: no signature possible")
+                        AppLog.d(TAG) { "Input $index: no signature possible" }
                     }
                 }
             }
 
-            Log.d(TAG, "Signed $signedCount of ${psbt.inputs.size} inputs")
+            AppLog.d(TAG) { "Signed $signedCount of ${psbt.inputs.size} inputs" }
             if (signedCount == 0) {
                 return null
             }
@@ -123,7 +127,7 @@ internal object PsbtSigner {
                 addressLookupInputIndices = addressLookupInputIndices,
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Exception during PSBT signing: ${e.message}", e)
+            AppLog.e(TAG, e) { "Exception during PSBT signing: ${e.message}" }
             null
         }
     }
@@ -145,13 +149,11 @@ internal object PsbtSigner {
     ): Pair<Psbt, String?>? {
         return try {
             // Check regular derivation paths (for non-taproot)
-            Log.d(TAG, "trySignWithDerivationPath: input $inputIndex has ${input.derivationPaths.size} derivation paths")
+            AppLog.d(TAG) { "trySignWithDerivationPath: input $inputIndex has ${input.derivationPaths.size} derivation paths" }
             for ((publicKey, keyPathWithMaster) in input.derivationPaths) {
-                Log.d(TAG, "  Path fingerprint: ${keyPathWithMaster.masterKeyFingerprint.toString(16)}, wallet: ${walletFingerprint.toString(16)}, keyPath: ${keyPathWithMaster.keyPath}")
+                AppLog.d(TAG) { "  Examining derivation path entry for input $inputIndex" }
                 if (keyPathWithMaster.masterKeyFingerprint == walletFingerprint) {
-                    Log.d(TAG, "  Fingerprint match! Deriving key...")
-                    Log.d(TAG, "  KeyPath type: ${keyPathWithMaster.keyPath.javaClass.simpleName}")
-                    Log.d(TAG, "  KeyPath path list: ${keyPathWithMaster.keyPath.path}")
+                    AppLog.d(TAG) { "  Fingerprint match — deriving private key for matched entry" }
 
                     // Derive key using the full path from master
                     val signingPrivateKey = masterPrivateKey
@@ -162,23 +164,23 @@ internal object PsbtSigner {
 
                     // Verify derived public key matches
                     if (derivedPubKey == publicKey) {
-                        Log.d(TAG, "  Public key verified, signing...")
+                        AppLog.d(TAG) { "  Public key verified, signing..." }
                         val signed = signInput(psbt, inputIndex, input, signingPrivateKey, publicKey)
                         return signed?.let { Pair(it, null) }  // null = no alternative path
                     }
 
                     // Fingerprint matches but pubkey doesn't - try alternative paths
-                    Log.w(TAG, "  Derived public key doesn't match PSBT key, trying alternative paths...")
+                    AppLog.w(TAG) { "  Derived public key doesn't match PSBT key, trying alternative paths..." }
                     val altResult = tryAlternativePaths(
                         masterPrivateKey, publicKey, keyPathWithMaster.keyPath, isTestnet
                     )
                     if (altResult != null) {
                         val (altSigningKey, altPath) = altResult
-                        Log.d(TAG, "  Found matching key at alternative path: $altPath")
+                        AppLog.d(TAG) { "  Found matching key at alternative path" }
                         val signed = signInput(psbt, inputIndex, input, altSigningKey, publicKey)
                         return signed?.let { Pair(it, altPath) }
                     }
-                    Log.w(TAG, "  No alternative path matched, skipping")
+                    AppLog.w(TAG) { "  No alternative path matched, skipping" }
                 }
             }
 
@@ -199,7 +201,7 @@ internal object PsbtSigner {
                     }
 
                     // For Taproot, try alternative paths as well
-                    Log.w(TAG, "  Taproot pubkey mismatch, trying alternative paths...")
+                    AppLog.w(TAG) { "  Taproot pubkey mismatch, trying alternative paths..." }
                     val altResult = tryAlternativePaths(
                         masterPrivateKey, signingPrivateKey.publicKey(), taprootPath.keyPath, isTestnet
                     )
@@ -207,7 +209,7 @@ internal object PsbtSigner {
                         val (altSigningKey, altPath) = altResult
                         val altXOnly = XonlyPublicKey(altSigningKey.publicKey())
                         if (altXOnly == xOnlyPublicKey) {
-                            Log.d(TAG, "  Found matching Taproot key at alternative path: $altPath")
+                            AppLog.d(TAG) { "  Found matching Taproot key at alternative path" }
                             val signed = signInput(psbt, inputIndex, input, altSigningKey, altSigningKey.publicKey())
                             return signed?.let { Pair(it, altPath) }
                         }
@@ -224,7 +226,7 @@ internal object PsbtSigner {
     /**
      * Tries alternative standard derivation paths to find a matching public key.
      * This handles cases where coordinator wallets convert paths (e.g., m/84' -> m/48' for multisig).
-     * 
+     *
      * Also tries multiple account numbers since coordinators may normalize account to 0
      * even when the original key was from a different account.
      *
@@ -265,7 +267,7 @@ internal object PsbtSigner {
             originalAccount
         }
 
-        Log.d(TAG, "  tryAlternativePaths: original=$originalPath, psbtAccount=$psbtAccountNum, childPath=$childPath")
+        AppLog.d(TAG) { "  Trying alternative derivation paths" }
 
         // Account numbers to try - start with PSBT account, then try common accounts 0-9
         val accountsToTry = (listOf(psbtAccountNum) + (0L..9L)).distinct()
@@ -283,7 +285,7 @@ internal object PsbtSigner {
 
                     val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
                     if (derivedKey.publicKey == expectedPublicKey) {
-                        Log.d(TAG, "  Found match at alternative path: $altPath")
+                        AppLog.d(TAG) { "  Found match at alternative path" }
                         return Pair(derivedKey.privateKey, altPath.toString())
                     }
                 } catch (_: Exception) {
@@ -306,7 +308,7 @@ internal object PsbtSigner {
 
                     val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
                     if (derivedKey.publicKey == expectedPublicKey) {
-                        Log.d(TAG, "  Found match at alternative path: $altPath")
+                        AppLog.d(TAG) { "  Found match at alternative path" }
                         return Pair(derivedKey.privateKey, altPath.toString())
                     }
                 } catch (_: Exception) {
@@ -315,7 +317,7 @@ internal object PsbtSigner {
             }
         }
 
-        Log.w(TAG, "  No alternative path matched after trying ${accountsToTry.size} accounts")
+        AppLog.w(TAG) { "  No alternative path matched after trying ${accountsToTry.size} accounts" }
         return null
     }
 
@@ -379,7 +381,7 @@ internal object PsbtSigner {
 
             signInput(psbtWithDerivation, inputIndex, inputWithDerivation, signingPrivateKey, keyInfo.publicKey)
         } catch (e: Exception) {
-            Log.w(TAG, "signInputWithAddressLookup: exception", e)
+            AppLog.w(TAG, e) { "signInputWithAddressLookup: exception" }
             null
         }
     }
@@ -413,7 +415,7 @@ internal object PsbtSigner {
             is Input.PartiallySignedInputWithoutUtxo ->
                 input.copy(derivationPaths = mergedPaths)
             else -> {
-                Log.w(TAG, "addDerivationToInput: cannot add derivation to finalized input ${input::class.simpleName}")
+                AppLog.w(TAG) { "addDerivationToInput: cannot add derivation to finalized input ${input::class.simpleName}" }
                 input
             }
         }
