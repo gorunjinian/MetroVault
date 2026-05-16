@@ -24,7 +24,7 @@ class AnimatedQRScanner(
     // For simple format only
     private val receivedFrames = mutableMapOf<Int, String>()
     private var expectedTotal: Int? = null
-    private var detectedFormat: String? = null  // "simple", "ur", "bbqr", "ur-psbt"
+    private var detectedFormat: String? = null  // "simple", "ur", "bbqr", "ur-psbt-v1", "ur-psbt-v2", "single"
 
     // For UR formats - bcur-kotlin library handles fountain codes
     private var urDecoder: URDecoder? = null
@@ -50,7 +50,8 @@ class AnimatedQRScanner(
         if (detectedFormat == null) {
             detectedFormat = when {
                 content.startsWith("B$") -> "bbqr"
-                lower.startsWith("ur:psbt/") || lower.startsWith("ur:crypto-psbt/") -> "ur-psbt"
+                lower.startsWith("ur:psbt/") -> "ur-psbt-v2"
+                lower.startsWith("ur:crypto-psbt/") -> "ur-psbt-v1"
                 content.startsWith("ur:") -> "ur"
                 content.startsWith(ANIMATED_PREFIX) -> "simple"
                 else -> "single"
@@ -59,7 +60,7 @@ class AnimatedQRScanner(
         }
 
         // Handle UR formats with URDecoder (fountain code support)
-        if (detectedFormat == "ur-psbt" || detectedFormat == "ur") {
+        if (detectedFormat == "ur-psbt-v1" || detectedFormat == "ur-psbt-v2" || detectedFormat == "ur") {
             return processURFrame(content)
         }
 
@@ -213,7 +214,7 @@ class AnimatedQRScanner(
      */
     fun isComplete(): Boolean {
         // For UR formats, check URDecoder result
-        if (detectedFormat == "ur-psbt" || detectedFormat == "ur") {
+        if (detectedFormat == "ur-psbt-v1" || detectedFormat == "ur-psbt-v2" || detectedFormat == "ur") {
             val result = urDecoder?.result
             if (result != null) {
                 android.util.Log.d("AnimatedQRScanner", "URDecoder complete, result type: ${result.type}")
@@ -239,7 +240,7 @@ class AnimatedQRScanner(
         if (!isComplete()) return null
 
         return when (detectedFormat) {
-            "ur-psbt", "ur" -> {
+            "ur-psbt-v1", "ur-psbt-v2", "ur" -> {
                 val result = urDecoder?.result
                 if (result?.type == ResultType.SUCCESS) {
                     try {
@@ -296,7 +297,7 @@ class AnimatedQRScanner(
      * Get progress as human-readable string
      */
     fun getProgressString(): String {
-        if (detectedFormat == "ur-psbt" || detectedFormat == "ur") {
+        if (detectedFormat == "ur-psbt-v1" || detectedFormat == "ur-psbt-v2" || detectedFormat == "ur") {
             val progress = (urDecoder?.estimatedPercentComplete ?: 0.0) * 100
             return "${progress.toInt()}% BC-UR"
         }

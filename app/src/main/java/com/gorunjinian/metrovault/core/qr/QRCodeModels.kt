@@ -11,7 +11,18 @@ import com.gorunjinian.bbqr.Version
 enum class OutputFormat(val displayName: String) {
     UR_LEGACY("BC-UR v1"),  // Legacy ur:crypto-psbt/ format - BlueWallet, Sparrow compatibility
     BBQR("BBQr"),           // BBQr format - best for Coldcard
-    UR_MODERN("BC-UR v2")   // Modern ur:psbt/ format - UR 2.0 standard
+    UR_MODERN("BC-UR v2");  // Modern ur:psbt/ format - UR 2.0 standard
+
+    companion object {
+        // Maps a scanned source format (from AnimatedQRScanner.getDetectedFormat())
+        // to the output format the user most likely wants for the signed PSBT.
+        fun fromScannedFormat(detected: String?): OutputFormat = when (detected) {
+            "bbqr" -> BBQR
+            "ur-psbt-v1" -> UR_LEGACY
+            "ur-psbt-v2", "ur" -> UR_MODERN
+            else -> UR_MODERN
+        }
+    }
 }
 
 /**

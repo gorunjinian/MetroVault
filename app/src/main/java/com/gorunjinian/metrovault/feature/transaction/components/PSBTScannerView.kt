@@ -38,7 +38,7 @@ fun PSBTScannerView(
     errorMessage: String,
     onRequestPermission: () -> Unit,
     onScanProgress: (progress: Int, isAnimated: Boolean) -> Unit,
-    onScanComplete: (psbt: String) -> Unit,
+    onScanComplete: (psbt: String, sourceFormat: String?) -> Unit,
     onBarcodeViewCreated: (CompoundBarcodeView) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -106,9 +106,10 @@ fun PSBTScannerView(
             val assembledPSBT = withContext(Dispatchers.Default) {
                 animatedScanner.getResult()
             }
+            val sourceFormat = animatedScanner.getDetectedFormat()
 
             if (assembledPSBT != null) {
-                onScanComplete(assembledPSBT)
+                onScanComplete(assembledPSBT, sourceFormat)
             } else {
                 barcodeViewRef?.resume()
             }

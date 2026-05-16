@@ -499,10 +499,11 @@ fun ScanPSBTScreen(
                             scanProgress = progress
                             isAnimatedScan = isAnimated
                         },
-                        onScanComplete = { assembledPSBT ->
+                        onScanComplete = { assembledPSBT, sourceFormat ->
                             // Set state immediately - callback is already on Main thread
                             // (called from LaunchedEffect in PSBTScannerView)
                             scannedPSBT = assembledPSBT
+                            selectedOutputFormat = OutputFormat.fromScannedFormat(sourceFormat)
                             isParsingPSBT = true
 
                             // Parse PSBT details and compute output types on background thread
