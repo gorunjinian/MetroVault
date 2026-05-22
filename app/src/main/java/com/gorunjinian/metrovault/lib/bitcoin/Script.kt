@@ -389,6 +389,21 @@ object Script {
     fun isPay2tr(script: ByteVector): Boolean = isPay2tr(script.toByteArray())
 
     /**
+     * Extract the BIP-341 X-only output key from a P2TR scriptPubKey, or `null` if the script is
+     * not P2TR. Useful for matching transaction outputs to a known taproot output key without
+     * having to manually parse the script.
+     */
+    @JvmStatic
+    fun pay2trOutputKey(script: List<ScriptElt>): XonlyPublicKey? =
+        if (!isPay2tr(script)) null else XonlyPublicKey(ByteVector32((script[1] as OP_PUSHDATA).data))
+
+    @JvmStatic
+    fun pay2trOutputKey(script: ByteArray): XonlyPublicKey? = pay2trOutputKey(parse(script))
+
+    @JvmStatic
+    fun pay2trOutputKey(script: ByteVector): XonlyPublicKey? = pay2trOutputKey(script.toByteArray())
+
+    /**
      * @param pubKeyHash public key hash
      * @return a pay-to-public-key-hash script
      */
