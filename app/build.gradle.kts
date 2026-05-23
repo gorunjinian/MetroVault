@@ -1,10 +1,8 @@
-import com.android.build.api.dsl.ApplicationExtension
 import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -13,9 +11,9 @@ val targetSdkValue = 36
 val minSdkValue = 26
 val appVersionCode = 3
 
-configure<ApplicationExtension> {
+android {
     namespace = "com.gorunjinian.metrovault"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.gorunjinian.metrovault"
@@ -89,12 +87,6 @@ configure<ApplicationExtension> {
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
             )
         }
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
