@@ -18,6 +18,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -155,7 +156,7 @@ fun SetupPasswordScreen(
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .offset(x = shakeOffset.dp),
+                            .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
                         singleLine = true,
                         isPasswordField = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -175,7 +176,7 @@ fun SetupPasswordScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(confirmPasswordFocusRequester)
-                            .offset(x = shakeOffset.dp),
+                            .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
                         singleLine = true,
                         isPasswordField = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),

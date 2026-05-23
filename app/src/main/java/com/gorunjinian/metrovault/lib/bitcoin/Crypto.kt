@@ -280,7 +280,8 @@ object Crypto {
      * @return true if the input is a "low S" signature
      */
     @JvmStatic
-    fun isLowDERSignature(sig: ByteArray): Boolean = !Secp256k1.signatureNormalize(sig).second
+    fun isLowDERSignature(sig: ByteArray): Boolean =
+        !Secp256k1.signatureNormalize(Secp256k1.der2compact(sig)).second
 
     /**
      * @param sig signature (DER encoded + a trailing sighash byte)

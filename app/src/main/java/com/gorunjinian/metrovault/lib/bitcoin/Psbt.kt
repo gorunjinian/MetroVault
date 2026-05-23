@@ -24,6 +24,16 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
         require(global.tx.txOut.size == outputs.size) { "there must be one partially signed output per output of the unsigned tx" }
     }
 
+    /** Return the input at the given index, or `null` if the index is out of bounds. */
+    fun getInput(inputIndex: Int): Input? =
+        if (inputIndex in inputs.indices) inputs[inputIndex] else null
+
+    /** Return the input that spends the given outpoint, or `null` if no such input exists. */
+    fun getInput(outPoint: OutPoint): Input? {
+        val idx = global.tx.txIn.indexOfFirst { it.outPoint == outPoint }
+        return if (idx >= 0) inputs[idx] else null
+    }
+
     /**
      * Implements the PSBT signer role: sign a given input.
      * The caller needs to carefully verify that it wants to spend that input, and that the unsigned transaction matches
@@ -113,14 +123,19 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
         }.getOrElse {
             return Either.Left(UpdateFailure.InvalidWitnessUtxo("failed to parse pubkeyScript"))
         }
+        // BIP-143 P2WPKH script code is `OP_DUP OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG`
+        // (i.e. pay2pkh of the pubkey hash from the witness program). PSBT does NOT carry a
+        // witnessScript for P2WPKH, so we derive the signing script inline rather than relying on
+        // the caller to splice one in temporarily.
+        fun signP2wpkh(program: List<ScriptElt>): Either<UpdateFailure, Pair<Input.WitnessInput.PartiallySignedWitnessInput, ByteVector>> {
+            val pubkeyHash = (program[1] as OP_PUSHDATA).data.toByteArray()
+            val signingScript = Script.pay2pkh(pubkeyHash)
+            val sig = ByteVector(Transaction.signInput(global.tx, inputIndex, signingScript, input.sighashType ?: SigHash.SIGHASH_ALL, input.amount, SigVersion.SIGVERSION_WITNESS_V0, priv))
+            return Either.Right(Pair(input.copy(partialSigs = input.partialSigs + (priv.publicKey() to sig)), sig))
+        }
+
         return when {
-            Script.isPay2wpkh(pubkeyScript) -> when (input.witnessScript) {
-                null -> Either.Left(UpdateFailure.InvalidWitnessUtxo("missing witness script"))
-                else -> {
-                    val sig = ByteVector(Transaction.signInput(global.tx, inputIndex, input.witnessScript, input.sighashType ?: SigHash.SIGHASH_ALL, input.amount, SigVersion.SIGVERSION_WITNESS_V0, priv))
-                    Either.Right(Pair(input.copy(partialSigs = input.partialSigs + (priv.publicKey() to sig)), sig))
-                }
-            }
+            Script.isPay2wpkh(pubkeyScript) -> signP2wpkh(pubkeyScript)
             Script.isPay2wsh(pubkeyScript) -> when {
                 input.witnessScript == null -> Either.Left(UpdateFailure.InvalidWitnessUtxo("missing witness script"))
                 pubkeyScript != Script.pay2wsh(input.witnessScript) -> Either.Left(UpdateFailure.InvalidWitnessUtxo("witness script does not match redeemScript or scriptPubKey"))
@@ -146,19 +161,16 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
             Script.isPay2sh(pubkeyScript) -> when {
                 input.redeemScript == null -> Either.Left(UpdateFailure.InvalidWitnessUtxo("missing redeem script"))
                 pubkeyScript != Script.pay2sh(input.redeemScript) -> Either.Left(UpdateFailure.InvalidWitnessUtxo("redeem script does not match witness utxo scriptPubKey"))
-                else -> when {
-                    input.witnessScript == null -> {
-                        val sig = ByteVector(Transaction.signInput(global.tx, inputIndex, input.redeemScript, input.sighashType ?: SigHash.SIGHASH_ALL, input.amount, SigVersion.SIGVERSION_WITNESS_V0, priv))
-                        Either.Right(Pair(input.copy(partialSigs = input.partialSigs + (priv.publicKey() to sig)), sig))
-                    }
-                    !Script.isPay2wpkh(input.redeemScript) && input.redeemScript != Script.pay2wsh(input.witnessScript) -> {
-                        Either.Left(UpdateFailure.InvalidWitnessUtxo("witness script does not match redeemScript or scriptPubKey"))
-                    }
+                Script.isPay2wpkh(input.redeemScript) -> signP2wpkh(input.redeemScript)
+                Script.isPay2wsh(input.redeemScript) -> when {
+                    input.witnessScript == null -> Either.Left(UpdateFailure.InvalidWitnessUtxo("missing witness script"))
+                    input.redeemScript != Script.pay2wsh(input.witnessScript) -> Either.Left(UpdateFailure.InvalidWitnessUtxo("witness script does not match redeemScript or scriptPubKey"))
                     else -> {
                         val sig = ByteVector(Transaction.signInput(global.tx, inputIndex, input.witnessScript, input.sighashType ?: SigHash.SIGHASH_ALL, input.amount, SigVersion.SIGVERSION_WITNESS_V0, priv))
                         Either.Right(Pair(input.copy(partialSigs = input.partialSigs + (priv.publicKey() to sig)), sig))
                     }
                 }
+                else -> Either.Left(UpdateFailure.InvalidWitnessUtxo("redeem script is not a supported segwit witness program"))
             }
             else -> {
                 val script = input.witnessScript ?: input.redeemScript ?: pubkeyScript
@@ -1204,6 +1216,8 @@ sealed class UpdateFailure {
     data class InvalidWitnessUtxo(val reason: String) : UpdateFailure()
     data class CannotCombine(val reason: String) : UpdateFailure()
     data class CannotJoin(val reason: String) : UpdateFailure()
+    data class CannotUpdateInput(val index: Int, val reason: String) : UpdateFailure()
+    data class CannotUpdateOutput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotSignInput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotFinalizeInput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotExtractTx(val reason: String) : UpdateFailure()

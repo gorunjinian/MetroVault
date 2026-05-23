@@ -104,7 +104,7 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 | **Architecture** | MVVM with Clean Architecture |
 | **Cryptography** | Custom Kotlin Bitcoin Library (Secp256k1, BIP-32, BIP-39, BIP-48, BIP-174) |
 | **Storage** | EncryptedSharedPreferences (Android Keystore) |
-| **QR Codes** | ZXing + URKit (BC-UR v1/v2, BBQr for animated multi-frame QR) |
+| **QR Codes** | ZXing + bcur-kotlin & bbqr (Kotlin ports for BC-UR and BBQr animated multi-frame QR) |
 | **Biometrics** | AndroidX Biometric Library (BIOMETRIC_STRONG) |
 | **Min SDK** | Android 8.0 (API 26) |
 

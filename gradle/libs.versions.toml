@@ -8,16 +8,16 @@ appcompat = "1.7.1"
 activity = "1.13.0"
 fragment = "1.8.9"
 splashscreen = "1.2.0"
-material = "1.13.0"
-compose-bom = "2026.04.01"
-compose-ui-text = "1.11.0"
+material = "1.14.0"
+compose-bom = "2026.05.01"
+compose-ui-text = "1.11.2"
 lifecycle = "2.10.0"
 navigation = "2.9.8"
 security-crypto = "1.1.0"
 biometric = "1.2.0-alpha05"
 zxing = "3.5.4"
 zxing-embedded = "4.3.0"
-coroutines = "1.10.2"
+coroutines = "1.11.0"
 secp256k1 = "0.23.0"
 reorderable = "3.1.0"
 window = "1.5.1"
@@ -71,6 +71,7 @@ lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", 
 
 # Bitcoin
 secp256k1-android = { group = "fr.acinq.secp256k1", name = "secp256k1-kmp-jni-android", version.ref = "secp256k1" }
+secp256k1-jvm-test = { group = "fr.acinq.secp256k1", name = "secp256k1-kmp-jni-jvm", version.ref = "secp256k1" }
 
 # Reorderable
 reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }
@@ -85,5 +86,4 @@ espresso-core = { group = "androidx.test.espresso", name = "espresso-core", vers
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
