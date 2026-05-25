@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+        Suppress UnusedResources: many strings/colors/drawables are intentionally kept
+        for planned i18n and feature work — they will replace hardcoded literals in Compose.
+    -->
+    <issue id="UnusedResources" severity="ignore" />
+</lint>
