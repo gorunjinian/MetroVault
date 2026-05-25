@@ -4,10 +4,16 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigConfig
+import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
+import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentSender
+import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
+import com.gorunjinian.metrovault.lib.bitcoin.Psbt
+import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 
 /**
  * Orchestrates PSBT signing for both single-sig and multi-sig wallets.
@@ -77,7 +83,9 @@ class WalletSigningService(
         /** PSBT signing operation failed (no inputs could be signed) */
         SIGNING_FAILED,
         /** Key derivation failed */
-        KEY_DERIVATION_FAILED
+        KEY_DERIVATION_FAILED,
+        /** A silent-payment send could not be resolved (e.g. ineligible inputs, unsafe sighash) */
+        SILENT_PAYMENT_REJECTED
     }
 
     /**
@@ -100,8 +108,17 @@ class WalletSigningService(
 
         val scriptType = DerivationPaths.getScriptType(walletState.derivationPath)
         val accountPath = KeyPath(walletState.derivationPath)
+
+        // Silent-payments (Story A) pre-stage: if the PSBT pays to one or more sp1q… recipients,
+        // derive the real taproot outputs from our input keys and splice them in before signing.
+        // The output scripts are committed to in every input's sighash, so this must run first.
+        val psbtToSign = when (val resolved = resolveSilentPayments(psbtString, masterPrivateKey, accountPrivateKey, scriptType, isTestnet)) {
+            is Either.Left -> return SigningResult.Failure(SigningError.SILENT_PAYMENT_REJECTED, resolved.value)
+            is Either.Right -> resolved.value
+        }
+
         val signingResult = bitcoinService.signPsbt(
-            psbtString,
+            psbtToSign,
             masterPrivateKey,
             accountPrivateKey,
             scriptType,
@@ -121,6 +138,38 @@ class WalletSigningService(
                 SigningError.SIGNING_FAILED,
                 "Failed to sign PSBT. The transaction may not contain inputs for this wallet."
             )
+        }
+    }
+
+    /**
+     * Silent-payment send pre-stage (Story A). Returns the PSBT base64 to actually sign:
+     * the original string if there are no SP recipients (or it can't be parsed here, in which case
+     * the downstream signer reports the parse failure), or a PSBT with the derived P2TR output
+     * scripts spliced in. Returns [Either.Left] with a user-facing message if an SP send was
+     * detected but cannot be safely resolved.
+     *
+     * Scope: single-sig only. Multi-sig SP sending is collaborative (needs every cosigner's input
+     * keys to derive the shared secret) and is deliberately out of scope.
+     */
+    private fun resolveSilentPayments(
+        psbtString: String,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        scriptType: ScriptType,
+        isTestnet: Boolean,
+    ): Either<String, String> {
+        val parsed = PsbtUtils.parsePsbt(psbtString) ?: return Either.Right(psbtString)
+        if (!SilentPaymentSender.hasSilentPaymentRecipients(parsed)) return Either.Right(psbtString)
+
+        return when (val result = SilentPaymentSender.resolve(parsed, masterPrivateKey, accountPrivateKey, scriptType, isTestnet)) {
+            is Either.Right -> {
+                val bytes = Psbt.write(result.value).toByteArray()
+                Either.Right(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+            }
+            is Either.Left -> {
+                AppLog.w(TAG) { "Silent payment resolution rejected: ${result.value.message}" }
+                Either.Left(result.value.message)
+            }
         }
     }
 

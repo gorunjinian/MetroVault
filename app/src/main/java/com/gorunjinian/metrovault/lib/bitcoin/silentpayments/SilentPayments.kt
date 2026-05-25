@@ -32,6 +32,18 @@ object SilentPayments {
     /** The secp256k1 group order n. */
     private val CURVE_N: BigInteger = BigInteger("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16)
 
+    /** Reason a sender-side derivation failed; carried by [SilentPaymentMathException]. */
+    enum class FailureReason {
+        NO_ELIGIBLE_INPUTS, NO_RECIPIENTS, PRIVATE_KEY_SUM_ZERO, INVALID_INPUT_HASH, INVALID_TWEAK, GROUP_EXCEEDS_KMAX
+    }
+
+    /**
+     * Typed failure from the BIP-352 sender math. Extends [IllegalArgumentException] so callers that
+     * only care that "the math rejected this" can still catch the broad type, while orchestrators
+     * (the sender service) can map [reason] to a user-facing error.
+     */
+    class SilentPaymentMathException(val reason: FailureReason, message: String) : IllegalArgumentException(message)
+
     /** A spent input whose private key participates in the shared-secret derivation. */
     data class EligibleInputKey(val privateKey: PrivateKey, val isTaproot: Boolean)
 
@@ -49,7 +61,9 @@ object SilentPayments {
      * sum — the BIP-352 v1.1.1 edge case) does not fail. Fails only if the **final** sum is zero.
      */
     fun summedPrivateKey(keys: List<EligibleInputKey>): PrivateKey {
-        require(keys.isNotEmpty()) { "no eligible inputs to derive a silent payments shared secret" }
+        if (keys.isEmpty()) throw SilentPaymentMathException(
+            FailureReason.NO_ELIGIBLE_INPUTS, "no eligible inputs to derive a silent payments shared secret"
+        )
         var sum = BigInteger.ZERO
         for (k in keys) {
             var x = BigInteger(1, k.privateKey.value.toByteArray())
@@ -58,7 +72,9 @@ object SilentPayments {
             }
             sum = sum.add(x).mod(CURVE_N)
         }
-        require(sum.signum() != 0) { "the summed private key is zero for the eligible silent payments inputs" }
+        if (sum.signum() == 0) throw SilentPaymentMathException(
+            FailureReason.PRIVATE_KEY_SUM_ZERO, "the summed private key is zero for the eligible silent payments inputs"
+        )
         return PrivateKey(scalarTo32(sum))
     }
 
@@ -82,9 +98,9 @@ object SilentPayments {
     fun inputHash(smallestOutpoint: OutPoint, sumPublicKey: PublicKey): ByteVector32 {
         val data = OutPoint.write(smallestOutpoint) + sumPublicKey.value.toByteArray()
         val hash = Crypto.taggedHash(data, BIP0352_INPUTS_TAG)
-        require(Crypto.isPrivKeyValid(hash.toByteArray())) {
-            "the input hash is invalid for the eligible silent payments inputs"
-        }
+        if (!Crypto.isPrivKeyValid(hash.toByteArray())) throw SilentPaymentMathException(
+            FailureReason.INVALID_INPUT_HASH, "the input hash is invalid for the eligible silent payments inputs"
+        )
         return hash
     }
 
@@ -111,9 +127,9 @@ object SilentPayments {
     fun outputKey(spendPubKey: PublicKey, sharedSecret: PublicKey, k: Int): XonlyPublicKey {
         val data = sharedSecret.value.toByteArray() + ser32BE(k)
         val tk = Crypto.taggedHash(data, BIP0352_SHARED_SECRET_TAG)
-        require(Crypto.isPrivKeyValid(tk.toByteArray())) {
-            "the tk value is invalid for the eligible silent payments inputs"
-        }
+        if (!Crypto.isPrivKeyValid(tk.toByteArray())) throw SilentPaymentMathException(
+            FailureReason.INVALID_TWEAK, "the tk value is invalid for the eligible silent payments inputs"
+        )
         val pk = spendPubKey + PrivateKey(tk).publicKey()
         return pk.xOnly()
     }
@@ -131,7 +147,9 @@ object SilentPayments {
         allOutpoints: List<OutPoint>,
         recipients: List<RecipientKeys>
     ): List<DerivedOutput> {
-        require(recipients.isNotEmpty()) { "no silent payment recipients" }
+        if (recipients.isEmpty()) throw SilentPaymentMathException(
+            FailureReason.NO_RECIPIENTS, "no silent payment recipients"
+        )
         val a = summedPrivateKey(eligibleKeys)
         val sumPublicKey = a.publicKey()
         val outpointL = smallestOutpoint(allOutpoints)
@@ -145,7 +163,9 @@ object SilentPayments {
 
         val results = ArrayList<DerivedOutput>(recipients.size)
         for ((_, indices) in groups) {
-            require(indices.size <= K_MAX) { "silent payment recipient group exceeds K_MAX ($K_MAX)" }
+            if (indices.size > K_MAX) throw SilentPaymentMathException(
+                FailureReason.GROUP_EXCEEDS_KMAX, "silent payment recipient group exceeds K_MAX ($K_MAX)"
+            )
             val scanPubKey = recipients[indices.first()].scanPubKey
             val secret = sharedSecret(hash, a, scanPubKey)
             indices.forEachIndexed { k, recipientIndex ->
