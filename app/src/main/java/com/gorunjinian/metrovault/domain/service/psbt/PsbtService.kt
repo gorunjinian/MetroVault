@@ -104,6 +104,10 @@ class PsbtService {
     /**
      * Extracts details from a PSBT for display purposes.
      */
-    fun getPsbtDetails(psbtBase64: String, isTestnet: Boolean = false): PsbtDetails? =
-        PsbtAnalyzer.getPsbtDetails(psbtBase64, isTestnet)
+    fun getPsbtDetails(
+        psbtBase64: String,
+        isTestnet: Boolean = false,
+        silentPaymentContext: com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext? = null,
+    ): PsbtDetails? =
+        PsbtAnalyzer.getPsbtDetails(psbtBase64, isTestnet, silentPaymentContext)
 }

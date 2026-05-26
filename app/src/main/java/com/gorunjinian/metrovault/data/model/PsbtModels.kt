@@ -10,9 +10,12 @@ data class PsbtDetails(
     val virtualSize: Int,  // Transaction size in virtual bytes (vBytes)
     val isMultisig: Boolean = false,  // Whether this is a multisig transaction
     val requiredSignatures: Int = 1,  // m in m-of-n multisig (or 1 for single-sig)
-    val totalSigners: Int = 1,        // n in m-of-n multisig (or 1 for single-sig)  
+    val totalSigners: Int = 1,        // n in m-of-n multisig (or 1 for single-sig)
     val currentSignatures: Int = 0,   // Current number of signatures across all inputs
-    val isReadyToBroadcast: Boolean = false  // True if all inputs have sufficient signatures
+    val isReadyToBroadcast: Boolean = false,  // True if all inputs have sufficient signatures
+    // BIP-352 silent payments: the nominal sp1q… → derived bc1p… mapping for SP recipient
+    // outputs, populated when the active wallet's keys were available to resolve them.
+    val silentPaymentResolutions: List<SilentPaymentResolution> = emptyList()
 )
 
 /**
@@ -29,10 +32,16 @@ data class PsbtInput(
 
 /**
  * PSBT output details.
+ *
+ * @property address the on-chain address shown to the user. For a silent-payment recipient this is
+ *   the derived `bc1p…` taproot address (once resolved); the user is committing to this on-chain.
+ * @property silentPaymentNominal the nominal `sp1q…` address the user intends to pay, when this
+ *   output is a silent-payment recipient; `null` for ordinary outputs.
  */
 data class PsbtOutput(
     val address: String,
-    val value: Long
+    val value: Long,
+    val silentPaymentNominal: String? = null
 )
 
 /**

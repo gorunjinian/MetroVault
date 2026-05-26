@@ -23,6 +23,7 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import com.gorunjinian.metrovault.domain.service.bitcoin.KeyEncodingService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
 import com.gorunjinian.metrovault.data.repository.WalletRepository
 import kotlinx.coroutines.Dispatchers
@@ -710,7 +711,22 @@ class   Wallet(context: Context) {
 
     fun getPsbtDetails(psbtString: String): PsbtDetails? {
         val isTestnet = isActiveWalletTestnet()
-        return bitcoinService.getPsbtDetails(psbtString, isTestnet)
+        return bitcoinService.getPsbtDetails(psbtString, isTestnet, buildSilentPaymentDisplayContext())
+    }
+
+    /**
+     * Builds the context that lets PSBT analysis resolve silent-payment recipient outputs to their
+     * derived `bc1p…` addresses (Option A). Only single-sig / stateless wallets are supported —
+     * collaborative multisig silent-payment sending is out of scope — and we degrade to showing the
+     * nominal `sp1q…` only when the keys aren't available.
+     */
+    private fun buildSilentPaymentDisplayContext(): SilentPaymentDisplayContext? {
+        val state = statelessWalletManager.get() ?: getActiveWalletState() ?: return null
+        val master = state.getMasterPrivateKey() ?: return null
+        val account = state.getAccountPrivateKey() ?: return null
+        return SilentPaymentDisplayContext(
+            master, account, DerivationPaths.getScriptType(state.derivationPath)
+        )
     }
 
     /**
