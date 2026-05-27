@@ -4,7 +4,12 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.data.model.PsbtInput
 import com.gorunjinian.metrovault.data.model.PsbtOutput
+import com.gorunjinian.metrovault.data.model.SilentPaymentRecipient
+import com.gorunjinian.metrovault.data.model.SilentPaymentResolution
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentSender
 import com.gorunjinian.metrovault.lib.bitcoin.*
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentInfo
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 
@@ -110,15 +115,24 @@ internal object PsbtAnalyzer {
 
     /**
      * Extracts details from a PSBT for display purposes.
+     *
+     * @param silentPaymentContext when provided and the PSBT pays to silent-payment recipients,
+     *   resolves the derived `bc1p…` outputs (Option A) so the confirmation screen can show the
+     *   nominal→derived mapping the user is committing to.
      */
-    fun getPsbtDetails(psbtBase64: String, isTestnet: Boolean = false): PsbtDetails? {
+    fun getPsbtDetails(
+        psbtBase64: String,
+        isTestnet: Boolean = false,
+        silentPaymentContext: SilentPaymentDisplayContext? = null,
+    ): PsbtDetails? {
         return try {
             AppLog.d(TAG) { "getPsbtDetails called, base64 length: ${psbtBase64.length}" }
 
             val chainHash = BitcoinUtils.getChainHash(isTestnet)
             val psbt = PsbtUtils.parsePsbt(psbtBase64) ?: return null
 
-            val tx = psbt.global.tx
+            val sp = resolveSilentPaymentsForDisplay(psbt, isTestnet, chainHash, silentPaymentContext)
+            val tx = sp.effectiveTx
 
             // Track multisig info across inputs
             var isMultisig = false
@@ -176,9 +190,13 @@ internal object PsbtAnalyzer {
             }
 
 
-            val outputs = tx.txOut.map { txOut ->
+            val outputs = tx.txOut.mapIndexed { index, txOut ->
                 val address = PsbtUtils.extractAddressFromOutput(txOut, chainHash)
-                PsbtOutput(address = address, value = txOut.amount.toLong())
+                PsbtOutput(
+                    address = address,
+                    value = txOut.amount.toLong(),
+                    silentPaymentNominal = sp.nominalByIndex[index]
+                )
             }
 
             val totalInput = inputs.sumOf { it.value }
@@ -196,11 +214,61 @@ internal object PsbtAnalyzer {
                 requiredSignatures = requiredSignatures,
                 totalSigners = totalSigners,
                 currentSignatures = minMultisigSignatures ?: 0,
-                isReadyToBroadcast = allInputsSigned
+                isReadyToBroadcast = allInputsSigned,
+                silentPaymentResolutions = sp.resolutions
             )
         } catch (_: Exception) {
             null
         }
+    }
+
+    internal data class SilentPaymentDisplayResult(
+        val effectiveTx: Transaction,
+        val nominalByIndex: Map<Int, String>,
+        val resolutions: List<SilentPaymentResolution>,
+    )
+
+    /**
+     * Resolves silent-payment recipient outputs for display. The nominal `sp1q…` address is
+     * derivable from the PSBT field alone; the derived `bc1p…` requires the wallet keys (Option A),
+     * so when [context] is present we run [SilentPaymentSender.resolve] and report the spliced tx.
+     * If resolution fails, we degrade gracefully to nominal-only (the signing path surfaces the
+     * actual error when the user attempts to sign).
+     */
+    internal fun resolveSilentPaymentsForDisplay(
+        psbt: Psbt,
+        isTestnet: Boolean,
+        chainHash: BlockHash,
+        context: SilentPaymentDisplayContext?,
+    ): SilentPaymentDisplayResult {
+        val spOutputs = psbt.outputs.mapIndexedNotNull { idx, output ->
+            output.silentPaymentInfo?.let { idx to it }
+        }
+        if (spOutputs.isEmpty()) {
+            return SilentPaymentDisplayResult(psbt.global.tx, emptyMap(), emptyList())
+        }
+
+        val nominalByIndex = spOutputs.associate { (idx, info) -> idx to info.encode(isTestnet) }
+
+        if (context != null) {
+            val resolved = SilentPaymentSender.resolve(
+                psbt, context.masterPrivateKey, context.accountPrivateKey, context.scriptType, isTestnet
+            )
+            if (resolved is Either.Right) {
+                val resolvedTx = resolved.value.global.tx
+                val resolutions = spOutputs.mapIndexed { k, (idx, info) ->
+                    SilentPaymentResolution(
+                        outputIndex = idx,
+                        recipient = SilentPaymentRecipient(info.scanPubKey, info.spendPubKey, nominalByIndex.getValue(idx), k),
+                        derivedOutputAddress = PsbtUtils.extractAddressFromOutput(resolvedTx.txOut[idx], chainHash),
+                    )
+                }
+                return SilentPaymentDisplayResult(resolvedTx, nominalByIndex, resolutions)
+            }
+            AppLog.w(TAG) { "Silent payment display resolution failed; showing nominal address only" }
+        }
+
+        return SilentPaymentDisplayResult(psbt.global.tx, nominalByIndex, emptyList())
     }
 
     /**

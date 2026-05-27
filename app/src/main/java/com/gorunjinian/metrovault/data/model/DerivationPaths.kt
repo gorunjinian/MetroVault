@@ -66,6 +66,24 @@ object DerivationPaths {
     }
 
     /**
+     * BIP-352 silent-payment spend key path: `m/352'/coin'/account'/0'/0`.
+     * The spend private key (`b_spend`) never leaves the device.
+     */
+    fun silentPaymentSpend(account: Int = 0, testnet: Boolean = false): String {
+        val coinType = if (testnet) COIN_TYPE_TESTNET else COIN_TYPE_MAINNET
+        return "m/352'/$coinType/$account'/0'/0"
+    }
+
+    /**
+     * BIP-352 silent-payment scan key path: `m/352'/coin'/account'/1'/0`.
+     * The scan private key (`b_scan`) is exported once to the watching wallet.
+     */
+    fun silentPaymentScan(account: Int = 0, testnet: Boolean = false): String {
+        val coinType = if (testnet) COIN_TYPE_TESTNET else COIN_TYPE_MAINNET
+        return "m/352'/$coinType/$account'/1'/0"
+    }
+
+    /**
      * BIP48 script type constants:
      * - 1' = P2SH-P2WSH (Ypub/Upub)
      * - 2' = P2WSH native segwit (Zpub/Vpub)
