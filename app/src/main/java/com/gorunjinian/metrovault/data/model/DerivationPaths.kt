@@ -39,6 +39,11 @@ object DerivationPaths {
     // BIP44 - Legacy (m/n...)
     const val LEGACY_TESTNET = "m/44'/$COIN_TYPE_TESTNET/0'"
 
+    // BIP-352 - Silent Payments (sp1q.../tsp1q...). Account-level path; the spend/scan sub-paths
+    // (`/0'/0` and `/1'/0`) are derived on demand by SilentPaymentManager.
+    const val SILENT_PAYMENT = "m/352'/$COIN_TYPE_MAINNET/0'"
+    const val SILENT_PAYMENT_TESTNET = "m/352'/$COIN_TYPE_TESTNET/0'"
+
     // === Dynamic account number builders ===
     
     /** Build Taproot path with custom account number and optional testnet */
@@ -63,6 +68,16 @@ object DerivationPaths {
     fun legacy(account: Int = 0, testnet: Boolean = false): String {
         val coinType = if (testnet) COIN_TYPE_TESTNET else COIN_TYPE_MAINNET
         return "m/44'/$coinType/$account'"
+    }
+
+    /**
+     * BIP-352 silent-payment account-level path: `m/352'/coin'/account'`.
+     * This is the "wallet identity" path stored on [WalletMetadata]; the spend/scan sub-branches
+     * are derived from this on demand by [silentPaymentSpend] / [silentPaymentScan].
+     */
+    fun silentPaymentAccount(account: Int = 0, testnet: Boolean = false): String {
+        val coinType = if (testnet) COIN_TYPE_TESTNET else COIN_TYPE_MAINNET
+        return "m/352'/$coinType/$account'"
     }
 
     /**
@@ -143,8 +158,21 @@ object DerivationPaths {
             84 -> nativeSegwit(account, testnet)
             49 -> nestedSegwit(account, testnet)
             44 -> legacy(account, testnet)
+            352 -> silentPaymentAccount(account, testnet)
             else -> nativeSegwit(account, testnet)
         }
+    }
+
+    /**
+     * Get the matching base path constant for a given [ScriptType] / network. Used by
+     * `Wallet.changeScriptType` to rewrite a wallet's derivation path under a new BIP purpose
+     * while preserving the active account and testnet selection.
+     */
+    fun baseForScriptType(scriptType: ScriptType, testnet: Boolean): String = when (scriptType) {
+        ScriptType.P2TR -> if (testnet) TAPROOT_TESTNET else TAPROOT
+        ScriptType.P2WPKH -> if (testnet) NATIVE_SEGWIT_TESTNET else NATIVE_SEGWIT
+        ScriptType.P2SH_P2WPKH -> if (testnet) NESTED_SEGWIT_TESTNET else NESTED_SEGWIT
+        ScriptType.P2PKH -> if (testnet) LEGACY_TESTNET else LEGACY
     }
 
     /** Get the script type for a derivation path based on its purpose number */
