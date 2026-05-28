@@ -38,7 +38,13 @@ data class WalletMetadata(
     val accountNames: Map<Int, String> = emptyMap(),  // Custom display names (empty = use default)
     val isMultisig: Boolean = false,           // true = this is a multisig wallet
     val multisigConfig: MultisigConfig? = null, // Multisig configuration (null for single-sig)
-    val keyIds: List<String> = emptyList()      // References to WalletKey entries (1 for single-sig, 0-N for multisig)
+    val keyIds: List<String> = emptyList(),     // References to WalletKey entries (1 for single-sig, 0-N for multisig)
+    // BIP-352 silent payments. The flag mirrors isMultisig; the pubkey hexes are the
+    // PUBLIC scan/spend keys, stored so the sp1q… address can be shown without unlocking the wallet.
+    // The private scan/spend keys are never stored — they're derived from the seed at sign/export time.
+    val isSilentPayment: Boolean = false,
+    val silentPaymentScanPubKey: String = "",   // hex of B_scan (compressed)
+    val silentPaymentSpendPubKey: String = ""    // hex of B_spend (compressed)
 ) {
     /**
      * Get the display name for an account.
@@ -84,6 +90,12 @@ data class WalletMetadata(
             // Serialize keyIds
             if (keyIds.isNotEmpty()) {
                 put("keyIds", org.json.JSONArray(keyIds))
+            }
+            // Serialize silent-payment fields
+            if (isSilentPayment) {
+                put("isSilentPayment", true)
+                put("silentPaymentScanPubKey", silentPaymentScanPubKey)
+                put("silentPaymentSpendPubKey", silentPaymentSpendPubKey)
             }
         }.toString()
     }
@@ -163,7 +175,10 @@ data class WalletMetadata(
                 accountNames = accountNames,
                 isMultisig = isMultisig,
                 multisigConfig = multisigConfig,
-                keyIds = keyIds
+                keyIds = keyIds,
+                isSilentPayment = obj.optBoolean("isSilentPayment", false),
+                silentPaymentScanPubKey = obj.optString("silentPaymentScanPubKey", ""),
+                silentPaymentSpendPubKey = obj.optString("silentPaymentSpendPubKey", "")
             )
         }
     }
