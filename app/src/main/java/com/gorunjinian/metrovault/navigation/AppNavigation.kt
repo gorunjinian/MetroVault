@@ -39,6 +39,9 @@ import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.DescriptorsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportMultiSigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
+import com.gorunjinian.metrovault.feature.wallet.details.SPAddressScreen
+import com.gorunjinian.metrovault.feature.wallet.details.ScriptTypeScreen
+import com.gorunjinian.metrovault.feature.wallet.details.SilentPaymentExportScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SeedPhraseScreen
 import com.gorunjinian.metrovault.feature.wallet.details.RootKeyScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SeedQRScreen
@@ -78,6 +81,8 @@ sealed class Screen(val route: String) {
     object ScanPSBT : Screen("scan_psbt")
     object ExportOptions : Screen("export_options")
     object ExportMultiSig : Screen("export_multisig")
+    object SilentPaymentExport : Screen("silent_payment_export")
+    object SPAddress : Screen("sp_address")
     object BIP85Derive : Screen("bip85_derive")
     object SignMessage : Screen("sign_message?address={address}") {
         fun createRoute(address: String? = null): String {
@@ -95,6 +100,7 @@ sealed class Screen(val route: String) {
     object SettingsSecurity : Screen("settings_security")
     object SettingsAdvanced : Screen("settings_advanced")
     object DifferentAccounts : Screen("different_accounts")
+    object ScriptType : Screen("script_type")
     object AccountKeys : Screen("account_keys")
     object Descriptors : Screen("descriptors")
     object SeedPhrase : Screen("seed_phrase")
@@ -137,7 +143,7 @@ fun AppNavigation(
     }
 
     // Handle wallet loading and navigation when auto-open is triggered
-    // This LaunchedEffect is at the AppNavigation level, so it won't be cancelled
+    // This LaunchedEffect is at the AppNavigation level, so it won't be canceled
     // when the Unlock screen is disposed due to walletsList state changes
     LaunchedEffect(pendingAutoOpen) {
         val autoOpen = pendingAutoOpen ?: return@LaunchedEffect
@@ -373,7 +379,14 @@ fun AppNavigation(
                 wallet = wallet,
                 secureStorage = secureStorage,
                 userPreferencesRepository = userPreferencesRepository,
-                onViewAddresses = { navController.navigate(Screen.Addresses.createRoute()) },
+                onViewAddresses = {
+                    val target = if (wallet.isActiveSilentPayment()) {
+                        Screen.SPAddress.route
+                    } else {
+                        Screen.Addresses.createRoute()
+                    }
+                    navController.navigate(target)
+                },
                 onScanPSBT = { navController.navigate(Screen.ScanPSBT.route) },
                 onExport = { navController.navigate(Screen.ExportOptions.route) },
                 onExportMultiSig = { navController.navigate(Screen.ExportMultiSig.route) },
@@ -381,6 +394,7 @@ fun AppNavigation(
                 onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
                 onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },
                 onDifferentAccounts = { navController.navigate(Screen.DifferentAccounts.route) },
+                onChangeScriptType = { navController.navigate(Screen.ScriptType.route) },
                 onLock = {
                     navController.navigate(Screen.Unlock.route) {
                         popUpTo(0) { inclusive = true }
@@ -413,6 +427,7 @@ fun AppNavigation(
             
             AddressesScreen(
                 wallet = wallet,
+                userPreferencesRepository = userPreferencesRepository,
                 initialTabIndex = returnTab,
                 onBack = {
                     if (!navController.popBackStack()) {
@@ -423,7 +438,21 @@ fun AppNavigation(
                     // Set the return tab BEFORE navigating so predictive back animation works
                     backStackEntry.savedStateHandle["returnTab"] = if (isChange) 1 else 0
                     navController.navigate(Screen.AddressDetail.createRoute(address, index, isChange))
-                }
+                },
+                onViewSilentPaymentExport = { navController.navigate(Screen.SilentPaymentExport.route) }
+            )
+        }
+
+        composable(Screen.SPAddress.route) {
+            SPAddressScreen(
+                wallet = wallet,
+                userPreferencesRepository = userPreferencesRepository,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.WalletDetails.route)
+                    }
+                },
+                onExport = { navController.navigate(Screen.SilentPaymentExport.route) }
             )
         }
 
@@ -470,6 +499,7 @@ fun AppNavigation(
             ExportOptionsScreen(
                 wallet = wallet,
                 secureStorage = secureStorage,
+                userPreferencesRepository = userPreferencesRepository,
                 isStatelessWallet = wallet.hasStatelessWallet(),
                 onBack = {
                     if (!navController.popBackStack()) {
@@ -479,7 +509,20 @@ fun AppNavigation(
                 onViewAccountKeys = { navController.navigate(Screen.AccountKeys.route) },
                 onViewDescriptors = { navController.navigate(Screen.Descriptors.route) },
                 onViewRootKey = { navController.navigate(Screen.RootKey.route) },
-                onViewSeedPhrase = { navController.navigate(Screen.SeedPhrase.route) }
+                onViewSeedPhrase = { navController.navigate(Screen.SeedPhrase.route) },
+                onViewSilentPayments = { navController.navigate(Screen.SilentPaymentExport.route) }
+            )
+        }
+
+        composable(Screen.SilentPaymentExport.route) {
+            SilentPaymentExportScreen(
+                wallet = wallet,
+                userPreferencesRepository = userPreferencesRepository,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.ExportOptions.route)
+                    }
+                }
             )
         }
 
@@ -588,6 +631,17 @@ fun AppNavigation(
             DifferentAccountsScreen(
                 wallet = wallet,
                 secureStorage = secureStorage,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Home.route)
+                    }
+                }
+            )
+        }
+
+        composable(Screen.ScriptType.route) {
+            ScriptTypeScreen(
+                wallet = wallet,
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(Screen.Home.route)
