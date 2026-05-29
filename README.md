@@ -49,8 +49,10 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 | **Automatic Wipe** | Optional feature to completely wipe sensitive data after 4 unsuccessful login attempts |
 
 ### 💼 Wallet Management
-- **Multi-Type Support**: Native SegWit (`bc1q...`), Taproot (`bc1p...`), Nested SegWit (`3...`), Legacy (`1...`)
+- **Multi-Type Support**: Native SegWit (`bc1q...`), Taproot (`bc1p...`), Nested SegWit (`3...`), Legacy (`1...`), Silent Payments (`sp1q...`)
 - **Multi-Sig Support**: Import and sign for collaborative custody wallets (2-of-3, 3-of-5, etc.)
+- **Silent Payments (BIP-352)**: Create dedicated SP wallets, send to `sp1q…` recipients from any wallet, and sign spends of received SP outputs — all air-gapped. The spend key never leaves the device; only the scan key is exported (`spscan…` / descriptor) to the watching wallet.
+- **Change Script Type**: Switch a single-sig wallet between Taproot / Native SegWit / Nested SegWit / Legacy without re-importing the seed
 - **Passphrase Support**: Optional BIP-39 passphrase with choice to save locally or keep in session memory only
 - **Testnet4 Support**: Import or create Testnet wallet for testing and development
 - **Custom Entropy**: Add your own randomness via dice rolls or coin flips
@@ -59,8 +61,9 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 - **XPRIV Export**: Export wallet's extended private key (if needed)
 
 ### 📝 Transaction Signing
-- **PSBT Workflow** (BIP-174): Partially Signed Bitcoin Transactions for single-sig and multi-sig
+- **PSBT Workflow** (BIP-174 + BIP-370 v2): Partially Signed Bitcoin Transactions for single-sig and multi-sig
 - **Multi-Sig Signing**: Sign your part of collaborative custody transactions (with locally saved keys)
+- **Silent-Payment Signing**: Sign sends to `sp1q…` recipients (the derived `bc1p…` is computed on-device and shown alongside the `sp1q…` on the confirmation screen) and sign spends of received SP outputs via `PSBT_IN_SP_TWEAK` (BIP-374)
 - **Transaction Finalization**: Finalize fully-signed PSBTs into broadcastable transactions
 - **QR Code Air-Gap**: Scan PSBT → Verify → Sign → Export via QR
 - **Animated QR Support**: BC-UR (v1/v2) and BBQr formats for large transactions
@@ -102,7 +105,7 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 |----------|------------|
 | **UI Framework** | Jetpack Compose (Material 3) |
 | **Architecture** | MVVM with Clean Architecture |
-| **Cryptography** | Custom Kotlin Bitcoin Library (Secp256k1, BIP-32, BIP-39, BIP-48, BIP-174) |
+| **Cryptography** | Custom Kotlin Bitcoin Library (Secp256k1, BIP-32, BIP-39, BIP-48, BIP-174, BIP-352, BIP-370, BIP-374) |
 | **Storage** | EncryptedSharedPreferences (Android Keystore) |
 | **QR Codes** | ZXing + bcur-kotlin & bbqr (Kotlin ports for BC-UR and BBQr animated multi-frame QR) |
 | **Biometrics** | AndroidX Biometric Library (BIOMETRIC_STRONG) |
@@ -146,6 +149,8 @@ For maximum security, use a dedicated device:
 5. Remove SIM card
 6. Disable USB debugging
 ```
+
+**Optional — debloat first:** before sideloading MetroVault, consider running [android-debloater](https://github.com/gorunjinian/android-debloater), a companion bash script that uses `adb` to uninstall bloatware and pre-installed network-reaching apps on a fresh device. The fewer packages that can phone home, the smaller the attack surface left on your air-gapped signer. After debloating, disable USB debugging.
 
 ## 📖 Documentation
 
