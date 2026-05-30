@@ -40,6 +40,7 @@ fun AdvancedSettingsScreen(
     val autoExpandEnabled by userPreferencesRepository.autoExpandSingleWallet.collectAsState()
     val differentAccountsEnabled by userPreferencesRepository.differentAccountsEnabled.collectAsState()
     val bip85Enabled by userPreferencesRepository.bip85Enabled.collectAsState()
+    val silentPaymentsEnabled by userPreferencesRepository.silentPaymentsEnabled.collectAsState()
 
     var showDeleteAllWalletsDialog by remember { mutableStateOf(false) }
     var showDeletePasswordDialog by remember { mutableStateOf(false) }
@@ -238,6 +239,45 @@ fun AdvancedSettingsScreen(
                         } else {
                             userPreferencesRepository.setDifferentAccountsEnabled(enabled)
                         }
+                    }
+                )
+            }
+
+            // Silent Payments toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_qr_code_scanner),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Silent Payments",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Enable SP for existing regular wallets",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = silentPaymentsEnabled,
+                    onCheckedChange = { enabled ->
+                        userPreferencesRepository.setSilentPaymentsEnabled(enabled)
                     }
                 )
             }

@@ -39,6 +39,7 @@ fun WalletDetailsScreen(
     onSignMessage: () -> Unit,
     onCheckAddress: () -> Unit,
     onDifferentAccounts: () -> Unit,
+    onChangeScriptType: () -> Unit,
     onLock: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -63,7 +64,10 @@ fun WalletDetailsScreen(
 
     // Check if multisig wallet
     val isMultisig = activeWalletMetadata?.isMultisig ?: false
-    
+
+    // Check if this is a BIP-352 silent-payment wallet
+    val isSilentPayment = activeWalletMetadata?.isSilentPayment ?: false
+
     // Check if currently viewing a stateless wallet (not just if one exists in memory)
     // Stateless wallet is active only if no persistent wallet is loaded (activeWalletMetadata == null)
     val isStatelessWallet = activeWalletMetadata == null && wallet.hasStatelessWallet()
@@ -113,6 +117,22 @@ fun WalletDetailsScreen(
                         ) {
                             Text(
                                 text = "Multi-Sig",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    // Silent-Payments badge
+                    if (isSilentPayment) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Silent Payments",
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold
@@ -170,6 +190,7 @@ fun WalletDetailsScreen(
                 84 -> if (isTestnet) "Native SegWit (tb1q...)" else "Native SegWit (bc1...)"
                 49 -> if (isTestnet) "Nested SegWit (2...)" else "Nested SegWit (3...)"
                 44 -> if (isTestnet) "Legacy (m/n...)" else "Legacy (1...)"
+                352 -> if (isTestnet) "Silent Payments (tsp1q...)" else "Silent Payments (sp1q...)"
                 else -> "Unknown"
             }
             val fingerprint = wallet.getMasterFingerprint()
@@ -340,11 +361,12 @@ fun WalletDetailsScreen(
                     )
                     Column {
                         Text(
-                            text = "View Addresses",
+                            text = if (isSilentPayment) "View SP Address" else "View Addresses",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Generate and view public addresses",
+                            text = if (isSilentPayment) "Show your silent-payment address"
+                            else "Generate and view public addresses",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -382,9 +404,41 @@ fun WalletDetailsScreen(
                 }
             }
 
-            // Check Address
+            // Check Address (not for SP wallets — no enumerable address tree to check against)
+            if (!isSilentPayment) {
+                ElevatedCard(
+                    onClick = onCheckAddress,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_search),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Column {
+                            Text(
+                                text = "Check Address",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Verify if an address belongs to this wallet",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Export Options (moved up from Advanced)
             ElevatedCard(
-                onClick = onCheckAddress,
+                onClick = { if (isMultisig) onExportMultiSig() else onExport() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -393,18 +447,19 @@ fun WalletDetailsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_search),
+                        painter = painterResource(R.drawable.ic_upload),
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Column {
                         Text(
-                            text = "Check Address",
+                            text = "Export",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Verify if an address belongs to this wallet",
+                            text = if (isMultisig) "Export multisig wallet descriptor"
+                                   else "Export keys, descriptors or seed phrase",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -419,8 +474,9 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Sign/Verify Message (not for multisig or stateless wallets)
-            if (!isMultisig && !isStatelessWallet) {
+            // Sign/Verify Message (not for multisig, stateless, or silent-payment wallets —
+            // SP wallets have no per-receive-address keys to sign messages with).
+            if (!isMultisig && !isStatelessWallet && !isSilentPayment) {
                 ElevatedCard(
                     onClick = onSignMessage,
                     modifier = Modifier.fillMaxWidth()
@@ -515,33 +571,46 @@ fun WalletDetailsScreen(
                 }
             }
 
-            // Export Options
-            ElevatedCard(
-                onClick = { if (isMultisig) onExportMultiSig() else onExport() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Change Script Type (single-sig only; hidden for multisig, stateless, and SP).
+            // The same seed backs every script type — only the BIP purpose / address tree changes.
+            if (!isMultisig && !isStatelessWallet && !isSilentPayment) {
+                val currentScriptType = DerivationPaths.getScriptType(derivationPath)
+                val currentSubtitle = when (currentScriptType) {
+                    com.gorunjinian.metrovault.data.model.ScriptType.P2TR ->
+                        if (isTestnet) "Currently: Taproot (tb1p…)" else "Currently: Taproot (bc1p…)"
+                    com.gorunjinian.metrovault.data.model.ScriptType.P2WPKH ->
+                        if (isTestnet) "Currently: Native SegWit (tb1q…)" else "Currently: Native SegWit (bc1q…)"
+                    com.gorunjinian.metrovault.data.model.ScriptType.P2SH_P2WPKH ->
+                        if (isTestnet) "Currently: Nested SegWit (2…)" else "Currently: Nested SegWit (3…)"
+                    com.gorunjinian.metrovault.data.model.ScriptType.P2PKH ->
+                        if (isTestnet) "Currently: Legacy (m/n…)" else "Currently: Legacy (1…)"
+                }
+                ElevatedCard(
+                    onClick = onChangeScriptType,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_upload),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column {
-                        Text(
-                            text = "Export",
-                            style = MaterialTheme.typography.titleMedium
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_tune),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = if (isMultisig) "Export multisig wallet descriptor" 
-                                   else "Export keys, descriptors or seed phrase",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column {
+                            Text(
+                                text = "Change Script Type",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = currentSubtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

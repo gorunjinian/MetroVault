@@ -1,6 +1,5 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
-import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -15,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.gorunjinian.metrovault.data.model.BitcoinAddress
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
 
@@ -25,15 +26,15 @@ import kotlinx.coroutines.launch
  */
 private fun formatTruncatedAddress(address: String): String {
     if (address.length <= 28) return address // Short enough to show fully
-    
+
     val first10 = address.take(10)
     val last15 = address.takeLast(15)
-    
+
     // Format with 2 spaces every 5 characters
     fun formatWithSpaces(s: String): String {
         return s.chunked(5).joinToString("   ")
     }
-    
+
     return "${formatWithSpaces(first10)}  ...  ${formatWithSpaces(last15)}"
 }
 
@@ -41,15 +42,29 @@ private fun formatTruncatedAddress(address: String): String {
 @Composable
 fun AddressesScreen(
     wallet: Wallet,
+    userPreferencesRepository: UserPreferencesRepository,
     initialTabIndex: Int = 0,
     onBack: () -> Unit,
-    onAddressSelected: (address: String, index: Int, isChange: Boolean) -> Unit
+    onAddressSelected: (address: String, index: Int, isChange: Boolean) -> Unit,
+    onViewSilentPaymentExport: () -> Unit,
 ) {
+    // The SP tab is only exposed here when the user has opted in via Advanced Settings; SP-flagged
+    // wallets never reach this screen (they're routed to SPAddressScreen), so this gate is purely
+    // about the "derive an SP address from an existing regular wallet" discovery surface.
+    val silentPaymentsEnabled by userPreferencesRepository.silentPaymentsEnabled.collectAsState()
+
     var selectedTabIndex by remember { mutableIntStateOf(initialTabIndex) }
-    
+
     // Sync selectedTabIndex when initialTabIndex changes (e.g., returning from back stack)
     LaunchedEffect(initialTabIndex) {
         selectedTabIndex = initialTabIndex
+    }
+
+    // If the user disables SP while sitting on the SP tab, snap back to Receive.
+    LaunchedEffect(silentPaymentsEnabled) {
+        if (!silentPaymentsEnabled && selectedTabIndex == 2) {
+            selectedTabIndex = 0
+        }
     }
 
     // Separate lists for receive and change addresses
@@ -62,9 +77,9 @@ fun AddressesScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Show FAB when scrolled down
+    // Show FAB when scrolled down, but only on receive/change tabs (silent-payment tab is short)
     val showScrollToTop by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 5 }
+        derivedStateOf { listState.firstVisibleItemIndex > 5 && selectedTabIndex != 2 }
     }
 
     // Load initial addresses
@@ -82,7 +97,6 @@ fun AddressesScreen(
         ) ?: emptyList()
     }
 
-    // Function to load more addresses
     fun loadMoreReceiveAddresses() {
         val result = wallet.generateAddresses(
             count = 20,
@@ -154,66 +168,81 @@ fun AddressesScreen(
                     onClick = { selectedTabIndex = 1 },
                     text = { Text("Change (${changeAddresses.size})") }
                 )
+                if (silentPaymentsEnabled) {
+                    Tab(
+                        selected = selectedTabIndex == 2,
+                        onClick = { selectedTabIndex = 2 },
+                        text = { Text("Silent Payments") }
+                    )
+                }
             }
 
-            val currentAddresses = if (selectedTabIndex == 0) receiveAddresses else changeAddresses
-            val loadMoreAction = if (selectedTabIndex == 0) ::loadMoreReceiveAddresses else ::loadMoreChangeAddresses
+            when (selectedTabIndex) {
+                2 -> {
+                    SilentPaymentAddressContent(
+                        wallet = wallet,
+                        userPreferencesRepository = userPreferencesRepository,
+                        onExport = onViewSilentPaymentExport
+                    )
+                }
+                else -> {
+                    val currentAddresses = if (selectedTabIndex == 0) receiveAddresses else changeAddresses
+                    val loadMoreAction = if (selectedTabIndex == 0) ::loadMoreReceiveAddresses else ::loadMoreChangeAddresses
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(currentAddresses) { addressInfo ->
-                    ElevatedCard(
-                        onClick = { 
-                            onAddressSelected(addressInfo.address, addressInfo.index, addressInfo.isChange)
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            // Index badge
-                            Surface(
-                                shape = MaterialTheme.shapes.small,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.align(Alignment.CenterVertically)
+                        items(currentAddresses) { addressInfo ->
+                            ElevatedCard(
+                                onClick = {
+                                    onAddressSelected(addressInfo.address, addressInfo.index, addressInfo.isChange)
+                                },
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = "${addressInfo.index}",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Surface(
+                                        shape = MaterialTheme.shapes.small,
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.align(Alignment.CenterVertically)
+                                    ) {
+                                        Text(
+                                            text = "${addressInfo.index}",
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
 
-                            // Address details
-                            Column(
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = formatTruncatedAddress(addressInfo.address),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = formatTruncatedAddress(addressInfo.address),
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                // Show More button
-                item {
-                    Button(
-                        onClick = { loadMoreAction() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                    ) {
-                        Text("Show More")
+                        item {
+                            Button(
+                                onClick = { loadMoreAction() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Text("Show More")
+                            }
+                        }
                     }
                 }
             }
