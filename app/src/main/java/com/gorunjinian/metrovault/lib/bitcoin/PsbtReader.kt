@@ -350,7 +350,7 @@ internal object PsbtReader {
             return Either.Left(ParseFailure.InvalidGlobalTx("PSBT_GLOBAL_UNSIGNED_TX is not allowed in PSBTv2"))
         }
 
-val globalKeyTypes = setOf<Byte>(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xfb.toByte())
+val globalKeyTypes = setOf(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xfb.toByte())
         val (knownGlobal, unknownGlobal) = globalMap.partition { globalKeyTypes.contains(it.key[0]) }
 
         val txVersion = knownGlobal.find { it.key[0] == 0x02.toByte() }?.let {
@@ -413,7 +413,7 @@ val globalKeyTypes = setOf<Byte>(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xfb.toByte
 
         /********** Inputs (v2) **********/
         val parsedInputs = ArrayList<ParsedV2Input>(inputCount)
-        for (i in 0 until inputCount) {
+        repeat(inputCount) {
             val entries = readDataMap(input).getOrElse {
                 return when (it) {
                     is ReadEntryFailure.DuplicateKeys -> Either.Left(ParseFailure.DuplicateKeys)
@@ -425,7 +425,7 @@ val globalKeyTypes = setOf<Byte>(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xfb.toByte
 
         /********** Outputs (v2) **********/
         val parsedOutputs = ArrayList<ParsedV2Output>(outputCount)
-        for (i in 0 until outputCount) {
+        repeat(outputCount) {
             val entries = readDataMap(input).getOrElse {
                 return when (it) {
                     is ReadEntryFailure.DuplicateKeys -> Either.Left(ParseFailure.DuplicateKeys)

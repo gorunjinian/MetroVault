@@ -141,6 +141,7 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
                 84 -> if (enabled) DerivationPaths.NATIVE_SEGWIT_TESTNET else DerivationPaths.NATIVE_SEGWIT
                 49 -> if (enabled) DerivationPaths.NESTED_SEGWIT_TESTNET else DerivationPaths.NESTED_SEGWIT
                 44 -> if (enabled) DerivationPaths.LEGACY_TESTNET else DerivationPaths.LEGACY
+                352 -> if (enabled) DerivationPaths.SILENT_PAYMENT_TESTNET else DerivationPaths.SILENT_PAYMENT
                 else -> if (enabled) DerivationPaths.NATIVE_SEGWIT_TESTNET else DerivationPaths.NATIVE_SEGWIT
             }
             state.copy(isTestnet = enabled, selectedDerivationPath = newPath)
