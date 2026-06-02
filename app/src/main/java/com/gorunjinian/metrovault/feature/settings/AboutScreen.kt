@@ -310,8 +310,13 @@ fun AboutScreen(
                             bip = "BIP44"
                         )
                         AddressTypeItem(
+                            prefix = "sp1q",
+                            name = "Silent Payments",
+                            bip = "BIP352"
+                        )
+                        AddressTypeItem(
                             prefix = "Tnet",
-                            name = "Full Testnet4 support",
+                            name = "Testnet4 support",
                             bip = "BIP94"
                         )
                     }

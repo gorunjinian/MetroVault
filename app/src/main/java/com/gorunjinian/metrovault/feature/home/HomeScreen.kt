@@ -18,7 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalView
 import android.view.HapticFeedbackConstants
@@ -103,7 +106,12 @@ fun HomeScreen(
             scope.launch {
                 val loaded = wallet.openWallet(walletId)
                 if (loaded) {
-                    navController.navigate(Screen.Addresses.createRoute())
+                    val target = if (wallet.isActiveSilentPayment()) {
+                        Screen.SPAddress.route
+                    } else {
+                        Screen.Addresses.createRoute()
+                    }
+                    navController.navigate(target)
                 }
             }
         }
@@ -381,9 +389,18 @@ fun HomeScreen(
                                 tonalElevation = 2.dp
                             ) {
                                 Text(
-                                    text = "Drag the handle to rearrange or tap on wallet card to rename",
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    text = buildAnnotatedString {
+                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                            append("Drag")
+                                        }
+                                        append(" the handle to rearrange or ")
+                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                            append("tap on wallet")
+                                        }
+                                        append(" card to rename")
+                                    },
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                                    style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
