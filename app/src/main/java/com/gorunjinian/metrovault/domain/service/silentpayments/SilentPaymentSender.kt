@@ -6,26 +6,35 @@ import com.gorunjinian.metrovault.data.model.SilentPaymentError
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtKeyResolver
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
+import com.gorunjinian.metrovault.lib.bitcoin.DataEntry
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
 import com.gorunjinian.metrovault.lib.bitcoin.Psbt
 import com.gorunjinian.metrovault.lib.bitcoin.Script
 import com.gorunjinian.metrovault.lib.bitcoin.SigHash
 import com.gorunjinian.metrovault.lib.bitcoin.byteVector
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.Bip374Fields
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.DleqProof
 import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentInputs
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentSpending
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentTweak
 import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentInputs.SpInputKind
 import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments
 import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments.EligibleInputKey
 import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments.RecipientKeys
 import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentInfo
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import java.security.SecureRandom
 
 /**
  * Story A orchestrator: resolves a PSBT that pays to one or more `sp1q…` recipients.
  *
  * The watching wallet declares each recipient inside the PSBT (`PSBT_OUT_SP_V0_INFO`) and puts a
  * dummy P2TR placeholder in `global.tx.txOut`. This service derives the real taproot output from
- * the spent input private keys (BIP-352), rewrites the placeholder scripts in place, and returns
- * the resolved PSBT — ready for the existing [com.gorunjinian.metrovault.domain.service.psbt.PsbtSigner]
+ * the spent input private keys (BIP-352), rewrites the placeholder scripts in place, attaches the
+ * BIP-375 global ECDH share + DLEQ proof per scan key (so the watching wallet can verify the
+ * derived scripts before broadcasting), and returns the resolved PSBT — ready for the existing
+ * [com.gorunjinian.metrovault.domain.service.psbt.PsbtSigner]
  * to sign. It is invoked from `WalletSigningService` *before* signing, because the output scripts
  * are committed to in every input's sighash.
  *
@@ -44,6 +53,11 @@ internal object SilentPaymentSender {
      * scripts replaced by the derived P2TR scripts. If the PSBT has no SP recipients, returns it
      * unchanged. The per-output SP fields are left intact (preserved as unknown entries) so a
      * downstream wallet can keep the nominal→derived mapping.
+     *
+     * @param spendPrivateKey the wallet's BIP-352 spend key (`b_spend`), required to resolve inputs
+     * that spend a *received* SP output (carrying `PSBT_IN_SP_TWEAK`): their one-shot key
+     * `d = b_spend + tweak` exists on no BIP-32 branch, so it must be derived from the tweak. Null
+     * for non-SP wallets — a tweaked input then fails with [SilentPaymentError.MissingPrivateKey].
      */
     fun resolve(
         psbt: Psbt,
@@ -51,6 +65,7 @@ internal object SilentPaymentSender {
         accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         scriptType: ScriptType,
         isTestnet: Boolean,
+        spendPrivateKey: PrivateKey? = null,
     ): Either<SilentPaymentError, Psbt> {
         // 1. Find SP recipient outputs (txOut index -> declared recipient keys).
         val spOutputs = psbt.outputs.mapIndexedNotNull { idx, output ->
@@ -87,6 +102,31 @@ internal object SilentPaymentSender {
             val kind = SilentPaymentInputs.classify(scriptPubKey, redeemScript, input.scriptWitness?.stack)
             if (kind == SpInputKind.INELIGIBLE) return@forEachIndexed
 
+            // An input spending a *received* SP output: its key d = b_spend + tweak exists on no
+            // BIP-32 branch, so derive it from PSBT_IN_SP_TWEAK and verify it against the input's
+            // taproot output key (P_k = d·G directly, no taptweak) — same check the receive signer
+            // makes before signing.
+            val tweak = input.silentPaymentTweak
+            if (tweak != null) {
+                val outpoint = psbt.global.tx.txIn[index].outPoint.toString()
+                if (spendPrivateKey == null) {
+                    AppLog.w(TAG) { "Input $index spends a received SP output but no spend key is available" }
+                    return Either.Left(SilentPaymentError.MissingPrivateKey(outpoint))
+                }
+                val d = try {
+                    SilentPaymentSpending.deriveSpendingPrivateKey(spendPrivateKey, tweak)
+                } catch (_: IllegalArgumentException) {
+                    return Either.Left(SilentPaymentError.TweakMismatch(outpoint))
+                }
+                val outputKey = Script.pay2trOutputKey(scriptPubKey)
+                if (outputKey == null || outputKey != d.xOnlyPublicKey()) {
+                    AppLog.w(TAG) { "SP tweak for input $index does not derive its output key" }
+                    return Either.Left(SilentPaymentError.TweakMismatch(outpoint))
+                }
+                eligibleKeys.add(EligibleInputKey(d, isTaproot = true))
+                return@forEachIndexed
+            }
+
             val resolved = PsbtKeyResolver.resolveFromDerivationPaths(input, masterPrivateKey, walletFingerprint, isTestnet)
                 ?: PsbtKeyResolver.resolveFromAddressLookup(input, accountPrivateKey, addressLookup)?.first
             if (resolved == null) {
@@ -116,8 +156,32 @@ internal object SilentPaymentSender {
             newTxOut[txOutIndex] = newTxOut[txOutIndex].copy(publicKeyScript = p2trScript)
         }
 
+        // 12. BIP-375 proofs: attach a global ECDH share (`a·B_scan`) and DLEQ proof per scan key
+        // so the watching wallet can verify the derived scripts — Sparrow refuses to extract or
+        // broadcast the final transaction without them. Global (not per-input) fields suffice
+        // because MetroVault is the sole signer. v2-only: BIP-375 forbids these fields in v0.
+        // Re-resolution replaces any previously attached share/proof rather than duplicating it.
+        var newUnknown = psbt.global.unknown
+        if (psbt.global.version >= 2) {
+            val summedKey = SilentPayments.summedPrivateKey(eligibleKeys)
+            val random = SecureRandom()
+            val proofEntries = mutableListOf<DataEntry>()
+            for (scanKey in recipients.map { it.scanPubKey }.distinct()) {
+                val ecdhShare = scanKey * summedKey
+                val auxRand = ByteArray(32).also(random::nextBytes)
+                val proof = DleqProof.generate(summedKey, scanKey, auxRand)
+                if (proof == null) {
+                    AppLog.w(TAG) { "DLEQ proof generation failed for a scan key" }
+                    return Either.Left(SilentPaymentError.ProofGenerationFailed)
+                }
+                proofEntries.add(Bip374Fields.globalEcdhShareEntry(scanKey, ecdhShare))
+                proofEntries.add(Bip374Fields.globalDleqProofEntry(scanKey, proof))
+            }
+            newUnknown = psbt.global.unknown.filterNot(Bip374Fields::isGlobalSilentPaymentProofEntry) + proofEntries
+        }
+
         val resolvedTx = psbt.global.tx.copy(txOut = newTxOut)
-        return Either.Right(psbt.copy(global = psbt.global.copy(tx = resolvedTx)))
+        return Either.Right(psbt.copy(global = psbt.global.copy(tx = resolvedTx, unknown = newUnknown)))
     }
 
     private fun mapMathError(e: SilentPayments.SilentPaymentMathException): SilentPaymentError = when (e.reason) {

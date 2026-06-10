@@ -3,6 +3,9 @@ package com.gorunjinian.metrovault.lib.bitcoin
 import com.gorunjinian.metrovault.lib.bitcoin.crypto.Pack
 import com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayOutput
 
+
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.Bip374Fields
+
 /**
  * Serializes a [Psbt] to bytes. Extracted from `Psbt`'s companion; [Psbt.write] delegates here.
  *
@@ -77,7 +80,9 @@ internal object PsbtWriter {
         if (psbt.global.version > 0) {
             writeDataEntry(DataEntry(ByteVector("fb"), ByteVector(Pack.writeInt32LE(psbt.global.version.toInt()))), out)
         }
-        psbt.global.unknown.forEach { writeDataEntry(it, out) }
+        // BIP-375 forbids the global SP ECDH share/DLEQ proof fields in v0 — drop any that rode
+        // in via `unknown` rather than emit a PSBT every BIP-375 parser must reject.
+        psbt.global.unknown.filterNot(Bip374Fields::isGlobalSilentPaymentProofEntry).forEach { writeDataEntry(it, out) }
         out.write(0x00) // separator
 
         /********** Inputs **********/

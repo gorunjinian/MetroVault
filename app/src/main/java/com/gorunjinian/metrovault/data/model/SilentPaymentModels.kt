@@ -74,4 +74,14 @@ sealed class SilentPaymentError {
     data class MissingPrivateKey(val outpoint: String) : SilentPaymentError() {
         override val message = "Could not resolve the signing key for input $outpoint."
     }
+
+    /** BIP-374 DLEQ proof generation failed (statistically negligible for honest inputs). */
+    data object ProofGenerationFailed : SilentPaymentError() {
+        override val message = "Could not generate the silent payment ownership proof."
+    }
+
+    /** An input's `PSBT_IN_SP_TWEAK` does not derive the input's taproot output key. */
+    data class TweakMismatch(val outpoint: String) : SilentPaymentError() {
+        override val message = "The silent payment tweak for input $outpoint does not match its output key."
+    }
 }

@@ -1,6 +1,8 @@
 package com.gorunjinian.metrovault.bitcoin.silentpayments
 
 import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.data.model.SilentPaymentError
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentReceiveSigner
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentSender
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.metrovault.lib.bitcoin.ByteVector
@@ -21,7 +23,13 @@ import com.gorunjinian.metrovault.lib.bitcoin.Transaction
 import com.gorunjinian.metrovault.lib.bitcoin.TxId
 import com.gorunjinian.metrovault.lib.bitcoin.TxIn
 import com.gorunjinian.metrovault.lib.bitcoin.TxOut
+import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
+import com.gorunjinian.metrovault.lib.bitcoin.byteVector
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.DleqProof
 import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentAddress
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentDleqProofs
+import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentEcdhShares
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -89,5 +97,143 @@ class SilentPaymentV2SignTest {
             reread.outputs[0].unknown.any { it.key.size() == 1 && it.key[0] == 0x09.toByte() }
         )
         assertEquals(resolved.global.tx.txOut[0].publicKeyScript, reread.global.tx.txOut[0].publicKeyScript)
+
+        // 4) BIP-375 proof fields must survive the round-trip (Sparrow reads them at extraction).
+        assertEquals(1, reread.global.silentPaymentEcdhShares.size)
+        assertEquals(1, reread.global.silentPaymentDleqProofs.size)
+    }
+
+    /**
+     * Replays drongo's `PSBT.validateSilentPayments` global-share path on the resolved PSBT:
+     * the DLEQ proof must verify against the summed input public key, and the derived output
+     * script must recompute from the attached ECDH share alone (`input_hash` applied verifier-side).
+     * This is the check Sparrow runs before allowing View Final / broadcast.
+     */
+    @Test
+    fun resolvedPsbtPassesSparrowSideValidation() {
+        val inputKey = master.derivePrivateKey(KeyPath("m/84'/1'/0'/0/0"))
+        val pub = inputKey.publicKey
+
+        val witnessUtxo = TxOut(Satoshi(100_000), Script.pay2wpkh(pub))
+        val input = Input.WitnessInput.PartiallySignedWitnessInput(
+            witnessUtxo, null, null, emptyMap(),
+            mapOf(pub to KeyPathWithMaster(fingerprint, KeyPath("m/84'/1'/0'/0/0"))),
+            null, null, emptySet(), emptySet(), emptySet(), emptySet(), null, emptyMap(), null, emptyList()
+        )
+        val spInfo = ByteVector(recipient.scanPubKey.value.toByteArray() + recipient.spendPubKey.value.toByteArray())
+        val output = Output.UnspecifiedOutput(emptyMap(), null, emptyMap(), listOf(DataEntry(ByteVector("09"), spInfo)))
+        val tx = Transaction(
+            2,
+            listOf(TxIn(op0, ByteVector.empty, 0xfffffffeL)),
+            listOf(TxOut(Satoshi(90_000), ByteVector.empty)),
+            0
+        )
+        val psbt = Psbt(Global(2, tx, emptyList(), emptyList(), fallbackLocktime = 0L), listOf(input), listOf(output))
+
+        val resolved = (SilentPaymentSender.resolve(psbt, master, accountKey, ScriptType.P2WPKH, isTestnet = true) as Either.Right).value
+
+        // The verifier sums the public keys it extracts from the (final) witnesses — here one P2WPKH key.
+        val summedPubKey = pub
+
+        val share = resolved.global.silentPaymentEcdhShares[recipient.scanPubKey]
+            ?: error("PSBT_GLOBAL_SP_ECDH_SHARE missing for the recipient scan key")
+        val proof = resolved.global.silentPaymentDleqProofs[recipient.scanPubKey]
+            ?: error("PSBT_GLOBAL_SP_DLEQ missing for the recipient scan key")
+        assertTrue(
+            "DLEQ proof must verify against the summed input public key",
+            DleqProof.verify(summedPubKey, recipient.scanPubKey, share, proof.toByteArray())
+        )
+
+        // Recompute the output script from the share, exactly like drongo's validateOutputAddresses:
+        // ecdh_shared_secret = input_hash·share, then P_0 = B_spend + t_0·G.
+        val inputHash = SilentPayments.inputHash(SilentPayments.smallestOutpoint(listOf(op0)), summedPubKey)
+        val sharedSecret = share * PrivateKey(inputHash)
+        val expectedKey = SilentPayments.outputKey(recipient.spendPubKey, sharedSecret, 0)
+        val expectedScript = Script.write(Script.pay2tr(expectedKey)).byteVector()
+        assertEquals(
+            "output script must recompute from the attached ECDH share",
+            expectedScript, resolved.global.tx.txOut[0].publicKeyScript
+        )
+
+        // Re-resolving must replace the proof entries, not duplicate them (drongo rejects duplicate keys).
+        val reResolved = (SilentPaymentSender.resolve(resolved, master, accountKey, ScriptType.P2WPKH, isTestnet = true) as Either.Right).value
+        assertEquals(1, reResolved.global.silentPaymentEcdhShares.size)
+        assertEquals(1, reResolved.global.silentPaymentDleqProofs.size)
+        assertEquals("ECDH share must be deterministic across re-resolution", share, reResolved.global.silentPaymentEcdhShares[recipient.scanPubKey])
+    }
+
+    /**
+     * Spending a *received* SP output (input carries `PSBT_IN_SP_TWEAK`, no BIP-32 derivations)
+     * while paying two recipients at the same SP address plus change — the full self-transfer
+     * round trip. The input's key `d = b_spend + tweak` must feed the BIP-352 send derivation,
+     * the DLEQ proof must verify against `d·G`, and the receive signer must still sign the input
+     * on the resolved PSBT.
+     */
+    @Test
+    fun resolvesSpendOfReceivedSilentPaymentOutput() {
+        val spendKey = master.derivePrivateKey(KeyPath("m/352'/1'/0'/0'/0")).privateKey
+        val tweak = ByteVector32("0303030303030303030303030303030303030303030303030303030303030303")
+        val d = spendKey + PrivateKey(tweak)
+        val receivedSpScript = Script.write(Script.pay2tr(d.xOnlyPublicKey())).byteVector()
+
+        // The received SP output being spent: P2TR, key = d·G directly, tweak in PSBT_IN_SP_TWEAK.
+        val witnessUtxo = TxOut(Satoshi(152_000), receivedSpScript)
+        val input = Input.WitnessInput.PartiallySignedWitnessInput(
+            witnessUtxo, null, null, emptyMap(), emptyMap(),
+            null, null, emptySet(), emptySet(), emptySet(), emptySet(), null, emptyMap(), null,
+            listOf(DataEntry(ByteVector("20"), ByteVector(tweak.toByteArray())))
+        )
+
+        // Two recipients at the same SP address (k=0, k=1) + a plain change output.
+        val spInfo = ByteVector(recipient.scanPubKey.value.toByteArray() + recipient.spendPubKey.value.toByteArray())
+        val spOutput = { Output.UnspecifiedOutput(emptyMap(), null, emptyMap(), listOf(DataEntry(ByteVector("09"), spInfo))) }
+        val changeScript = Script.write(Script.pay2wpkh(master.derivePrivateKey(KeyPath("m/84'/1'/0'/1/0")).publicKey)).byteVector()
+        val tx = Transaction(
+            2,
+            listOf(TxIn(op0, ByteVector.empty, 0xfffffffeL)),
+            listOf(TxOut(Satoshi(80_000), ByteVector.empty), TxOut(Satoshi(50_000), ByteVector.empty), TxOut(Satoshi(22_000), changeScript)),
+            0
+        )
+        val psbt = Psbt(
+            Global(2, tx, emptyList(), emptyList(), fallbackLocktime = 0L),
+            listOf(input),
+            listOf(spOutput(), spOutput(), Output.UnspecifiedOutput(emptyMap(), null, emptyMap(), emptyList()))
+        )
+
+        // Without the spend key the input is unresolvable (the pre-fix failure mode).
+        val withoutKey = SilentPaymentSender.resolve(psbt, master, accountKey, ScriptType.P2WPKH, isTestnet = true)
+        assertTrue(withoutKey is Either.Left && withoutKey.value is SilentPaymentError.MissingPrivateKey)
+
+        // A wrong tweak must be rejected before any derivation output is produced.
+        val badTweak = ByteVector32("0404040404040404040404040404040404040404040404040404040404040404")
+        val badInput = input.copy(unknown = listOf(DataEntry(ByteVector("20"), ByteVector(badTweak.toByteArray()))))
+        val mismatch = SilentPaymentSender.resolve(psbt.copy(inputs = listOf(badInput)), master, accountKey, ScriptType.P2WPKH, isTestnet = true, spendPrivateKey = spendKey)
+        assertTrue(mismatch is Either.Left && mismatch.value is SilentPaymentError.TweakMismatch)
+
+        // With the spend key: both SP outputs derive, change is untouched.
+        val resolved = (SilentPaymentSender.resolve(psbt, master, accountKey, ScriptType.P2WPKH, isTestnet = true, spendPrivateKey = spendKey) as Either.Right).value
+        assertTrue(Script.isPay2tr(resolved.global.tx.txOut[0].publicKeyScript))
+        assertTrue(Script.isPay2tr(resolved.global.tx.txOut[1].publicKeyScript))
+        assertTrue("same-address outputs must derive distinct scripts (k=0 vs k=1)",
+            resolved.global.tx.txOut[0].publicKeyScript != resolved.global.tx.txOut[1].publicKeyScript)
+        assertEquals(changeScript, resolved.global.tx.txOut[2].publicKeyScript)
+
+        // Sparrow-side validation: it extracts the x-only key from the witness and lifts it to
+        // even Y, so the DLEQ must verify against that lift of d·G.
+        val summedPubKey = if (d.publicKey().isOdd()) (-d).publicKey() else d.publicKey()
+        val share = resolved.global.silentPaymentEcdhShares.getValue(recipient.scanPubKey)
+        val proof = resolved.global.silentPaymentDleqProofs.getValue(recipient.scanPubKey)
+        assertTrue(DleqProof.verify(summedPubKey, recipient.scanPubKey, share, proof.toByteArray()))
+
+        val inputHash = SilentPayments.inputHash(SilentPayments.smallestOutpoint(listOf(op0)), summedPubKey)
+        val sharedSecret = share * PrivateKey(inputHash)
+        for (k in 0..1) {
+            val expectedKey = SilentPayments.outputKey(recipient.spendPubKey, sharedSecret, k)
+            assertEquals(Script.write(Script.pay2tr(expectedKey)).byteVector(), resolved.global.tx.txOut[k].publicKeyScript)
+        }
+
+        // The receive signer still signs the tweaked input on the resolved PSBT.
+        val signed = (SilentPaymentReceiveSigner.signTweakedInputs(resolved, spendKey) as Either.Right).value
+        assertTrue("SP input must carry a taproot key-path signature", signed.inputs[0].taprootKeySignature != null)
     }
 }

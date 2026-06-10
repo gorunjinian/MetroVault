@@ -101,6 +101,28 @@ class SilentPaymentPsbtFieldTest {
     }
 
     @Test
+    fun globalSpProofFieldsAreStrippedFromV0AndKeptInV2() {
+        // BIP-375 forbids PSBT_GLOBAL_SP_ECDH_SHARE/PSBT_GLOBAL_SP_DLEQ in v0: the writer must
+        // drop them even if they rode in via a spec-violating PSBT's unknown entries, while a v2
+        // PSBT must round-trip them intact.
+        val recipient = SilentPaymentAddress.decode(standardAddress)
+        val scanKeyBytes = recipient.scanPubKey.value.toByteArray()
+        val proofEntries = listOf(
+            DataEntry(ByteVector(byteArrayOf(0x07) + scanKeyBytes), recipient.spendPubKey.value),
+            DataEntry(ByteVector(byteArrayOf(0x08) + scanKeyBytes), ByteVector(ByteArray(64)))
+        )
+
+        val v0 = buildSpPsbt()
+        val v0WithProofs = v0.copy(global = v0.global.copy(unknown = v0.global.unknown + proofEntries))
+        val v0Reread = (Psbt.read(Psbt.write(v0WithProofs)) as Either.Right).value
+        assertEquals(0, v0Reread.global.unknown.count { it.key.size() == 34 && (it.key[0] == 0x07.toByte() || it.key[0] == 0x08.toByte()) })
+
+        val v2WithProofs = v0WithProofs.copy(global = v0WithProofs.global.copy(version = 2))
+        val v2Reread = (Psbt.read(Psbt.write(v2WithProofs)) as Either.Right).value
+        assertEquals(2, v2Reread.global.unknown.count { it.key.size() == 34 && (it.key[0] == 0x07.toByte() || it.key[0] == 0x08.toByte()) })
+    }
+
+    @Test
     fun malformedTweakLengthIsRejectedOnAccess() {
         val badTweak = listOf(DataEntry(ByteVector("20"), ByteVector("0202")))
         val input = Input.WitnessInput.PartiallySignedWitnessInput(
