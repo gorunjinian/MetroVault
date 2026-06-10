@@ -24,6 +24,7 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.KeyEncodingService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
 import com.gorunjinian.metrovault.data.repository.WalletRepository
 import com.gorunjinian.metrovault.domain.manager.PassphraseManager
@@ -825,8 +826,16 @@ class   Wallet(context: Context) {
         val state = statelessWalletManager.get() ?: getActiveWalletState() ?: return null
         val master = state.getMasterPrivateKey() ?: return null
         val account = state.getAccountPrivateKey() ?: return null
+        // The BIP-352 spend key lets display resolution handle inputs spending received SP outputs.
+        val spendKey = if (DerivationPaths.getPurpose(state.derivationPath) == 352) {
+            SilentPaymentWalletService.deriveKeys(
+                master,
+                DerivationPaths.getAccountNumber(state.derivationPath),
+                DerivationPaths.isTestnet(state.derivationPath),
+            ).spendPrivateKey
+        } else null
         return SilentPaymentDisplayContext(
-            master, account, DerivationPaths.getScriptType(state.derivationPath)
+            master, account, DerivationPaths.getScriptType(state.derivationPath), spendKey
         )
     }
 

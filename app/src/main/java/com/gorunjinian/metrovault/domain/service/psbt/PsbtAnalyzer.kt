@@ -252,7 +252,8 @@ internal object PsbtAnalyzer {
 
         if (context != null) {
             val resolved = SilentPaymentSender.resolve(
-                psbt, context.masterPrivateKey, context.accountPrivateKey, context.scriptType, isTestnet
+                psbt, context.masterPrivateKey, context.accountPrivateKey, context.scriptType, isTestnet,
+                context.spendPrivateKey
             )
             if (resolved is Either.Right) {
                 val resolvedTx = resolved.value.global.tx
