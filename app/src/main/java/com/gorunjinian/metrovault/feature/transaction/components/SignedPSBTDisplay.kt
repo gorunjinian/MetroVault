@@ -44,6 +44,8 @@ fun SignedPSBTDisplay(
     selectedFormat: OutputFormat,
     isPaused: Boolean,
     isLoading: Boolean = false,
+    title: String = "Transaction Signed",
+    scanAnotherLabel: String = "Sign Another Transaction",
     alternativePathsUsed: List<String> = emptyList(),
     addressLookupFallbackUsed: Boolean = false,
     addressLookupInputIndices: List<Int> = emptyList(),
@@ -68,7 +70,7 @@ fun SignedPSBTDisplay(
     ) {
         // Title - centered at top
         Text(
-            text = "Transaction Signed",
+            text = title,
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold
@@ -382,7 +384,7 @@ fun SignedPSBTDisplay(
             onClick = onScanAnother,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Sign Another Transaction")
+            Text(scanAnotherLabel)
         }
 
         Spacer(modifier = Modifier.height(8.dp))

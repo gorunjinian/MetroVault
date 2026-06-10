@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
  * @param onSelect Callback when an option is selected
  * @param modifier Modifier for the toggle container
  * @param compact If true, uses smaller padding suitable for app bar
+ * @param itemEnabled Per-option enablement; disabled options are dimmed and not clickable
  */
 @Composable
 fun SegmentedToggle(
@@ -29,11 +30,12 @@ fun SegmentedToggle(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    compact: Boolean = false
+    compact: Boolean = false,
+    itemEnabled: (Int) -> Boolean = { true }
 ) {
     val horizontalPadding = if (compact) 12.dp else 0.dp
     val verticalPadding = if (compact) 8.dp else 10.dp
-    
+
     Row(
         modifier = modifier
             .background(
@@ -46,6 +48,7 @@ fun SegmentedToggle(
     ) {
         options.forEachIndexed { index, label ->
             val isSelected = index == selectedIndex
+            val enabled = itemEnabled(index)
             Box(
                 modifier = Modifier
                     .then(if (!compact) Modifier.weight(1f) else Modifier)
@@ -54,7 +57,7 @@ fun SegmentedToggle(
                         if (isSelected) MaterialTheme.colorScheme.primary
                         else Color.Transparent
                     )
-                    .clickable { onSelect(index) }
+                    .clickable(enabled = enabled) { onSelect(index) }
                     .padding(
                         horizontal = horizontalPadding,
                         vertical = verticalPadding
@@ -63,10 +66,13 @@ fun SegmentedToggle(
             ) {
                 Text(
                     text = label,
-                    style = if (compact) MaterialTheme.typography.labelMedium 
+                    style = if (compact) MaterialTheme.typography.labelMedium
                            else MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                           else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = when {
+                        isSelected -> MaterialTheme.colorScheme.onPrimary
+                        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
         }

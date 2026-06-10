@@ -474,9 +474,10 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Sign/Verify Message (not for multisig, stateless, or silent-payment wallets —
-            // SP wallets have no per-receive-address keys to sign messages with).
-            if (!isMultisig && !isStatelessWallet && !isSilentPayment) {
+            // Sign/Verify Message (not for multisig or stateless wallets). SP wallets use the
+            // BIP-322 protocol: verification works on-device, and signing goes through
+            // message-signing PSBT QR .
+            if (!isMultisig && !isStatelessWallet) {
                 ElevatedCard(
                     onClick = onSignMessage,
                     modifier = Modifier.fillMaxWidth()
