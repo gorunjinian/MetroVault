@@ -6,10 +6,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionName = "3.8.0"
+val appVersionName = "3.8.5"
 val targetSdkValue = 36
 val minSdkValue = 26
-val appVersionCode = 3
+val appVersionCode = 4
 
 android {
     namespace = "com.gorunjinian.metrovault"
