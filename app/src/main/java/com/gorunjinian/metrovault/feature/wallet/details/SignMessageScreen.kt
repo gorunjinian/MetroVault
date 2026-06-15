@@ -59,7 +59,6 @@ private enum class ScanTarget { ADDRESS, MESSAGE }
  * QR display used by the Sign PSBT flow. All wallet and protocol logic lives in
  * [WalletMessageSigner]; this file is UI only.
  */
-@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignMessageScreen(
