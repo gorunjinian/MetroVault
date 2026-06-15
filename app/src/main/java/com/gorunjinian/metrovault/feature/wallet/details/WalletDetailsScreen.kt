@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +22,7 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
 import com.gorunjinian.metrovault.data.model.DerivationPaths
+import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
@@ -35,6 +37,7 @@ fun WalletDetailsScreen(
     onScanPSBT: () -> Unit,
     onExport: () -> Unit,
     onExportMultiSig: () -> Unit,
+    onVerifyMultisig: (walletId: String) -> Unit,
     onBIP85: () -> Unit,
     onSignMessage: () -> Unit,
     onCheckAddress: () -> Unit,
@@ -64,6 +67,33 @@ fun WalletDetailsScreen(
 
     // Check if multisig wallet
     val isMultisig = activeWalletMetadata?.isMultisig ?: false
+
+    // Whether this multisig wallet has been verified/registered (bound to its current descriptor).
+    // isMultisigRegistered returns false for non-multisig wallets, so the null-check suffices.
+    val multisigRegistered = remember(activeWalletMetadata) {
+        activeWalletMetadata?.let { wallet.isMultisigRegistered(it) } ?: false
+    }
+
+    // One-time explainer for users whose existing multisig wallets became unverified after upgrade
+    val explainerShown by userPreferencesRepository.multisigVerificationExplainerShown.collectAsState()
+    if (isMultisig && !multisigRegistered && !explainerShown) {
+        AlertDialog(
+            onDismissRequest = { userPreferencesRepository.setMultisigVerificationExplainerShown(true) },
+            title = { Text("Verify your multisig wallet") },
+            text = {
+                Text(
+                    "MetroVault asks you to register multisig wallets before signing. Registering lets " +
+                        "the device verify that change outputs really belong to your wallet, protecting you from " +
+                        "a tampered descriptor or a malicious coordinator. Review the cosigners and confirm once."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { userPreferencesRepository.setMultisigVerificationExplainerShown(true) }) {
+                    Text("Got it")
+                }
+            }
+        )
+    }
 
     // Check if this is a BIP-352 silent-payment wallet
     val isSilentPayment = activeWalletMetadata?.isSilentPayment ?: false
@@ -184,8 +214,26 @@ fun WalletDetailsScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Multisig "not yet verified" prompt sits above the info card (call to action).
+            // The "registered" status card is shown below the info card instead (see further down).
+            if (isMultisig && activeWalletId != null && !multisigRegistered) {
+                MultisigVerificationBanner(
+                    registered = false,
+                    onVerify = { onVerifyMultisig(activeWalletId) }
+                )
+            }
+
             // Wallet Info Card
-            val walletType = when (DerivationPaths.getPurpose(derivationPath)) {
+            // For multisig the stored path is "multisig/MofN" (no BIP purpose), so the address type
+            // comes from the descriptor's script type, not from getPurpose().
+            val walletType = if (isMultisig) {
+                when (activeWalletMetadata.multisigConfig?.scriptType) {
+                    MultisigScriptType.P2WSH -> if (isTestnet) "Native SegWit (tb1q...)" else "Native SegWit (bc1q...)"
+                    MultisigScriptType.P2SH_P2WSH -> if (isTestnet) "Nested SegWit (2...)" else "Nested SegWit (3...)"
+                    MultisigScriptType.P2SH -> if (isTestnet) "Legacy (2...)" else "Legacy (3...)"
+                    null -> "Multisig"
+                }
+            } else when (DerivationPaths.getPurpose(derivationPath)) {
                 86 -> if (isTestnet) "Taproot (tb1p...)" else "Taproot (bc1p...)"
                 84 -> if (isTestnet) "Native SegWit (tb1q...)" else "Native SegWit (bc1...)"
                 49 -> if (isTestnet) "Nested SegWit (2...)" else "Nested SegWit (3...)"
@@ -258,12 +306,23 @@ fun WalletDetailsScreen(
                             derivationPath
                         }
                         
-                        Text(
-                            text = displayPath,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                        // Scroll long values (like multiple cosigner paths) on a single line.
+                        // padding(start) before horizontalScroll keeps a fixed gap from the label.
+                        Row(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(start = 16.dp)
+                                .horizontalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = displayPath,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
                     // Master Fingerprint display
                     // For multisig: show calculated local key fingerprints (reflects passphrase if entered)
@@ -298,15 +357,26 @@ fun WalletDetailsScreen(
                                     fingerprintsText
                                 }
 
-                                Text(
-                                    text = fingerprintText,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (hasAnyMismatch)
-                                        MaterialTheme.colorScheme.error  // RED when any key has mismatch
-                                    else
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                )
+                                // Scroll long values (multiple local fingerprints) on a single line,
+                                // keeping a fixed gap from the label (padding before scroll).
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .padding(start = 16.dp)
+                                        .horizontalScroll(rememberScrollState())
+                                ) {
+                                    Text(
+                                        text = fingerprintText,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        color = if (hasAnyMismatch)
+                                            MaterialTheme.colorScheme.error  // RED when any key has mismatch
+                                        else
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -336,6 +406,14 @@ fun WalletDetailsScreen(
                         }
                     }
                 }
+            }
+
+            // Multisig "registered" status card sits below the info card
+            if (isMultisig && activeWalletId != null && multisigRegistered) {
+                MultisigVerificationBanner(
+                    registered = true,
+                    onVerify = { onVerifyMultisig(activeWalletId) }
+                )
             }
 
             Text(
@@ -656,9 +734,73 @@ fun WalletDetailsScreen(
         wallet = wallet,
         secureStorage = secureStorage,
         onDismiss = { walletToDelete = null },
-        onDeleted = { 
+        onDeleted = {
             walletToDelete = null
             onBack() // Navigate back to home after deletion
         }
     )
+}
+
+/**
+ * Banner shown on a multisig wallet's details. Prompts registration when unverified (signing is
+ * blocked until then), or offers a view/re-verify entry once registered.
+ */
+@Composable
+private fun MultisigVerificationBanner(
+    registered: Boolean,
+    onVerify: () -> Unit
+) {
+    if (!registered) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Not yet verified",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    text = "Register this multisig wallet to enable signing. You'll confirm the descriptor matches your coordinator.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
+                )
+                Button(
+                    onClick = onVerify,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Verify & Register")
+                }
+            }
+        }
+    } else {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Registered",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                TextButton(onClick = onVerify) {
+                    Text("View / re-verify")
+                }
+            }
+        }
+    }
 }

@@ -20,11 +20,11 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.data.model.PsbtDetails
 
 /**
- * Transaction confirmation component for reviewing PSBT details before signing.
+* Transaction confirmation component for reviewing PSBT details before signing.
  *
  * Displays:
  * - Inputs with addresses/UTXOs and amounts
- * - Outputs labelled CHANGE or RECEIVE when the address belongs to this wallet
+ * - Outputs labeled CHANGE or RECEIVE when the address belongs to this wallet
  * - Transaction Summary (net amount sent externally, tx size, fee rate, structure)
  * - Network fee
  * - Total amount — excludes any output returning to this wallet (change AND receive self-spends)
@@ -37,7 +37,9 @@ fun TransactionConfirmation(
     isProcessing: Boolean,
     errorMessage: String,
     onSign: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    /** When non-null, signing is blocked and this message is shown (unverified multisig wallet). */
+    signBlockedReason: String? = null
 ) {
     // Unit toggle state: true = sats, false = BTC
     var showInSats by remember { mutableStateOf(true) }
@@ -645,13 +647,30 @@ fun TransactionConfirmation(
 
         Spacer(modifier = Modifier.height(32.dp))
 
+        // Block signing for an unverified multisig wallet (authoritative check is in Wallet.signPsbt)
+        signBlockedReason?.let { reason ->
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = reason,
+                    modifier = Modifier.padding(16.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // Sign button
         Button(
             onClick = onSign,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            enabled = !isProcessing
+            enabled = !isProcessing && signBlockedReason == null
         ) {
             if (isProcessing) {
                 CircularProgressIndicator(

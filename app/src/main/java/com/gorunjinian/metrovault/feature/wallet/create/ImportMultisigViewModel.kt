@@ -75,7 +75,8 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
     // ========== Events ==========
 
     sealed class ImportEvent {
-        object WalletImported : ImportEvent()
+        /** Wallet created (unverified). [walletId] is used to open the verify/register ceremony. */
+        data class WalletImported(val walletId: String) : ImportEvent()
         object NavigateBack : ImportEvent()
         data class ScanComplete(val descriptor: String) : ImportEvent()
     }
@@ -288,16 +289,16 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
 
         viewModelScope.launch {
             try {
-                val success = wallet.createMultisigWallet(
+                val walletId = wallet.createMultisigWallet(
                     name = state.walletName.trim(),
                     config = config
                 )
 
                 _uiState.update { it.copy(isImporting = false) }
 
-                if (success) {
+                if (walletId != null) {
                     AppLog.d(TAG) { "Multisig wallet imported successfully" }
-                    _events.emit(ImportEvent.WalletImported)
+                    _events.emit(ImportEvent.WalletImported(walletId))
                 } else {
                     showError("Failed to import multisig wallet")
                 }

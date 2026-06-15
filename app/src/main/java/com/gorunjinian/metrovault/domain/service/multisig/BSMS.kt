@@ -211,4 +211,14 @@ object BSMS {
     fun removeChecksum(descriptor: String): String {
         return descriptor.substringBeforeLast("#").trim()
     }
+
+    /**
+     * Compute the canonical BIP-380 descriptor checksum (the 8-char `#xxxxxxxx` suffix).
+     *
+     * Any existing checksum is stripped first so the result is stable regardless of whether the
+     * stored descriptor already carries one. Returns "" if the descriptor contains characters
+     * outside the BIP-380 input charset.
+     */
+    fun descriptorChecksum(descriptor: String): String =
+        com.gorunjinian.metrovault.lib.bitcoin.Descriptor.checksum(removeChecksum(descriptor))
 }

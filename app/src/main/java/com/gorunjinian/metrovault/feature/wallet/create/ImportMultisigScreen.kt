@@ -39,7 +39,7 @@ import com.journeyapps.barcodescanner.CompoundBarcodeView
 fun ImportMultisigScreen(
     viewModel: ImportMultisigViewModel = viewModel(),
     onBack: () -> Unit,
-    onWalletImported: () -> Unit
+    onWalletImported: (walletId: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -60,7 +60,7 @@ fun ImportMultisigScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is ImportMultisigViewModel.ImportEvent.WalletImported -> onWalletImported()
+                is ImportMultisigViewModel.ImportEvent.WalletImported -> onWalletImported(event.walletId)
                 is ImportMultisigViewModel.ImportEvent.NavigateBack -> onBack()
                 is ImportMultisigViewModel.ImportEvent.ScanComplete -> { /* Handled internally */ }
             }

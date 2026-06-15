@@ -53,6 +53,10 @@ fun AddressesScreen(
     // about the "derive an SP address from an existing regular wallet" discovery surface.
     val silentPaymentsEnabled by userPreferencesRepository.silentPaymentsEnabled.collectAsState()
 
+    // Multisig wallets have no silent-payment address, so the SP tab is hidden entirely for them.
+    val isMultisig = remember { wallet.isActiveMultisig() }
+    val showSilentPaymentsTab = silentPaymentsEnabled && !isMultisig
+
     var selectedTabIndex by remember { mutableIntStateOf(initialTabIndex) }
 
     // Sync selectedTabIndex when initialTabIndex changes (e.g., returning from back stack)
@@ -60,9 +64,9 @@ fun AddressesScreen(
         selectedTabIndex = initialTabIndex
     }
 
-    // If the user disables SP while sitting on the SP tab, snap back to Receive.
-    LaunchedEffect(silentPaymentsEnabled) {
-        if (!silentPaymentsEnabled && selectedTabIndex == 2) {
+    // If the SP tab becomes unavailable (disabled, or multisig) while it's selected, snap back to Receive.
+    LaunchedEffect(showSilentPaymentsTab) {
+        if (!showSilentPaymentsTab && selectedTabIndex == 2) {
             selectedTabIndex = 0
         }
     }
@@ -168,7 +172,7 @@ fun AddressesScreen(
                     onClick = { selectedTabIndex = 1 },
                     text = { Text("Change (${changeAddresses.size})") }
                 )
-                if (silentPaymentsEnabled) {
+                if (showSilentPaymentsTab) {
                     Tab(
                         selected = selectedTabIndex == 2,
                         onClick = { selectedTabIndex = 2 },

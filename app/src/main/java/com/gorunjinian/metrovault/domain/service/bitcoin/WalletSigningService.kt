@@ -89,7 +89,11 @@ class WalletSigningService(
         /** Key derivation failed */
         KEY_DERIVATION_FAILED,
         /** A silent-payment send could not be resolved (e.g. ineligible inputs, unsafe sighash) */
-        SILENT_PAYMENT_REJECTED
+        SILENT_PAYMENT_REJECTED,
+        /** Multisig wallet has not been verified/registered yet — signing is blocked until it is */
+        WALLET_NOT_VERIFIED,
+        /** A PSBT output claims to be our change but does not derive from the registered descriptor */
+        CHANGE_OUTPUT_MISMATCH
     }
 
     /**

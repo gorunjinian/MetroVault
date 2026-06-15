@@ -423,6 +423,16 @@ fun ScanPSBTScreen(
 
                 // ==================== TRANSACTION DETAILS CONFIRMATION ====================
                 psbtDetails != null && scannedPSBT != null && outputsWithType != null -> {
+                    // Surface an early notice for an unverified multisig wallet (the authoritative
+                    // block lives in Wallet.signPsbt; this just disables Sign and explains why).
+                    val activeMultisigMeta = wallet.getActiveWalletId()?.let { id ->
+                        wallet.wallets.value.find { it.id == id }
+                    }?.takeIf { it.isMultisig }
+                    val signBlockedReason = if (activeMultisigMeta != null && !wallet.isMultisigRegistered(activeMultisigMeta)) {
+                        "This multisig wallet isn't verified yet. Register it from Wallet Details before signing."
+                    } else {
+                        null
+                    }
                     TransactionConfirmation(
                         psbtDetails = psbtDetails!!,
                         outputsWithType = outputsWithType!!,
@@ -481,7 +491,8 @@ fun ScanPSBTScreen(
                                 }
                             }
                         },
-                        onCancel = { resetScanner() }
+                        onCancel = { resetScanner() },
+                        signBlockedReason = signBlockedReason
                     )
                 }
 

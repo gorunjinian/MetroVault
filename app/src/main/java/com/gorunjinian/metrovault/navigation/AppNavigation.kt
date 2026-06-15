@@ -38,6 +38,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.AddressesScreen
 import com.gorunjinian.metrovault.feature.wallet.details.BIP85DeriveScreen
 import com.gorunjinian.metrovault.feature.wallet.details.DescriptorsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportMultiSigScreen
+import com.gorunjinian.metrovault.feature.wallet.details.VerifyMultisigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SPAddressScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ScriptTypeScreen
@@ -81,6 +82,10 @@ sealed class Screen(val route: String) {
     object ScanPSBT : Screen("scan_psbt")
     object ExportOptions : Screen("export_options")
     object ExportMultiSig : Screen("export_multisig")
+    object VerifyMultisig : Screen("verify_multisig?walletId={walletId}") {
+        fun createRoute(walletId: String): String =
+            "verify_multisig?walletId=${java.net.URLEncoder.encode(walletId, "UTF-8")}"
+    }
     object SilentPaymentExport : Screen("silent_payment_export")
     object SPAddress : Screen("sp_address")
     object BIP85Derive : Screen("bip85_derive")
@@ -363,14 +368,37 @@ fun AppNavigation(
         composable(Screen.ImportMultisig.route) {
             ImportMultisigScreen(
                 onBack = { navController.navigateUp() },
-                onWalletImported = {
-                    scope.launch {
-                        wallet.refreshWallets()
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.Home.route) { inclusive = true }
-                        }
+                onWalletImported = { walletId ->
+                    // Wallet is created unverified — go straight into the verify/register ceremony.
+                    scope.launch { wallet.refreshWallets() }
+                    navController.navigate(Screen.VerifyMultisig.createRoute(walletId)) {
+                        // Clear the import screens; keep Home so cancel/done returns there.
+                        popUpTo(Screen.Home.route)
                     }
                 }
+            )
+        }
+
+        composable(
+            route = Screen.VerifyMultisig.route,
+            arguments = listOf(
+                navArgument("walletId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            val walletId = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("walletId") ?: "",
+                "UTF-8"
+            )
+            VerifyMultisigScreen(
+                walletId = walletId,
+                onDone = {
+                    scope.launch { wallet.refreshWallets() }
+                    navController.navigateUp()
+                },
+                onCancel = { navController.navigateUp() }
             )
         }
 
@@ -390,6 +418,7 @@ fun AppNavigation(
                 onScanPSBT = { navController.navigate(Screen.ScanPSBT.route) },
                 onExport = { navController.navigate(Screen.ExportOptions.route) },
                 onExportMultiSig = { navController.navigate(Screen.ExportMultiSig.route) },
+                onVerifyMultisig = { walletId -> navController.navigate(Screen.VerifyMultisig.createRoute(walletId)) },
                 onBIP85 = { navController.navigate(Screen.BIP85Derive.route) },
                 onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
                 onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },

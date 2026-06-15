@@ -21,7 +21,9 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import com.gorunjinian.metrovault.domain.service.bitcoin.KeyEncodingService
+import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
+import com.gorunjinian.metrovault.domain.service.multisig.MultisigChangeValidator
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
@@ -59,6 +61,7 @@ class   Wallet(context: Context) {
     private val secureStorage = SecureStorage(context)
     private val bitcoinService = BitcoinService()
     private val multisigAddressService = MultisigAddressService()
+    private val multisigChangeValidator = MultisigChangeValidator(multisigAddressService)
     private val sessionKeyManager = SessionKeyManager.getInstance()
 
     // Managers for better separation of concerns
@@ -350,22 +353,22 @@ class   Wallet(context: Context) {
      * 
      * @param name Display name for the wallet
      * @param config Parsed multisig configuration from descriptor
-     * @return true if wallet was created successfully
+     * @return the new wallet id on success, or null on failure
      */
     suspend fun createMultisigWallet(
         name: String,
         config: MultisigConfig
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): String? = withContext(Dispatchers.IO) {
         try {
             if (!sessionKeyManager.isSessionActive.value) {
                 AppLog.e(TAG) { "Cannot create multisig wallet: not authenticated" }
-                return@withContext false
+                return@withContext null
             }
 
             val (canCreate, errorMsg) = canCreateWallet()
             if (!canCreate) {
                 AppLog.e(TAG) { "Cannot create multisig wallet: $errorMsg" }
-                return@withContext false
+                return@withContext null
             }
 
             // Match cosigner fingerprints to local WalletKeys
@@ -383,7 +386,7 @@ class   Wallet(context: Context) {
             // Validate we have at least one local key (signing device app requirement)
             if (keyIds.isEmpty()) {
                 AppLog.e(TAG) { "Cannot create multisig wallet: no local keys match cosigner fingerprints" }
-                return@withContext false
+                return@withContext null
             }
 
             val walletId = java.util.UUID.randomUUID().toString()
@@ -393,7 +396,7 @@ class   Wallet(context: Context) {
             val localCosigner = updatedCosigners.firstOrNull { it.isLocal }
             if (localCosigner == null) {
                 AppLog.e(TAG) { "Cannot create multisig wallet: inconsistent state - keyIds present but no local cosigner" }
-                return@withContext false
+                return@withContext null
             }
             val primaryFingerprint = localCosigner.fingerprint.lowercase()
 
@@ -425,7 +428,7 @@ class   Wallet(context: Context) {
             // Save metadata only - no secrets stored for multisig wallets
             if (!secureStorage.saveWalletMetadata(metadata, isDecoyMode)) {
                 AppLog.e(TAG) { "Failed to save multisig wallet metadata" }
-                return@withContext false
+                return@withContext null
             }
 
             // Update wallet order
@@ -441,12 +444,56 @@ class   Wallet(context: Context) {
             }
             
             AppLog.d(TAG) { "Multisig wallet created (${config.m}-of-${config.n}) with ${keyIds.size} local key(s)" }
-            true
-            
+            walletId
+
         } catch (e: Exception) {
             AppLog.e(TAG, e) { "Create multisig wallet failed: ${e.message}" }
-            false
+            null
         }
+    }
+
+    // ==================== Multisig Registration / Verification ====================
+
+    /**
+     * Checksum of a multisig wallet's current descriptor (BIP-380), or "" for non-multisig.
+     * Used to bind the verified flag to the exact descriptor that was registered.
+     */
+    fun multisigDescriptorChecksum(metadata: WalletMetadata): String =
+        metadata.multisigConfig?.rawDescriptor?.let { BSMS.descriptorChecksum(it) } ?: ""
+
+    /** Whether the given multisig wallet is registered/verified against its current descriptor. */
+    fun isMultisigRegistered(metadata: WalletMetadata): Boolean =
+        metadata.isMultisigRegistered(multisigDescriptorChecksum(metadata))
+
+    /**
+     * Marks a multisig wallet as verified/registered for signing, binding the verified flag to a
+     * checksum of its current descriptor. Returns false if the wallet is missing or not multisig.
+     */
+    fun markMultisigVerified(walletId: String): Boolean {
+        val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return false
+        val config = metadata.multisigConfig
+        if (!metadata.isMultisig || config == null) {
+            AppLog.e(TAG) { "Cannot verify non-multisig wallet" }
+            return false
+        }
+        val updated = metadata.copy(
+            multisigVerified = true,
+            multisigVerifiedDescriptorChecksum = BSMS.descriptorChecksum(config.rawDescriptor)
+        )
+        if (!secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+            AppLog.e(TAG) { "Failed to persist multisig verification" }
+            return false
+        }
+        // Refresh in-memory list so observers (Wallet Details) reflect the change without a reload
+        synchronized(walletListLock) {
+            val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+            if (idx >= 0) {
+                _walletMetadataList[idx] = updated
+                _wallets.value = _walletMetadataList.toList()
+            }
+        }
+        AppLog.d(TAG) { "Multisig wallet registered/verified" }
+        return true
     }
 
     // ==================== Wallet Loading ====================
@@ -777,6 +824,28 @@ class   Wallet(context: Context) {
                 WalletSigningService.SigningError.NO_ACTIVE_WALLET,
                 "No wallet is currently active. Please open a wallet first."
             )
+
+        // Multisig signing gates (security boundary — runs before any signature is produced):
+        // 1) the wallet must be explicitly verified/registered, and
+        // 2) no output may deceptively claim to be our change while pointing elsewhere.
+        if (activeMetadata.isMultisig) {
+            if (!isMultisigRegistered(activeMetadata)) {
+                return PsbtSigningResult.Failure(
+                    WalletSigningService.SigningError.WALLET_NOT_VERIFIED,
+                    "Verify & register this multisig wallet before signing."
+                )
+            }
+            activeMetadata.multisigConfig?.let { config ->
+                val validation = multisigChangeValidator.validate(psbtString, config, isActiveWalletTestnet())
+                if (validation is MultisigChangeValidator.Result.Mismatch) {
+                    return PsbtSigningResult.Failure(
+                        WalletSigningService.SigningError.CHANGE_OUTPUT_MISMATCH,
+                        "Output #${validation.outputIndex} claims to be your change but does not match this " +
+                            "wallet's registered descriptor. Signing refused."
+                    )
+                }
+            }
+        }
 
         val result = if (activeMetadata.isMultisig) {
             // Multisig: delegate to signing service
@@ -1168,6 +1237,12 @@ class   Wallet(context: Context) {
     fun isActiveSilentPayment(): Boolean {
         val meta = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
         return silentPaymentManager.isSilentPaymentWallet(meta)
+    }
+
+    /** True if the active wallet is a multisig wallet. */
+    fun isActiveMultisig(): Boolean {
+        val meta = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
+        return meta?.isMultisig ?: false
     }
 
     /** True if the BIP-352 scan-key export can be offered for the active wallet (single-sig with seed). */

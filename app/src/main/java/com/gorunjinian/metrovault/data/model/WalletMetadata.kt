@@ -39,6 +39,11 @@ data class WalletMetadata(
     val isMultisig: Boolean = false,           // true = this is a multisig wallet
     val multisigConfig: MultisigConfig? = null, // Multisig configuration (null for single-sig)
     val keyIds: List<String> = emptyList(),     // References to WalletKey entries (1 for single-sig, 0-N for multisig)
+    // Multisig registration: the user must explicitly verify & register the descriptor before signing
+    // is allowed. The flag is bound to a checksum of the descriptor that was verified — if the
+    // descriptor ever changes, the binding breaks and the wallet is treated as unverified again.
+    val multisigVerified: Boolean = false,
+    val multisigVerifiedDescriptorChecksum: String = "",
     // BIP-352 silent payments. The flag mirrors isMultisig; the pubkey hexes are the
     // PUBLIC scan/spend keys, stored so the sp1q… address can be shown without unlocking the wallet.
     // The private scan/spend keys are never stored — they're derived from the seed at sign/export time.
@@ -66,6 +71,22 @@ data class WalletMetadata(
         }
     }
 
+    /**
+     * Whether this multisig wallet is currently registered/verified for signing.
+     *
+     * The verified flag is bound to the descriptor that was verified: the caller passes the
+     * checksum of the wallet's *current* descriptor, and registration only holds if it matches
+     * the checksum stored at verification time. A changed descriptor therefore auto-resets to
+     * unverified. Always false for single-sig wallets.
+     *
+     * @param currentChecksum checksum of the current `multisigConfig.rawDescriptor`
+     */
+    fun isMultisigRegistered(currentChecksum: String): Boolean =
+        isMultisig &&
+            multisigVerified &&
+            multisigVerifiedDescriptorChecksum.isNotEmpty() &&
+            multisigVerifiedDescriptorChecksum == currentChecksum
+
     fun toJson(): String {
         return org.json.JSONObject().apply {
             put("id", id)
@@ -90,6 +111,11 @@ data class WalletMetadata(
             // Serialize keyIds
             if (keyIds.isNotEmpty()) {
                 put("keyIds", org.json.JSONArray(keyIds))
+            }
+            // Serialize multisig registration state (only when actually verified)
+            if (isMultisig && multisigVerified) {
+                put("multisigVerified", true)
+                put("multisigVerifiedDescriptorChecksum", multisigVerifiedDescriptorChecksum)
             }
             // Serialize silent-payment fields
             if (isSilentPayment) {
@@ -176,6 +202,9 @@ data class WalletMetadata(
                 isMultisig = isMultisig,
                 multisigConfig = multisigConfig,
                 keyIds = keyIds,
+                // MIGRATION: existing multisig wallets have no registration fields → unverified
+                multisigVerified = obj.optBoolean("multisigVerified", false),
+                multisigVerifiedDescriptorChecksum = obj.optString("multisigVerifiedDescriptorChecksum", ""),
                 isSilentPayment = obj.optBoolean("isSilentPayment", false),
                 silentPaymentScanPubKey = obj.optString("silentPaymentScanPubKey", ""),
                 silentPaymentSpendPubKey = obj.optString("silentPaymentSpendPubKey", "")

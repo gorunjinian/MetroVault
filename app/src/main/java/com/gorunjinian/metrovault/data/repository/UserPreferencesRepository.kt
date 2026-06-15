@@ -86,6 +86,14 @@ class UserPreferencesRepository(context: Context) {
     private val _silentPaymentsEnabled = MutableStateFlow(prefs.getBoolean(KEY_SILENT_PAYMENTS_ENABLED, false))
     val silentPaymentsEnabled: StateFlow<Boolean> = _silentPaymentsEnabled.asStateFlow()
 
+    /**
+     * Whether the one-time "multisig now requires verification" explainer has been shown. Used to
+     * surface a single dialog to users whose previously-imported multisig wallets became unverified
+     * after the registration feature shipped.
+     */
+    private val _multisigVerificationExplainerShown = MutableStateFlow(prefs.getBoolean(KEY_MULTISIG_VERIFICATION_EXPLAINER_SHOWN, false))
+    val multisigVerificationExplainerShown: StateFlow<Boolean> = _multisigVerificationExplainerShown.asStateFlow()
+
     fun setThemeMode(mode: String) {
         if (mode in listOf(THEME_LIGHT, THEME_DARK, THEME_SYSTEM)) {
             prefs.edit { putString(KEY_THEME_MODE, mode) }
@@ -186,6 +194,11 @@ class UserPreferencesRepository(context: Context) {
         _silentPaymentsEnabled.value = enabled
     }
 
+    fun setMultisigVerificationExplainerShown(shown: Boolean) {
+        prefs.edit { putBoolean(KEY_MULTISIG_VERIFICATION_EXPLAINER_SHOWN, shown) }
+        _multisigVerificationExplainerShown.value = shown
+    }
+
     companion object {
         private const val PREFS_NAME = "metrovault_settings"
         private const val KEY_THEME_MODE = "theme_mode"
@@ -202,6 +215,7 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_BLACK_THEME_ENABLED = "black_theme_enabled"
         private const val KEY_TAP_TO_COPY_ENABLED = "tap_to_copy_enabled"
         private const val KEY_SILENT_PAYMENTS_ENABLED = "silent_payments_enabled"
+        private const val KEY_MULTISIG_VERIFICATION_EXPLAINER_SHOWN = "multisig_verification_explainer_shown"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
         const val THEME_SYSTEM = "system"

@@ -118,6 +118,42 @@ class MultisigAddressService {
     }
 
     /**
+     * Derives the expected output scriptPubKey for a specific (change, index) from the multisig
+     * descriptor. Comparing raw scriptPubKey bytes (rather than encoded addresses) avoids
+     * address-encoding edge cases (network prefix, case, bech32 vs bech32m).
+     *
+     * @return the scriptPubKey bytes, or null if key derivation fails
+     */
+    fun generateMultisigScriptPubKey(
+        config: MultisigConfig,
+        index: Int,
+        isChange: Boolean,
+        isTestnet: Boolean
+    ): ByteArray? {
+        return try {
+            val changeIndex = if (isChange) 1L else 0L
+            val childPubKeys = config.cosigners.mapNotNull { cosigner ->
+                deriveChildPublicKey(cosigner.xpub, changeIndex, index.toLong(), isTestnet)
+            }
+            if (childPubKeys.size != config.n) return null
+
+            // Sort public keys lexicographically (sortedmulti semantics) — must match address derivation
+            val sortedPubKeys = childPubKeys.sortedBy { it.toHex() }
+            val witnessScript = buildMultisigScript(config.m, sortedPubKeys)
+
+            val scriptPubKey = when (config.scriptType) {
+                MultisigScriptType.P2WSH -> Script.pay2wsh(witnessScript)
+                MultisigScriptType.P2SH_P2WSH -> Script.pay2sh(Script.pay2wsh(witnessScript))
+                MultisigScriptType.P2SH -> Script.pay2sh(witnessScript)
+            }
+            Script.write(scriptPubKey)
+        } catch (e: Exception) {
+            AppLog.e(TAG) { "Failed to derive multisig scriptPubKey: ${e.message}" }
+            null
+        }
+    }
+
+    /**
      * Checks if an address belongs to the multisig wallet.
      */
     fun checkAddressBelongsToMultisig(
@@ -330,12 +366,12 @@ class MultisigAddressService {
      */
     private fun computeP2shP2wshAddress(witnessScript: List<ScriptElt>, chainHash: BlockHash): String? {
         return try {
-            // First create P2WSH output script
-            val scriptBytes = Script.write(witnessScript)
-            val witnessProgram = Crypto.sha256(scriptBytes)
-            val p2wshScript = Script.pay2wsh(witnessProgram.byteVector32())
+            // Redeem script is the P2WSH output script: OP_0 <sha256(witnessScript)>.
+            // Pass the witness script itself — Script.pay2wsh already applies the single sha256.
+            // (Passing a pre-hashed program here would hash twice and yield a wrong address.)
+            val p2wshScript = Script.pay2wsh(witnessScript)
 
-            // Then wrap in P2SH
+            // Then wrap in P2SH: address = base58check(hash160(redeemScript))
             val redeemScriptBytes = Script.write(p2wshScript)
             val scriptHash = Crypto.hash160(redeemScriptBytes)
 
