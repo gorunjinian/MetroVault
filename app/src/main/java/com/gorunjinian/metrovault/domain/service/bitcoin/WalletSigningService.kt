@@ -4,10 +4,20 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigConfig
+import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.data.model.SpSpendingError
 import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
+import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentReceiveSigner
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentSender
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
+import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
+import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
+import com.gorunjinian.metrovault.lib.bitcoin.Psbt
+import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 
 /**
  * Orchestrates PSBT signing for both single-sig and multi-sig wallets.
@@ -77,7 +87,9 @@ class WalletSigningService(
         /** PSBT signing operation failed (no inputs could be signed) */
         SIGNING_FAILED,
         /** Key derivation failed */
-        KEY_DERIVATION_FAILED
+        KEY_DERIVATION_FAILED,
+        /** A silent-payment send could not be resolved (e.g. ineligible inputs, unsafe sighash) */
+        SILENT_PAYMENT_REJECTED
     }
 
     /**
@@ -100,8 +112,35 @@ class WalletSigningService(
 
         val scriptType = DerivationPaths.getScriptType(walletState.derivationPath)
         val accountPath = KeyPath(walletState.derivationPath)
+
+        // The BIP-352 spend key, for resolving/signing inputs that spend received SP outputs.
+        val spSpendPrivateKey = if (DerivationPaths.getPurpose(walletState.derivationPath) == 352) {
+            SilentPaymentWalletService.deriveKeys(
+                masterPrivateKey, DerivationPaths.getAccountNumber(walletState.derivationPath), isTestnet
+            ).spendPrivateKey
+        } else null
+
+        // Silent-payments (Story A) pre-stage: if the PSBT pays to one or more sp1q… recipients,
+        // derive the real taproot outputs from our input keys and splice them in before signing.
+        // The output scripts are committed to in every input's sighash, so this must run first.
+        // The spend key lets it resolve inputs that are themselves received SP outputs.
+        val psbtToSign = when (val resolved = resolveSilentPayments(psbtString, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, spSpendPrivateKey)) {
+            is Either.Left -> return SigningResult.Failure(SigningError.SILENT_PAYMENT_REJECTED, resolved.value)
+            is Either.Right -> resolved.value
+        }
+
+        // Silent-payments receive pre-stage: if the PSBT spends a received SP output
+        // (carries PSBT_IN_SP_TWEAK), sign those inputs with d = b_spend + tweak. Runs before the
+        // normal signer, which then handles any remaining (non-SP) inputs in a mixed transaction.
+        val (psbtAfterReceive, spInputsSigned) = when (
+            val r = signSilentPaymentReceives(psbtToSign, spSpendPrivateKey)
+        ) {
+            is Either.Left -> return SigningResult.Failure(SigningError.SILENT_PAYMENT_REJECTED, r.value)
+            is Either.Right -> r.value
+        }
+
         val signingResult = bitcoinService.signPsbt(
-            psbtString,
+            psbtAfterReceive,
             masterPrivateKey,
             accountPrivateKey,
             scriptType,
@@ -109,18 +148,83 @@ class WalletSigningService(
             accountPath,
         )
 
-        return if (signingResult != null) {
-            SigningResult.Success(
+        return when {
+            signingResult != null -> SigningResult.Success(
                 signedPsbt = signingResult.signedPsbt,
                 alternativePathsUsed = signingResult.alternativePathsUsed,
                 usedAddressLookupFallback = signingResult.usedAddressLookupFallback,
                 addressLookupInputIndices = signingResult.addressLookupInputIndices,
             )
-        } else {
-            SigningResult.Failure(
+            // A pure silent-payment spend: the SP inputs were signed above and there were no other
+            // inputs for the normal signer to handle, so it's still a success.
+            spInputsSigned -> SigningResult.Success(signedPsbt = psbtAfterReceive)
+            else -> SigningResult.Failure(
                 SigningError.SIGNING_FAILED,
                 "Failed to sign PSBT. The transaction may not contain inputs for this wallet."
             )
+        }
+    }
+
+    /**
+     * Receive-side silent-payment signing. Returns the PSBT base64 to continue signing and
+     * whether any SP input was signed. If the PSBT carries `PSBT_IN_SP_TWEAK` it's only signable by a
+     * silent-payment wallet (path `m/352'/…`); a tweak on a non-SP wallet fails loudly. Returns
+     * [Either.Left] with a user-facing message if the SP spend cannot be signed.
+     */
+    private fun signSilentPaymentReceives(
+        psbtString: String,
+        spSpendPrivateKey: PrivateKey?,
+    ): Either<String, Pair<String, Boolean>> {
+        val parsed = PsbtUtils.parsePsbt(psbtString) ?: return Either.Right(psbtString to false)
+        if (!SilentPaymentReceiveSigner.hasSilentPaymentTweaks(parsed)) return Either.Right(psbtString to false)
+
+        // The spend key is derived iff the wallet is a silent-payment wallet (path m/352'/…).
+        if (spSpendPrivateKey == null) {
+            return Either.Left(SpSpendingError.NotSilentPaymentWallet.message)
+        }
+
+        return when (val r = SilentPaymentReceiveSigner.signTweakedInputs(parsed, spSpendPrivateKey)) {
+            is Either.Right -> {
+                val bytes = Psbt.write(r.value).toByteArray()
+                Either.Right(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP) to true)
+            }
+            is Either.Left -> {
+                AppLog.w(TAG) { "Silent payment receive signing rejected: ${r.value.message}" }
+                Either.Left(r.value.message)
+            }
+        }
+    }
+
+    /**
+     * Silent-payment send pre-stage. Returns the PSBT base64 to actually sign:
+     * the original string if there are no SP recipients (or it can't be parsed here, in which case
+     * the downstream signer reports the parse failure), or a PSBT with the derived P2TR output
+     * scripts spliced in. Returns [Either.Left] with a user-facing message if an SP send was
+     * detected but cannot be safely resolved.
+     *
+     * Scope: single-sig only. Multi-sig SP sending is collaborative (needs every cosigner's input
+     * keys to derive the shared secret) and is deliberately out of scope.
+     */
+    private fun resolveSilentPayments(
+        psbtString: String,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        scriptType: ScriptType,
+        isTestnet: Boolean,
+        spSpendPrivateKey: PrivateKey? = null,
+    ): Either<String, String> {
+        val parsed = PsbtUtils.parsePsbt(psbtString) ?: return Either.Right(psbtString)
+        if (!SilentPaymentSender.hasSilentPaymentRecipients(parsed)) return Either.Right(psbtString)
+
+        return when (val result = SilentPaymentSender.resolve(parsed, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, spSpendPrivateKey)) {
+            is Either.Right -> {
+                val bytes = Psbt.write(result.value).toByteArray()
+                Either.Right(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+            }
+            is Either.Left -> {
+                AppLog.w(TAG) { "Silent payment resolution rejected: ${result.value.message}" }
+                Either.Left(result.value.message)
+            }
         }
     }
 

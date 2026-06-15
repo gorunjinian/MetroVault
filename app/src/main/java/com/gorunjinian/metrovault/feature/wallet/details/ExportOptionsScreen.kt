@@ -16,6 +16,7 @@ import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 /**
  * Enum to track which sensitive view flow is active.
@@ -39,13 +40,22 @@ private enum class SensitiveViewTarget {
 fun ExportOptionsScreen(
     wallet: Wallet,
     secureStorage: SecureStorage,
+    userPreferencesRepository: UserPreferencesRepository,
     isStatelessWallet: Boolean = false,
     onBack: () -> Unit,
     onViewAccountKeys: () -> Unit,
     onViewDescriptors: () -> Unit,
     onViewRootKey: () -> Unit,
-    onViewSeedPhrase: () -> Unit
+    onViewSeedPhrase: () -> Unit,
+    onViewSilentPayments: () -> Unit = {}
 ) {
+    // BIP-352 silent-payment export visibility = (toggle ON OR SP-flagged wallet) AND seed loaded.
+    // SP-flagged wallets always show the export; regular wallets only show it when the user has
+    // opted in via Advanced Settings.
+    val silentPaymentsEnabled by userPreferencesRepository.silentPaymentsEnabled.collectAsState()
+    val isSpFlaggedWallet = remember { wallet.isActiveSilentPayment() }
+    val canDeriveSilentPayments = remember { wallet.canExportSilentPaymentForActiveWallet() }
+    val canExportSilentPayments = canDeriveSilentPayments && (silentPaymentsEnabled || isSpFlaggedWallet)
     // Password confirmation state
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf("") }
@@ -87,62 +97,98 @@ fun ExportOptionsScreen(
                 style = MaterialTheme.typography.headlineSmall
             )
 
-            // Card 1: View Account Keys
-            ElevatedCard(
-                onClick = onViewAccountKeys,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Cards 1 & 2: View Account Extended Keys and View Output Descriptors.
+            // Hidden for SP-flagged wallets — BIP-352 wallets have no meaningful xpub or wpkh/tr
+            // descriptor; the SP-equivalent export is the spscan/descriptor inside the Silent
+            // Payments card. Root Key and Seed Phrase still expose the underlying master.
+            if (!isSpFlaggedWallet) {
+                ElevatedCard(
+                    onClick = onViewAccountKeys,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_key),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column {
-                        Text(
-                            text = "View Account Extended Keys",
-                            style = MaterialTheme.typography.titleMedium
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_key),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "Extended public & private keys",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Column {
+                            Text(
+                                text = "View Account Extended Keys",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Extended public & private keys",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                ElevatedCard(
+                    onClick = onViewDescriptors,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_desciption),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
+                        Column {
+                            Text(
+                                text = "View Output Descriptors",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Public & spending descriptors",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
 
-            // Card 2: View Descriptors
-            ElevatedCard(
-                onClick = onViewDescriptors,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Card: Silent Payments (sp1q… + gated spscan…) — single-sig seed-based wallets only
+            if (canExportSilentPayments) {
+                ElevatedCard(
+                    onClick = onViewSilentPayments,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_desciption),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column {
-                        Text(
-                            text = "View Output Descriptors",
-                            style = MaterialTheme.typography.titleMedium
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_qr_code_scanner),
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "Public & spending descriptors",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column {
+                            Text(
+                                text = "Silent Payments",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "SP Scan key & descriptor for Silent Payments",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

@@ -335,75 +335,137 @@ fun TransactionConfirmation(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 outputsWithType.forEachIndexed { index, outputWithType ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                    val silentPaymentNominal = outputWithType.output.silentPaymentNominal
+                    if (silentPaymentNominal != null) {
+                        // Silent-payment output: a header line (badge + amount), then aligned
+                        // "Paying" (sp1q…) and "On-chain" (bc1p…) rows. Both stay visible because
+                        // once signed the on-chain output can't be audited back to the sp1q…, so the
+                        // user must be able to consent to the derived address before signing.
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
                             Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Horizontally scrollable address container
-                                Row(
+                                Text(
+                                    text = "SILENT PAYMENT",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier
-                                        .weight(1f, fill = false)
-                                        .horizontalScroll(rememberScrollState()),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = outputWithType.output.address,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (outputWithType.isOurAddress)
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                            else MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                }
+                                        .background(
+                                            MaterialTheme.colorScheme.primaryContainer,
+                                            RoundedCornerShape(4.dp)
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                                Text(
+                                    text = formatAmount(outputWithType.output.value, showInSats),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            SilentPaymentAddressRow(
+                                label = "Paying",
+                                address = silentPaymentNominal,
+                                dimmed = false
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            SilentPaymentAddressRow(
+                                label = "On-chain",
+                                address = outputWithType.output.address,
+                                dimmed = outputWithType.isOurAddress
+                            ) {
                                 when {
-                                    outputWithType.isChangeAddress == true -> {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "CHANGE",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier
-                                                .background(
-                                                    MaterialTheme.colorScheme.secondaryContainer,
-                                                    RoundedCornerShape(4.dp)
-                                                )
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                    outputWithType.isOurAddress -> {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "RECEIVE",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            modifier = Modifier
-                                                .background(
-                                                    MaterialTheme.colorScheme.tertiaryContainer,
-                                                    RoundedCornerShape(4.dp)
-                                                )
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
+                                    outputWithType.isChangeAddress == true -> OutputBadge(
+                                        text = "CHANGE",
+                                        textColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        background = MaterialTheme.colorScheme.secondaryContainer
+                                    )
+                                    outputWithType.isOurAddress -> OutputBadge(
+                                        text = "RECEIVE",
+                                        textColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        background = MaterialTheme.colorScheme.tertiaryContainer
+                                    )
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = formatAmount(outputWithType.output.value, showInSats),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (outputWithType.isOurAddress)
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurface
-                        )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Horizontally scrollable address container
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f, fill = false)
+                                            .horizontalScroll(rememberScrollState()),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = outputWithType.output.address,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (outputWithType.isOurAddress)
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                                else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                    when {
+                                        outputWithType.isChangeAddress == true -> {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "CHANGE",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                modifier = Modifier
+                                                    .background(
+                                                        MaterialTheme.colorScheme.secondaryContainer,
+                                                        RoundedCornerShape(4.dp)
+                                                    )
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        outputWithType.isOurAddress -> {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "RECEIVE",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                modifier = Modifier
+                                                    .background(
+                                                        MaterialTheme.colorScheme.tertiaryContainer,
+                                                        RoundedCornerShape(4.dp)
+                                                    )
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = formatAmount(outputWithType.output.value, showInSats),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (outputWithType.isOurAddress)
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                     if (index < outputsWithType.size - 1) {
                         HorizontalDivider()
@@ -627,4 +689,59 @@ fun TransactionConfirmation(
             }
         }
     }
+}
+
+/**
+ * One labeled, horizontally-scrollable address line in a silent-payment output block — e.g.
+ * "Paying  sp1q…" or "On-chain  bc1p…". The fixed-width label keeps the two addresses aligned.
+ * An optional [trailingBadge] (CHANGE / RECEIVE) is shown after the address when the derived
+ * output belongs to this wallet.
+ */
+@Composable
+private fun SilentPaymentAddressRow(
+    label: String,
+    address: String,
+    dimmed: Boolean,
+    trailingBadge: @Composable () -> Unit = {}
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(64.dp)
+        )
+        Row(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = address,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+        trailingBadge()
+    }
+}
+
+/** A small rounded badge (e.g. CHANGE / RECEIVE) shown beside an output address. */
+@Composable
+private fun OutputBadge(text: String, textColor: Color, background: Color) {
+    Spacer(modifier = Modifier.width(8.dp))
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = textColor,
+        modifier = Modifier
+            .background(background, RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    )
 }

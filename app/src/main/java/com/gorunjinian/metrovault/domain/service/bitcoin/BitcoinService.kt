@@ -208,8 +208,12 @@ class BitcoinService {
     @Suppress("unused") // Public API for future use/testing
     fun isPsbtFullySigned(psbtBase64: String): Boolean = psbtService.isPsbtFullySigned(psbtBase64)
 
-    fun getPsbtDetails(psbtBase64: String, isTestnet: Boolean = false): PsbtDetails? =
-        psbtService.getPsbtDetails(psbtBase64, isTestnet)
+    fun getPsbtDetails(
+        psbtBase64: String,
+        isTestnet: Boolean = false,
+        silentPaymentContext: com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext? = null,
+    ): PsbtDetails? =
+        psbtService.getPsbtDetails(psbtBase64, isTestnet, silentPaymentContext)
 
     fun canFinalize(psbtBase64: String): Boolean =
         psbtService.canFinalize(psbtBase64)

@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.core.qr.QRCodeUtils
@@ -24,16 +25,49 @@ import kotlinx.coroutines.withContext
 
 /**
  * SeedQRScreen - Displays the wallet's seed phrase as a SeedQR code.
- * 
+ *
  * Supports Standard SeedQR, CompactSeedQR, and Generic (plain text) formats.
  * Standard SeedQR is the default format.
+ *
+ * Thin wrapper over [SeedQRContent]; see [DerivedSeedQRScreen] for the BIP85 variant.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SeedQRScreen(
     mnemonic: List<String>,
     onBack: () -> Unit,
     onBackToExportOptions: () -> Unit
+) {
+    SeedQRContent(
+        mnemonic = mnemonic,
+        title = "SeedQR",
+        warningText = "This QR contains your seed phrase.\nAnyone who scans it can steal your funds.",
+        qrContentDescription = "SeedQR Code",
+        onBack = onBack
+    ) {
+        // Back button - goes directly to Export Options (skips SeedPhraseScreen)
+        Button(
+            onClick = onBackToExportOptions,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Back to Export Options")
+        }
+    }
+}
+
+/**
+ * Shared content for SeedQR display screens. Renders the format toggle, grid toggle,
+ * security warning, the QR itself (Canvas-based for SeedQR/Compact, bitmap for Generic),
+ * a format-specific info card, and a caller-supplied [footer].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SeedQRContent(
+    mnemonic: List<String>,
+    title: String,
+    warningText: String,
+    qrContentDescription: String,
+    onBack: () -> Unit,
+    footer: @Composable ColumnScope.() -> Unit
 ) {
     val context = LocalContext.current
 
@@ -46,8 +80,9 @@ fun SeedQRScreen(
     // Bitmap fallback for Generic format
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    // Grid toggle state
-    var showGrid by remember { mutableStateOf(true) }
+    // Grid toggle state — defaults OFF so the clean QR shows first (best for scanning);
+    // the user enables it only when transcribing the QR by hand.
+    var showGrid by remember { mutableStateOf(false) }
 
     val isGridCapable = selectedFormat != 2
 
@@ -85,7 +120,7 @@ fun SeedQRScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SeedQR") },
+                title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -106,7 +141,7 @@ fun SeedQRScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            
+
             // Format toggle with 3 options
             SegmentedToggle(
                 options = listOf("SeedQR", "Compact", "Generic"),
@@ -131,13 +166,13 @@ fun SeedQRScreen(
                 )
             ) {
                 Text(
-                    text = "This QR contains your seed phrase.\nAnyone who scans it can steal your funds.",
+                    text = warningText,
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )
             }
-            
+
             // QR Code display
             Box(
                 contentAlignment = Alignment.Center,
@@ -169,7 +204,7 @@ fun SeedQRScreen(
                         ) {
                             Image(
                                 bitmap = qrBitmap!!.asImageBitmap(),
-                                contentDescription = "SeedQR Code",
+                                contentDescription = qrContentDescription,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -179,7 +214,17 @@ fun SeedQRScreen(
                     }
                 }
             }
-            
+
+            // Zoom discoverability hint (only for the Canvas-rendered, zoomable formats)
+            if (isGridCapable && moduleData != null) {
+                Text(
+                    text = "Double-tap a corner to zoom in",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+
             // Info card with format-specific text
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -197,14 +242,8 @@ fun SeedQRScreen(
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-            
-            // Back button - goes directly to Export Options (skips SeedPhraseScreen)
-            Button(
-                onClick = onBackToExportOptions,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Back to Export Options")
-            }
+
+            footer()
         }
     }
 }

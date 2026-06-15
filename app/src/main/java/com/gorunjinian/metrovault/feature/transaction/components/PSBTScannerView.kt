@@ -23,11 +23,16 @@ import kotlinx.coroutines.withContext
 
 /**
  * QR code scanner component for scanning PSBT QR codes.
- * 
+ *
  * Supports:
  * - Single-frame QR codes
  * - Animated multi-frame QR codes with progress tracking
  * - Camera permission handling
+ *
+ * @param onPlainScan When non-null, payloads that are not PSBT frames (addresses, messages,
+ * signmessage strings, …) are delivered here as a single-shot scan instead of being fed to the
+ * PSBT joiner. Hosts that scan PSBTs exclusively (the default) leave this null and every frame
+ * goes to [animatedScanner].
  */
 @Suppress("AssignedValueIsNeverRead")
 @Composable
@@ -41,11 +46,13 @@ fun PSBTScannerView(
     onScanProgress: (progress: Int, isAnimated: Boolean) -> Unit,
     onScanComplete: (psbt: String, sourceFormat: String?) -> Unit,
     onBarcodeViewCreated: (CompoundBarcodeView) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPlainScan: ((String) -> Unit)? = null
 ) {
     // Track last scanned frame to avoid duplicates
     var lastScannedFrame by remember { mutableStateOf("") }
     var frameJustCaptured by remember { mutableStateOf(false) }
+    var plainScanDelivered by remember { mutableStateOf(false) }
 
     // State for pending result processing (to move heavy work off camera thread)
     var pendingScanComplete by remember { mutableStateOf(false) }
@@ -130,6 +137,17 @@ fun PSBTScannerView(
                             setStatusText("")
                             decodeContinuous { result ->
                                 result.text?.let { text ->
+                                    if (plainScanDelivered) return@let
+
+                                    // Non-PSBT payloads complete as a single-shot scan when the
+                                    // host opted in (e.g. addresses on the sign-message screen).
+                                    if (onPlainScan != null && !AnimatedQRScanner.isPsbtFrame(text)) {
+                                        plainScanDelivered = true
+                                        pause()
+                                        onPlainScan(text)
+                                        return@let
+                                    }
+
                                     // Debug: Log raw QR content header for BBQr frames
                                     if (text.startsWith("B$") && text.length >= 8) {
                                         val header = text.take(8)

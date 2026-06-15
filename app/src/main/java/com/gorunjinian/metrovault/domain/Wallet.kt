@@ -23,8 +23,16 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import com.gorunjinian.metrovault.domain.service.bitcoin.KeyEncodingService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
+import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
 import com.gorunjinian.metrovault.data.repository.WalletRepository
+import com.gorunjinian.metrovault.domain.manager.PassphraseManager
+import com.gorunjinian.metrovault.domain.manager.SilentPaymentManager
+import com.gorunjinian.metrovault.domain.manager.StatelessWalletManager
+import com.gorunjinian.metrovault.domain.manager.WalletAccountManager
+import com.gorunjinian.metrovault.domain.manager.WalletSessionManager
+import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,10 +62,11 @@ class   Wallet(context: Context) {
     private val sessionKeyManager = SessionKeyManager.getInstance()
 
     // Managers for better separation of concerns
-    private val passphraseManager = com.gorunjinian.metrovault.domain.manager.PassphraseManager(secureStorage, bitcoinService)
-    private val sessionManager = com.gorunjinian.metrovault.domain.manager.WalletSessionManager(secureStorage, passphraseManager)
-    private val accountManager = com.gorunjinian.metrovault.domain.manager.WalletAccountManager(secureStorage)
-    private val statelessWalletManager = com.gorunjinian.metrovault.domain.manager.StatelessWalletManager(bitcoinService)
+    private val passphraseManager = PassphraseManager(secureStorage, bitcoinService)
+    private val sessionManager = WalletSessionManager(secureStorage, passphraseManager)
+    private val accountManager = WalletAccountManager(secureStorage)
+    private val statelessWalletManager = StatelessWalletManager(bitcoinService)
+    private val silentPaymentManager = SilentPaymentManager()
     private val signingService = WalletSigningService(secureStorage, bitcoinService)
     private val keyEncodingService = KeyEncodingService()
 
@@ -226,7 +235,7 @@ class   Wallet(context: Context) {
             var seedBytes: ByteArray? = null
             try {
                 seedBytes =
-                    com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode.toSeed(mnemonic, seedPassphrase)
+                    MnemonicCode.toSeed(mnemonic, seedPassphrase)
                 val seedHex = seedBytes.toHexString()
 
                 // hasPassphrase = true only if passphrase used AND not saved locally
@@ -261,6 +270,26 @@ class   Wallet(context: Context) {
                     AppLog.d(TAG) { "Created new key" }
                 }
 
+                // For BIP-352 silent-payment wallets, derive the scan/spend pubkeys eagerly from
+                // the WITH-passphrase seed (independent of savePassphraseLocally — those pubkeys
+                // must reflect the wallet's real identity, not the base seed). Cached on metadata
+                // so the sp1q… address can be shown while the wallet is locked.
+                val isSp = DerivationPaths.getPurpose(fullPath) == 352
+                var spScanPubKeyHex = ""
+                var spSpendPubKeyHex = ""
+                if (isSp) {
+                    val realSeed = MnemonicCode.toSeed(mnemonic, passphrase)
+                    try {
+                        val master = com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.generate(realSeed)
+                        val isTestnet = DerivationPaths.isTestnet(fullPath)
+                        val keys = silentPaymentManager.deriveKeys(master, accountNumber, isTestnet)
+                        spScanPubKeyHex = keys.scanPublicKey.toHex()
+                        spSpendPubKeyHex = keys.spendPublicKey.toHex()
+                    } finally {
+                        realSeed.fill(0)
+                    }
+                }
+
                 val metadata = WalletMetadata(
                     id = walletId,
                     name = name,
@@ -270,7 +299,10 @@ class   Wallet(context: Context) {
                     createdAt = System.currentTimeMillis(),
                     accounts = listOf(accountNumber),
                     activeAccountNumber = accountNumber,
-                    keyIds = listOf(keyId)  // Reference to WalletKey
+                    keyIds = listOf(keyId),  // Reference to WalletKey
+                    isSilentPayment = isSp,
+                    silentPaymentScanPubKey = spScanPubKeyHex,
+                    silentPaymentSpendPubKey = spSpendPubKeyHex
                 )
 
                 // Save wallet metadata (key material is already saved in WalletKey above)
@@ -504,14 +536,85 @@ class   Wallet(context: Context) {
             _walletMetadataList, walletListLock, _wallets
         )
 
+    /**
+     * Switch a single-sig wallet's BIP purpose (script type) to a new one. The wallet's master key,
+     * fingerprint, seed, accounts list and custom account names are all preserved — only the
+     * `derivationPath` is rewritten under the new purpose at the current active account. The
+     * wallet is then unloaded and reloaded so `WalletState` rebuilds against the new path.
+     *
+     * Rejects multisig (BIP-48 has cosigner-fixed script type), silent-payment (a different wallet
+     * kind, not a script type), and missing-metadata calls. A no-op switch to the current type
+     * returns `true` without touching storage.
+     */
+    suspend fun changeScriptType(walletId: String, newScriptType: ScriptType): Boolean =
+        withContext(Dispatchers.IO) {
+            val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode)
+                ?: return@withContext false
+            if (metadata.isMultisig || metadata.isSilentPayment) return@withContext false
+            val isTestnet = DerivationPaths.isTestnet(metadata.derivationPath)
+            val activeAccount = metadata.activeAccountNumber
+            val newBase = DerivationPaths.baseForScriptType(newScriptType, isTestnet)
+            val currentScriptType = DerivationPaths.getScriptType(metadata.derivationPath)
+            if (currentScriptType == newScriptType) return@withContext true
+            val newPath = DerivationPaths.withAccountNumber(newBase, activeAccount)
+            val updated = metadata.copy(derivationPath = newPath)
+            if (!secureStorage.updateWalletMetadata(updated, isDecoyMode)) return@withContext false
+            synchronized(walletListLock) {
+                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                if (idx >= 0) {
+                    _walletMetadataList[idx] = updated
+                    _wallets.value = _walletMetadataList.toList()
+                }
+            }
+            unloadWallet(walletId)
+            openWallet(walletId)
+        }
+
     /** Switch active account. Reloads wallet with new derivation path. */
-    suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean =
-        accountManager.switchAccount(
+    suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean {
+        val switched = accountManager.switchAccount(
             walletId, accountNumber, isDecoyMode,
             _walletMetadataList, walletListLock, _wallets,
             onUnloadWallet = { unloadWallet(it) },
             onOpenWallet = { openWallet(it) }
         )
+        if (switched) refreshSilentPaymentPubkeysIfSp(walletId)
+        return switched
+    }
+
+    /**
+     * For an SP-flagged wallet, re-derive the scan/spend pubkeys at the now-active account and
+     * persist them to metadata so the cached `sp1q…` shown in locked-state matches the new active
+     * account. No-op for non-SP wallets or when the master key isn't currently in memory.
+     */
+    private fun refreshSilentPaymentPubkeysIfSp(walletId: String) {
+        val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return
+        if (!metadata.isSilentPayment) return
+        val state = walletStates[walletId] ?: return
+        val master = state.getMasterPrivateKey() ?: return
+        val isTestnet = DerivationPaths.isTestnet(state.derivationPath)
+        val keys = runCatching {
+            silentPaymentManager.deriveKeys(master, metadata.activeAccountNumber, isTestnet)
+        }.getOrNull() ?: return
+        val newScanHex = keys.scanPublicKey.toHex()
+        val newSpendHex = keys.spendPublicKey.toHex()
+        if (metadata.silentPaymentScanPubKey == newScanHex &&
+            metadata.silentPaymentSpendPubKey == newSpendHex
+        ) return
+        val updated = metadata.copy(
+            silentPaymentScanPubKey = newScanHex,
+            silentPaymentSpendPubKey = newSpendHex
+        )
+        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+            synchronized(walletListLock) {
+                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
+                if (idx >= 0) {
+                    _walletMetadataList[idx] = updated
+                    _wallets.value = _walletMetadataList.toList()
+                }
+            }
+        }
+    }
 
     /** Get active account number for active wallet */
     fun getActiveAccountNumber(): Int =
@@ -581,7 +684,7 @@ class   Wallet(context: Context) {
     fun hasStatelessWallet(): Boolean = statelessWalletManager.hasWallet()
     
     /** Gets unified wallet info for the currently active wallet. */
-    fun getActiveWalletInfo(metadata: WalletMetadata?): com.gorunjinian.metrovault.domain.manager.StatelessWalletManager.ActiveWalletInfo =
+    fun getActiveWalletInfo(metadata: WalletMetadata?): StatelessWalletManager.ActiveWalletInfo =
         statelessWalletManager.getActiveWalletInfo(metadata)
 
     // ==================== Bitcoin Operations ====================
@@ -710,7 +813,30 @@ class   Wallet(context: Context) {
 
     fun getPsbtDetails(psbtString: String): PsbtDetails? {
         val isTestnet = isActiveWalletTestnet()
-        return bitcoinService.getPsbtDetails(psbtString, isTestnet)
+        return bitcoinService.getPsbtDetails(psbtString, isTestnet, buildSilentPaymentDisplayContext())
+    }
+
+    /**
+     * Builds the context that lets PSBT analysis resolve silent-payment recipient outputs to their
+     * derived `bc1p…` addresses (Option A). Only single-sig / stateless wallets are supported —
+     * collaborative multisig silent-payment sending is out of scope — and we degrade to showing the
+     * nominal `sp1q…` only when the keys aren't available.
+     */
+    private fun buildSilentPaymentDisplayContext(): SilentPaymentDisplayContext? {
+        val state = statelessWalletManager.get() ?: getActiveWalletState() ?: return null
+        val master = state.getMasterPrivateKey() ?: return null
+        val account = state.getAccountPrivateKey() ?: return null
+        // The BIP-352 spend key lets display resolution handle inputs spending received SP outputs.
+        val spendKey = if (DerivationPaths.getPurpose(state.derivationPath) == 352) {
+            SilentPaymentWalletService.deriveKeys(
+                master,
+                DerivationPaths.getAccountNumber(state.derivationPath),
+                DerivationPaths.isTestnet(state.derivationPath),
+            ).spendPrivateKey
+        } else null
+        return SilentPaymentDisplayContext(
+            master, account, DerivationPaths.getScriptType(state.derivationPath), spendKey
+        )
     }
 
     /**
@@ -1038,6 +1164,51 @@ class   Wallet(context: Context) {
         return metadata?.derivationPath
     }
 
+    /** True if the active wallet is a dedicated silent-payment wallet (flagged in metadata). */
+    fun isActiveSilentPayment(): Boolean {
+        val meta = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
+        return silentPaymentManager.isSilentPaymentWallet(meta)
+    }
+
+    /** True if the BIP-352 scan-key export can be offered for the active wallet (single-sig with seed). */
+    fun canExportSilentPaymentForActiveWallet(): Boolean {
+        val state = getActiveWalletState()
+        val meta = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
+        return silentPaymentManager.canExportSilentPayment(state, meta)
+    }
+
+    /** The active wallet's BIP-352 keypair (scan + spend), derived on demand from the master key. */
+    fun getActiveSilentPaymentKeys(): com.gorunjinian.metrovault.data.model.SilentPaymentKeys? {
+        val master = getActiveWalletState()?.getMasterPrivateKey() ?: return null
+        return runCatching {
+            silentPaymentManager.deriveKeys(master, getActiveAccountNumber(), isActiveWalletTestnet())
+        }.getOrNull()
+    }
+
+    /** The active wallet's `sp1q…`/`tsp1q…` address (uses stored pubkeys when available). */
+    fun getActiveSilentPaymentAddress(): String? {
+        val meta = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
+        val master = getActiveWalletState()?.getMasterPrivateKey()
+        return silentPaymentManager.resolveAddress(meta, master, getActiveAccountNumber(), isActiveWalletTestnet())
+    }
+
+    /** The wallet's `spscan…`/`tspscan…` scan-key export string for [account] (or null if no master key). */
+    fun getActiveSilentPaymentScanKeyExport(account: Int): String? {
+        val master = getActiveWalletState()?.getMasterPrivateKey() ?: return null
+        return runCatching {
+            silentPaymentManager.scanKeyExport(master, account, isActiveWalletTestnet())
+        }.getOrNull()
+    }
+
+    /** The wallet's BIP-352 `sp([fp/352h/coin_h/account_h]spscan…)#checksum` descriptor for [account]. */
+    fun getActiveSilentPaymentDescriptor(account: Int): String? {
+        val state = getActiveWalletState() ?: return null
+        val master = state.getMasterPrivateKey() ?: return null
+        return runCatching {
+            silentPaymentManager.descriptor(state.fingerprint, master, account, isActiveWalletTestnet())
+        }.getOrNull()
+    }
+
     fun getActiveMnemonic(): List<String>? {
         return try {
             val state = getActiveWalletState() ?: return null
@@ -1066,7 +1237,7 @@ class   Wallet(context: Context) {
 
     /**
      * Checks if a wallet needs passphrase re-entry.
-     * This happens when hasPassphrase=true and we don't have a session seed.
+     * This happens when hasPassphrase=true, and we don't have a session seed.
      */
     fun needsPassphraseInput(walletId: String): Boolean =
         passphraseManager.needsPassphraseInput(walletId, isDecoyMode)
@@ -1096,7 +1267,7 @@ class   Wallet(context: Context) {
     /**
      * Gets the list of keys needing passphrase input for a multi-sig wallet.
      */
-    suspend fun getKeysNeedingPassphrase(walletId: String): List<com.gorunjinian.metrovault.domain.manager.PassphraseManager.KeyPassphraseInfo> =
+    suspend fun getKeysNeedingPassphrase(walletId: String): List<PassphraseManager.KeyPassphraseInfo> =
         passphraseManager.getKeysNeedingPassphrase(walletId, isDecoyMode)
 
     /**
@@ -1108,7 +1279,7 @@ class   Wallet(context: Context) {
     /**
      * Gets calculated fingerprints for all local keys in a multi-sig wallet.
      */
-    suspend fun getCalculatedKeyFingerprints(walletId: String): List<com.gorunjinian.metrovault.domain.manager.PassphraseManager.CalculatedKeyFingerprint> =
+    suspend fun getCalculatedKeyFingerprints(walletId: String): List<PassphraseManager.CalculatedKeyFingerprint> =
         passphraseManager.getCalculatedKeyFingerprints(walletId, isDecoyMode)
 
     private fun getScriptType(path: String): ScriptType = DerivationPaths.getScriptType(path)

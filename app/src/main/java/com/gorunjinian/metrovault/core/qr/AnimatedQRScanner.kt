@@ -321,4 +321,18 @@ class AnimatedQRScanner(
      * Get detected format name
      */
     fun getDetectedFormat(): String? = detectedFormat
+
+    companion object {
+        /**
+         * True if a scanned frame belongs to a PSBT QR — an animated UR / BBQr / `p1/n` part, or a
+         * single base64/hex frame. Lets mixed-purpose scanners route PSBT frames into a joiner
+         * while passing plain payloads (addresses, messages) straight through.
+         */
+        fun isPsbtFrame(text: String): Boolean {
+            val lower = text.lowercase()
+            return lower.startsWith("ur:") || text.startsWith("B\$") ||
+                text.startsWith("cHNidP") || lower.startsWith("70736274ff") ||
+                Regex("^p\\d+/\\d+ ").containsMatchIn(text)
+        }
+    }
 }

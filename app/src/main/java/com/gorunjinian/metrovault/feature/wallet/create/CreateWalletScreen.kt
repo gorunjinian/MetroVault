@@ -305,14 +305,16 @@ private fun Step1Configuration(
                     Triple("Taproot", "tb1p...", DerivationPaths.TAPROOT_TESTNET),
                     Triple("Native SegWit", "tb1q...", DerivationPaths.NATIVE_SEGWIT_TESTNET),
                     Triple("Nested SegWit", "2...", DerivationPaths.NESTED_SEGWIT_TESTNET),
-                    Triple("Legacy", "m/n...", DerivationPaths.LEGACY_TESTNET)
+                    Triple("Legacy", "m/n...", DerivationPaths.LEGACY_TESTNET),
+                    Triple("Silent Payments", "tsp1q...", DerivationPaths.SILENT_PAYMENT_TESTNET)
                 )
             } else {
                 listOf(
                     Triple("Taproot", "bc1p...", DerivationPaths.TAPROOT),
                     Triple("Native SegWit", "bc1q...", DerivationPaths.NATIVE_SEGWIT),
                     Triple("Nested SegWit", "3...", DerivationPaths.NESTED_SEGWIT),
-                    Triple("Legacy", "1...", DerivationPaths.LEGACY)
+                    Triple("Legacy", "1...", DerivationPaths.LEGACY),
+                    Triple("Silent Payments", "sp1q...", DerivationPaths.SILENT_PAYMENT)
                 )
             }
             

@@ -150,7 +150,7 @@ fun WalletsListContent(
             itemsIndexed(
                 items = wallets,
                 key = { _, walletItem -> walletItem.id }
-            ) { index, walletItem ->
+            ) { _, walletItem ->
                 ReorderableItem(reorderableState, key = walletItem.id) { isDragging ->
                     val baseScale = if (isEditMode) 0.97f else 1f
                     val scale by animateFloatAsState(
@@ -171,6 +171,7 @@ fun WalletsListContent(
                             masterFingerprint = walletItem.masterFingerprint.uppercase(),
                             isTestnet = isWalletTestnet,
                             isMultisig = walletItem.isMultisig,
+                            isSilentPayment = walletItem.isSilentPayment,
                             elevation = shadow,
                             isEditMode = isEditMode,
                             isExpanded = if (isEditMode) false else expandedWalletId == walletItem.id,
@@ -429,6 +430,7 @@ fun WalletCard(
     masterFingerprint: String = "",
     isTestnet: Boolean = false,
     isMultisig: Boolean = false,
+    isSilentPayment: Boolean = false,
     elevation: androidx.compose.ui.unit.Dp = 2.dp,
     isEditMode: Boolean = false,
     isExpanded: Boolean = false,
@@ -515,6 +517,21 @@ fun WalletCard(
                                 ) {
                                     Text(
                                         text = "Multi-Sig",
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                            // Silent Payments badge
+                            if (isSilentPayment) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Silent Payments",
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Medium

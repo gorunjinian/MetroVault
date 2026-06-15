@@ -70,6 +70,15 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests {
+            // Let JVM unit tests exercise production code that calls android.util.Log
+            // (AppLog, which is enabled when BuildConfig.DEBUG is true) by returning
+            // default values from un-mocked Android framework calls instead of throwing.
+            isReturnDefaultValues = true
+        }
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true

@@ -27,10 +27,13 @@ object MessageSigning {
      * Signature format types.
      * - ELECTRUM: Standard format used by Electrum, uses header 31-34 for all address types (compressed P2PKH style)
      * - BIP137: Uses different header ranges based on address type (35-38 for P2SH-P2WPKH, 39-42 for P2WPKH)
+     * - BIP322: Generic signed messages over a virtual transaction — the only scheme that works for
+     *   taproot (and silent-payment) addresses. Handled by [Bip322], not this object's ECDSA paths.
      */
     enum class SignatureFormat(val displayName: String) {
         ELECTRUM("Electrum"),
-        BIP137("BIP-137")
+        BIP137("BIP-137"),
+        BIP322("BIP-322")
     }
 
     private const val HEADER_COMPRESSED_P2PKH = 31
@@ -115,6 +118,7 @@ object MessageSigning {
                 AddressType.P2WPKH -> HEADER_P2WPKH             // 39-42 for native SegWit
                 AddressType.P2TR -> HEADER_P2WPKH               // Use P2WPKH range for Taproot (not standardized)
             }
+            SignatureFormat.BIP322 -> throw IllegalArgumentException("BIP-322 signatures are produced by Bip322, not the ECDSA signer")
         }
         
         val header = (headerBase + recoveryId).toByte()

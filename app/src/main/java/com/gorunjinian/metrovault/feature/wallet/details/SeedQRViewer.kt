@@ -96,9 +96,19 @@ fun SeedQRViewer(
         ) {
             val colCount = endCol - startCol
             val rowCount = endRow - startRow
-            val cellSize = min(size.width / colCount, size.height / rowCount)
 
-            // Center the QR within available space
+            // Quiet zone (white border) is required for scanners to locate the finder
+            // patterns. The module data is extracted with MARGIN=0, so we reserve it here.
+            // Only applied in the full view — quadrant zoom is for visual inspection, not
+            // scanning, so it keeps filling the space.
+            val quietZone = if (zoomedQuadrant == null) 4 else 0
+            val cellSize = min(
+                size.width / (colCount + 2 * quietZone),
+                size.height / (rowCount + 2 * quietZone)
+            )
+
+            // Center the QR within available space. With the quiet-zone padding folded into
+            // cellSize above, centering leaves exactly quietZone*cellSize of white on each side.
             val offsetX = (size.width - cellSize * colCount) / 2f
             val offsetY = (size.height - cellSize * rowCount) / 2f
 
