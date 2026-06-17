@@ -6,10 +6,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionName = "3.8.6"
 val targetSdkValue = 36
 val minSdkValue = 26
-val appVersionCode = 5
 
 android {
     namespace = "com.gorunjinian.metrovault"
@@ -19,8 +17,8 @@ android {
         applicationId = "com.gorunjinian.metrovault"
         minSdk = minSdkValue
         targetSdk = targetSdkValue
-        versionCode = appVersionCode
-        versionName = appVersionName
+        versionCode = 5
+        versionName = "3.8.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -99,7 +97,7 @@ android {
     }
 }
 
-base.archivesName.set("MetroVault-$appVersionName")
+base.archivesName.set("MetroVault-${android.defaultConfig.versionName}")
 
 dependencies {
     // Core Android
