@@ -93,35 +93,55 @@ Repo: https://github.com/ACINQ/secp256k1-kmp.git
 Prepare: git submodule update --init --recursive
 ```
 
-### `metadata/com.gorunjinian.metrovault.yml` (build entry)
+### `metadata/com.gorunjinian.metrovault.yml`
 
 ```yaml
+Categories:
+  - Money
+License: GPL-3.0-or-later
+AuthorName: Gorun Jinian
+WebSite: https://gorunjinian.com
+SourceCode: https://github.com/gorunjinian/MetroVault
+IssueTracker: https://github.com/gorunjinian/MetroVault/issues
+
+RepoType: git
+Repo: https://github.com/gorunjinian/MetroVault.git
+
+# Summary and full Description are scraped automatically from the app's
+# fastlane metadata (fastlane/metadata/android/en-US/), so they are not
+# duplicated here.
+
 Builds:
-  - versionName: 3.8.6          # a NEW tagged release that INCLUDES LICENSE.txt + fastlane/
+  - versionName: 3.8.6
     versionCode: 5
     commit: v3.8.6
     subdir: app
     srclibs:
-      - secp256k1kmp@v0.23.0
-    ndk: r28c                    # 28.2.13676358
+      - Secp256k1Kmp@v0.23.0
+    ndk: r28c            # = NDK 28.2.13676358, the version secp256k1-kmp pins
     gradle:
       - yes
     prebuild:
       # 1) build the secp256k1 native lib from source and publish it to ~/.m2
-      - pushd $$secp256k1kmp$$
+      - pushd $$Secp256k1Kmp$$
       - ./gradlew :jni:android:publishToMavenLocal
       - popd
       # 2) make this build prefer the from-source artifact over Maven Central
       - sed -i 's/mavenCentral()/mavenLocal()\n        mavenCentral()/' ../settings.gradle.kts
+
+AutoUpdateMode: Version v%v
+UpdateCheckMode: Tags ^v[0-9.]+$
+CurrentVersion: 3.8.6
+CurrentVersionCode: 5
 ```
 
 Notes:
-- `$$secp256k1kmp$$` is the srclib checkout path provided by F-Droid.
+- `$$Secp256k1Kmp$$` is the srclib checkout path provided by F-Droid.
 - The `sed` injects `mavenLocal()` **only during the F-Droid build** — it is deliberately not
   committed to this repo, to avoid changing normal/CI dependency resolution.
-- The current `v3.8.5` tag predates `LICENSE.txt` and the `fastlane/` metadata. Build a fresh
-  tagged release that contains both, and align the `changelogs/<versionCode>.txt` filename
-  with the built `versionCode`.
+- The build targets tag `v3.8.6` (versionCode 5) — the first release whose tree includes
+  `LICENSE.txt` and the `fastlane/` metadata. For each future release, keep the
+  `changelogs/<versionCode>.txt` filename aligned with that release's `versionCode`.
 
 ---
 
