@@ -1,0 +1,1 @@
+Air-gapped Bitcoin signer for offline cold storage. QR-only, no network.

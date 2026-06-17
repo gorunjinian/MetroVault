@@ -1,0 +1,4 @@
+- Added BIP-352 Silent Payments support
+- Added multisig wallet registration and verification to guard against tampered descriptors and deceptive change outputs
+- Added BIP-322 message signing
+- UI cleanups and stability improvements

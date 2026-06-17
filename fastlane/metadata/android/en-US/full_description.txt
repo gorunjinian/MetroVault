@@ -1,0 +1,34 @@
+MetroVault turns an Android phone into a secure, air-gapped Bitcoin signing device like a cold-storage hardware wallet. It acts as an offline signer for your watch-only wallets (such as Sparrow, BlueWallet, or Electrum) running on an online device. Your private keys are generated and kept on a phone that never connects to the internet; all communication happens through QR codes, and network access is blocked at the Android level.
+
+Because the keys never touch an online device, the attack surface for theft and malware is dramatically reduced. MetroVault is fully open source and auditable, built on a custom Kotlin Bitcoin library so every cryptographic operation can be reviewed.
+
+Security
+
+* Air-gapped operation — designed for devices with no internet (airplane mode, Wi-Fi/Bluetooth off)
+* Dual-layer encryption — AES-256-GCM with PBKDF2 (210k iterations) plus the Android Keystore
+* Biometric unlock — hardware-backed fingerprint/face authentication
+* Plausible deniability — separate "Main" and "Decoy" wallets behind different passwords
+* Brute-force protection — exponential backoff with lockout, and an optional automatic wipe after repeated failed logins
+* Screenshots and screen recording are blocked app-wide
+
+Wallets
+
+* Single-sig and multi-sig (collaborative custody) support
+* Address types: Native SegWit (bc1q), Taproot (bc1p), Nested SegWit (3...) and Legacy (1...)
+* BIP-352 Silent Payments support, both to send to or spend from an SP wallet
+* BIP-39 passphrase support, saved locally or kept in memory only
+* BIP-85 derivation of child seeds and passwords
+* Custom entropy from dice rolls or coin flips, plus mnemonic checksum tools
+* Testnet4 support for testing
+
+Transaction signing
+
+* PSBT workflow (BIP-174) for single-sig and multi-sig
+* Air-gapped flow: scan PSBT, verify, sign, export — entirely by QR
+* Animated QR support: BC-UR (v1/v2) and BBQr for large transactions
+* On-device address verification and watch-only XPUB/descriptor export
+* Message signing and verification
+
+Permissions
+
+MetroVault requests only the camera (optional, for scanning QR codes) and biometric permissions. It has no internet permission and cannot connect to any network.
