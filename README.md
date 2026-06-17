@@ -171,6 +171,12 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 - **Features**: Open a discussion or issue with your proposal
 - **Security**: See [SECURITY.md](./docs/SECURITY.md) for responsible disclosure
 
+## 📄 License
+
+MetroVault is free software, licensed under the **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`). You are free to use, study, share, and modify it; any distributed derivative must remain free software under the same license. See [LICENSE.txt](./LICENSE.txt) for the full text.
+
+The bundled QR libraries [bbqr-kotlin](https://github.com/gorunjinian/bbqr-kotlin) and [bcur-kotlin](https://github.com/gorunjinian/bcur-kotlin) are separate works under the MIT License.
+
 ## 🙏 Acknowledgments
 
 - [Bitcoin](https://bitcoin.org) - The protocol that makes this all possible
