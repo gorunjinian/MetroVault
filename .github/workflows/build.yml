@@ -12,41 +12,34 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
-          
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-        
-      - name: Decode Keystore
+
+      # Build in F-Droid's exact buildserver image so the from-source secp256k1
+      # .so (and thus the whole APK) is byte-identical to F-Droid's reproducible
+      # build. GitHub Actions (checkout/upload/release) run on the host because
+      # the buildserver image ships no Node; only the build runs in the container.
+      - name: Reproducible build (secp256k1 from source)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > $GITHUB_WORKSPACE/release.keystore
-          
-      - name: Build Release APK
-        env:
-          KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease
-        
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" -w /repo \
+            -e KEYSTORE_BASE64 -e KEYSTORE_PASSWORD -e KEY_ALIAS -e KEY_PASSWORD \
+            registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie \
+            bash /repo/.github/reproducible-build.sh
+
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: metrovault-release
           path: app/build/outputs/apk/release/*.apk
-          
+
       - name: Create Release (on tag push)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
