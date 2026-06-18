@@ -9,8 +9,12 @@ export ANDROID_HOME=/opt/android-sdk
 # Host build tools the image lacks (build-android.sh calls bare cmake/make).
 apt-get update && apt-get install -y make g++ cmake
 
-# Pinned toolchain identical to the fdroiddata recipe.
+# Pinned toolchain identical to the fdroiddata recipe. Disable pipefail for this
+# line so `yes` getting SIGPIPE (exit 141) when sdkmanager closes its stdin does
+# not fail the build; sdkmanager's own exit status still gates success.
+set +o pipefail
 yes | sdkmanager "ndk;28.2.13676358" "cmake;3.31.5" >/dev/null
+set -o pipefail
 export PATH="$ANDROID_HOME/cmake/3.31.5/bin:$PATH"
 git config --global --add safe.directory '*'
 
