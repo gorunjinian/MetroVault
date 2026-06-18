@@ -22,6 +22,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // drop AGP's "Dependency metadata" APK signing block. The F-Droid
+    // scanner rejects it as an extra signing block, and it can carry
+    // non-deterministic data that would break reproducible builds.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     // Release signing configuration
     signingConfigs {
         create("release") {
