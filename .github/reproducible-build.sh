@@ -34,4 +34,5 @@ sed -i 's/mavenCentral()/mavenLocal(); mavenCentral()/' settings.gradle.kts
 
 # Sign with the release keystore (kept in /tmp, out of the mounted workspace).
 echo "$KEYSTORE_BASE64" | base64 -d > /tmp/release.keystore
+chmod +x ./gradlew  # gradlew is stored mode 644 in git; checkout lacks the exec bit
 KEYSTORE_PATH=/tmp/release.keystore ./gradlew assembleRelease

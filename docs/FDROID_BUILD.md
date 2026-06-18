@@ -112,24 +112,23 @@ Repo: https://github.com/gorunjinian/MetroVault.git
 Builds:
   - versionName: 3.8.6
     versionCode: 5
-    commit: v3.8.6
+    commit: 42f4f2e38b50c9c78d10a878254dda663417c082
     subdir: app
     sudo:
       - apt-get update
-      - apt-get install -y make g++
+      - apt-get install -y make g++ cmake
     gradle:
       - yes
     srclibs:
       - Secp256k1Kmp@v0.23.0
-    prebuild:
-      - sdkmanager "cmake;3.31.6"
-      - export PATH="$ANDROID_HOME/cmake/3.31.6/bin:$PATH"
-      - sed -i 's/version = "3.31.5"/version = "3.31.6"/' $$Secp256k1Kmp$$/jni/android/build.gradle.kts
+    prebuild: sed -i -e '/foojay/d' ../settings.gradle.kts
+    build:
+      - sdkmanager "cmake;3.31.5"
+      - echo 'target_link_options( secp256k1-jni PRIVATE -Wl,--build-id=none )' >> $$Secp256k1Kmp$$/jni/android/src/main/CMakeLists.txt
       - pushd $$Secp256k1Kmp$$
-      - ./gradlew :jni:android:publishToMavenLocal
+      - gradle :jni:android:publishToMavenLocal
       - popd
       - sed -i 's/mavenCentral()/mavenLocal(); mavenCentral()/' ../settings.gradle.kts
-      - sed -i -e '/foojay/d' ../settings.gradle.kts
     ndk: r28c
 
 AutoUpdateMode: Version
@@ -138,25 +137,40 @@ CurrentVersion: 3.8.6
 CurrentVersionCode: 5
 ```
 
-Notes (every line is verified green in the fdroiddata CI):
-- `sudo: apt-get install make g++` — the build image (debian trixie) ships no host build
-  tools; `make` drives CMake's Make generator in `build-android.sh`, `g++` covers host config
-  checks. (`sudo` is available NOPASSWD in the buildserver.)
-- `sdkmanager "cmake;3.31.6"` + the `PATH` export — installs the **SDK** CMake (which bundles
-  `ninja`, used by AGP's `externalNativeBuild`) and puts it on `PATH` for `build-android.sh`'s
-  bare `cmake`. `3.31.6` is the SDK version closest to secp256k1-kmp's pinned `3.31.5`; the
-  `sed` repoints AGP's pin to it.
+Notes (verified green in the fdroiddata CI):
+- `sudo: apt-get install make g++ cmake` — the build image (debian trixie) ships no host build
+  tools. `cmake` + `make` satisfy ACINQ's `build-android.sh` (it calls **bare `cmake`** with
+  the default Make generator); `g++` covers host config checks. (`sudo` is NOPASSWD.)
+- `prebuild` strips the `org.gradle.toolchains.foojay-resolver-convention` plugin (a network
+  JDK auto-downloader) from `settings.gradle.kts`. The scanner runs **after `prebuild` but
+  before `build`**, so this must be in `prebuild`; the plugin is unused (no toolchain blocks),
+  so removal is safe — the standard fdroiddata fix.
+- `build` (not `prebuild`) holds the actual build work, so the scanner sees pristine source:
+  - `sdkmanager "cmake;3.31.5"` installs the **SDK** CMake (bundles `ninja`). This is required
+    for AGP's `externalNativeBuild`, which needs the *exact* pinned version (`3.31.5`) present
+    **in the SDK** — AGP does **not** auto-install cmake, and the apt cmake (a different patch
+    version, on `PATH`) does not satisfy it. Symptom if missing: `[CXX1300] CMake '3.31.5' was
+    not found in SDK, PATH, or by cmake.dir`. So there are **two** cmake consumers: apt cmake
+    for `build-android.sh`, SDK cmake for AGP.
+  - the `echo … -Wl,--build-id=none …` line patches the JNI CMake so the linker emits **no GNU
+    build-id**. Required for reproducible builds: the build-id is a SHA1 the linker derives from
+    the `.so`'s path-bearing DWARF debug info, so it leaks the absolute build path and *survives
+    stripping* (strip doesn't recompute it) — making the otherwise byte-identical `.so` differ by
+    build path. Dropping it makes the stripped `.so` byte-identical regardless of where it is
+    built. The app's release CI (`.github/reproducible-build.sh`) appends the *identical* line;
+    both sides must match or the published APK won't reproduce.
+  - `gradle :jni:android:publishToMavenLocal` builds the secp256k1 AAR (with the from-source
+    `.so`) into `~/.m2`. Use F-Droid's `gradle` wrapper, not the project's `./gradlew`.
+  - the `mavenLocal(); mavenCentral()` sed makes the app's gradle build resolve the from-source
+    artifact ahead of Maven Central. One line — a literal `\n` in the YAML breaks it. Not
+    committed to this repo.
 - `$$Secp256k1Kmp$$` is the srclib checkout path provided by F-Droid.
-- The `mavenLocal(); mavenCentral()` sed makes the app resolve the from-source artifact ahead
-  of Maven Central, **only during the F-Droid build** (not committed to this repo). Keep it on
-  **one line** — a literal `\n` in the YAML string breaks the prebuild.
-- The `foojay` sed strips `org.gradle.toolchains.foojay-resolver-convention` from
-  `settings.gradle.kts`; F-Droid's scanner rejects it (network JDK auto-download). The plugin
-  is unused (no toolchain blocks), so removal is safe — this is the standard fdroiddata fix.
+- `commit:` is the full immutable commit hash (not the tag) — fdroiddata policy; it guards
+  against tag mutation.
 - `versionCode`/`versionName` must be **literal** in `app/build.gradle.kts` `defaultConfig`
-  (not via top-level `val`s), or `checkupdates` can't parse the tag — that's the prerequisite
-  for `Tags`/`Version` auto-update. For each release, keep `changelogs/<versionCode>.txt`
-  aligned with that release's `versionCode`.
+  (not via top-level `val`s), or `checkupdates` can't parse the tag — the prerequisite for
+  `Tags`/`Version` auto-update. For each release, keep `changelogs/<versionCode>.txt` aligned
+  with that release's `versionCode`.
 
 ---
 
@@ -164,17 +178,20 @@ Notes (every line is verified green in the fdroiddata CI):
 
 The fdroiddata build job runs in `registry.gitlab.com/fdroid/fdroiddata:buildserver-trixie`
 (debian trixie). It provides the JDK, `sdkmanager`, the NDK, and gradle — but **not** `cmake`,
-`make`, `ninja`, or `g++`, so the recipe installs them (`sudo: apt-get install make g++` and
-`sdkmanager "cmake;3.31.6"`, which bundles `ninja`). `sudo` is available (NOPASSWD). NDK
-`r28c` (28.2.13676358) is provided via the recipe's `ndk:` field.
+`make`, `ninja`, or `g++`, so the recipe installs them (`sudo: apt-get install make g++ cmake`
+plus `sdkmanager "cmake;3.31.5"` for the SDK CMake AGP requires). `sudo` is available
+(NOPASSWD). NDK `r28c` (28.2.13676358) is provided via the recipe's `ndk:` field. Build steps
+invoke F-Droid's `gradle` wrapper, not the project's `./gradlew`.
 
-The F-Droid scanner runs **after** `prebuild`, so the `sed` edits to `settings.gradle.kts`
-(inject `mavenLocal()`, strip `foojay`) are in place before scanning. The scanner also
+Build-step ordering in fdroiddata is `prebuild` → **scanner** → `build` → the app's gradle
+build. So a source patch the scanner must see (the `foojay` strip) goes in `prebuild`, while
+the actual build work (CMake install, secp256k1 `publishToMavenLocal`, `mavenLocal()`
+injection) goes in `build` — keeping build artifacts out of the scan. The scanner also
 auto-removes `gradle-wrapper.jar` and `gradle-daemon-jvm.properties` (informational — F-Droid
 substitutes its own verified gradle wrapper).
 
-This recipe is **verified green** across all fdroiddata CI jobs: `rewritemeta`, `lint`,
-`schema`, `checkupdates`, and `fdroid build`.
+All fdroiddata CI jobs pass with this recipe: `rewritemeta`, `lint`, `schema`, `checkupdates`,
+and `fdroid build`.
 
 ---
 
