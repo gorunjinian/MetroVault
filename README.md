@@ -1,7 +1,7 @@
 # MetroVault
 
 <p align="center">
-  <img src="app/src/main/res/drawable/app_logo.png" alt="MetroVault Logo" width="120">
+  <img src="fastlane/metadata/android/en-US/images/featureGraphic.png" alt="MetroVault" width="100%">
 </p>
 
 <p align="center">
@@ -9,17 +9,29 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/Screenshot_1.png" alt="Screenshot 1" width="200">
-  <img src="docs/screenshots/Screenshot_2.png" alt="Screenshot 2" width="200">
-  <img src="docs/screenshots/Screenshot_3.png" alt="Screenshot 3" width="200">
-  <img src="docs/screenshots/Screenshot_4.png" alt="Screenshot 4" width="200">
-</p>
-
-<p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-green.svg" alt="Platform">
   <img src="https://img.shields.io/badge/API-26%2B-brightgreen.svg" alt="API">
   <img src="https://img.shields.io/badge/Language-Kotlin-purple.svg" alt="Kotlin">
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-blue.svg" alt="Compose">
+  <img src="https://img.shields.io/f-droid/v/com.gorunjinian.metrovault.svg" alt="F-Droid Version">
+</p>
+
+<p align="center">
+  <a href="https://f-droid.org/packages/com.gorunjinian.metrovault/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80"></a>
+  <a href="https://github.com/gorunjinian/MetroVault/releases"><img src="https://raw.githubusercontent.com/machiav3lli/oandbackupx/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png" alt="Get it on GitHub" height="80"></a>
+</p>
+
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" alt="Screenshot 1" width="200">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" alt="Screenshot 2" width="200">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" alt="Screenshot 3" width="200">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" alt="Screenshot 4" width="200">
+</p>
+
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" alt="Screenshot 5" width="200">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" alt="Screenshot 6" width="200">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7.png" alt="Screenshot 7" width="200">
 </p>
 
 ---
@@ -113,7 +125,16 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 
 ## 🚀 Installation
 
-### Option 1: Build from Source (Recommended)
+### Option 1: Install from F-Droid
+
+<a href="https://f-droid.org/packages/com.gorunjinian.metrovault/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="70"></a>
+
+MetroVault is on [F-Droid](https://f-droid.org/packages/com.gorunjinian.metrovault/) with **reproducible builds** — F-Droid independently rebuilds the app from this source, verifies it byte-for-byte against the release, and publishes it signed with the developer's key. To verify an installed APK:
+
+- **Package ID:** `com.gorunjinian.metrovault`
+- **Signing certificate SHA-256:** `1245554ceb17cea21e9912af7bf60d38d716f5884d4b3664e5338462cc76fd03`
+
+### Option 2: Build from Source (Recommended)
 
 **Prerequisites:**
 - Android Studio Ladybug or newer
@@ -131,9 +152,11 @@ git clone https://github.com/gorunjinian/MetroVault.git
 # Install on your air-gapped device
 ```
 
-### Option 2: Download APK
+### Option 3: Download APK from GitHub
 
-Check the [Releases](https://github.com/gorunjinian/MetroVault/releases) page for pre-built APKs.
+<a href="https://github.com/gorunjinian/MetroVault/releases"><img src="https://raw.githubusercontent.com/machiav3lli/oandbackupx/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png" alt="Get it on GitHub" height="70"></a>
+
+Check the [Releases](https://github.com/gorunjinian/MetroVault/releases) page for pre-built, signed APKs.
 
 > ⚠️ **Security Note:** For production use, always build from source and install on a factory-reset device that remains permanently offline.
 
