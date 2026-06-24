@@ -358,9 +358,6 @@ fun AppNavigation(
                             popUpTo(Screen.Home.route) { inclusive = true }
                         }
                     }
-                },
-                onImportMultisig = {
-                    navController.navigate(Screen.ImportMultisig.route)
                 }
             )
         }

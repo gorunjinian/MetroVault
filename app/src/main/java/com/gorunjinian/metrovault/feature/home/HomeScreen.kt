@@ -718,6 +718,50 @@ fun HomeScreen(
                         }
                     }
                     
+                    // Import Multisig Wallet - Card option
+                    Surface(
+                        onClick = {
+                            showCreateDialog = false
+                            navController.navigate(Screen.ImportMultisig.route)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Surface(
+                                shape = androidx.compose.foundation.shape.CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_account_tree),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .padding(10.dp)
+                                        .size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Import Multisig Wallet",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Scan a multisig descriptor or config",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
                     // Import Stateless - Card option
                     Surface(
                         onClick = {
