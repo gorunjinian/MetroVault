@@ -1,0 +1,3 @@
+- Import Multisig Wallet is now available directly from the add-wallet menu on the home screen
+- Refreshed the app icon for consistent display across launchers and F-Droid
+- Documentation and reproducible-build improvements
