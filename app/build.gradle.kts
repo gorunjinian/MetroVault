@@ -76,6 +76,13 @@ android {
         buildConfig = true
     }
 
+    // English-only app: keep just "en" so the dozens of unused transitive
+    // AndroidX/Material translations are stripped from the APK.
+    @Suppress("UnstableApiUsage")
+    androidResources {
+        localeFilters += listOf("en")
+    }
+
     testOptions {
         unitTests {
             // Let JVM unit tests exercise production code that calls android.util.Log
@@ -103,6 +110,18 @@ android {
             )
         }
     }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+composeCompiler {
+    // Per-composable stability + recomposition reports under build/compose_compiler/.
+    metricsDestination = layout.buildDirectory.dir("compose_compiler")
+    reportsDestination = layout.buildDirectory.dir("compose_compiler")
 }
 
 base.archivesName.set("MetroVault-${android.defaultConfig.versionName}")
