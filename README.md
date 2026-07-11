@@ -165,13 +165,15 @@ Check the [Releases](https://github.com/gorunjinian/MetroVault/releases) page fo
 For maximum security, use a dedicated device:
 
 ```
-1. Factory reset before installation
-2. Skip Google account setup (offline only)
-3. Enable Airplane mode permanently  
-4. Disable WiFi, Bluetooth, NFC, Mobile data
-5. Remove SIM card
+1. Remove SIM card
+2. Factory reset before installation
+3. Skip Google account setup (offline only)
+4. Enable Airplane mode permanently
+5. Disable WiFi, Bluetooth, NFC, Mobile data
 6. Disable USB debugging
 ```
+
+**📱 New to this?** Follow the **[Device Setup Guide](./docs/DEVICE_SETUP.md)** — a full step-by-step tutorial covering every step above, from factory reset to your first wallet, including how to verify and sideload the APK onto a device that never goes online.
 
 **Optional — debloat first:** before sideloading MetroVault, consider running [android-debloater](https://github.com/gorunjinian/android-debloater), a companion bash script that uses `adb` to uninstall bloatware and pre-installed network-reaching apps on a fresh device. The fewer packages that can phone home, the smaller the attack surface left on your air-gapped signer. After debloating, disable USB debugging.
 
@@ -181,6 +183,7 @@ Detailed documentation is available in the repository:
 
 | Document | Description |
 |----------|-------------|
+| [DEVICE_SETUP.md](./docs/DEVICE_SETUP.md) | Step-by-step tutorial for preparing a dedicated air-gapped device |
 | [SECURITY.md](./docs/SECURITY.md) | Complete security architecture and encryption model |
 | [SEED_GENERATION.md](./docs/SEED_GENERATION.md) | How wallets are generated, stored, and used |
 
