@@ -8,7 +8,6 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
 import com.gorunjinian.metrovault.core.qr.DescriptorQRScanner
@@ -155,13 +154,13 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
      * Assembles the descriptor and processes it.
      */
     private suspend fun finishScanning() {
-        val descriptor = withContext(Dispatchers.Default) {
+        val scanResult = withContext(Dispatchers.Default) {
             descriptorScanner.getResult()
         }
 
-        if (descriptor != null) {
+        if (scanResult != null) {
             AppLog.d(TAG) { "Scan complete" }
-            processDescriptor(descriptor)
+            processDescriptor(scanResult.content, scanResult.walletName)
         } else {
             AppLog.e(TAG) { "Scanner returned null result" }
             showError("Failed to decode QR code. Please try again.")
@@ -169,41 +168,41 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
     }
 
     /**
-     * Process a decoded descriptor string.
-     * Supports both plain descriptor format and BSMS (BIP-0129) format.
+     * Process a decoded multisig input string.
+     * Supports plain descriptors, BSMS (BIP-0129) records, and ColdCard setup files.
      * When BSMS format is detected, performs address verification.
+     *
+     * The wallet name field is prefilled from (in priority order): the content's own
+     * name (setup file `Name:`), the QR transport's embedded name (UR:OUTPUT-DESCRIPTOR),
+     * or a generic "M-of-N Multisig" fallback.
+     *
+     * @param descriptor The decoded text content
+     * @param qrWalletName Wallet name embedded in the QR transport, if any
      */
-    private suspend fun processDescriptor(descriptor: String) {
+    private suspend fun processDescriptor(descriptor: String, qrWalletName: String? = null) {
         try {
             AppLog.d(TAG) { "Processing descriptor" }
 
             _uiState.update { it.copy(isScanning = false) }
 
-            // Check if this is BSMS format and extract verification info
-            val bsmsData = BSMS.extractFromInput(descriptor)
-            val isBsmsFormat = bsmsData.isBsmsFormat
-            val verificationAddress = bsmsData.verificationAddress
-
-            if (isBsmsFormat) {
-                AppLog.d(TAG) { "Detected BSMS format" }
-                if (verificationAddress != null) {
-                    AppLog.d(TAG) { "BSMS verification address present" }
-                }
-            }
-
             // Get local wallet fingerprints for matching
             val localFingerprints = getLocalWalletFingerprints()
             AppLog.d(TAG) { "Matching against ${localFingerprints.size} local fingerprint(s)" }
 
-            // Parse the descriptor
+            // Parse the input (format detection happens inside the parser)
             val result = withContext(Dispatchers.Default) {
                 descriptorParser.parse(descriptor, localFingerprints)
             }
 
             when (result) {
                 is Result.Success -> {
-                    val config = result.value
-                    val defaultName = "${config.m}-of-${config.n} Multisig"
+                    val parsed = result.value
+                    val config = parsed.config
+                    val isBsmsFormat = parsed.sourceFormat == MultisigDescriptorParser.SourceFormat.BSMS
+                    val verificationAddress = parsed.verificationAddress
+                    val defaultName = parsed.suggestedName
+                        ?: qrWalletName
+                        ?: "${config.m}-of-${config.n} Multisig"
 
                     // Perform BSMS address verification if applicable
                     var addressVerified: Boolean? = null

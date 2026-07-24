@@ -234,7 +234,8 @@ private fun InitialScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "• Plain text descriptor\n• UR-encoded descriptor\n• BSMS QR code",
+
+                    text = "• Plain text descriptor\n• UR-encoded descriptor\n• BSMS QR code\n• ColdCard multisig setup",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

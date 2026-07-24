@@ -18,11 +18,26 @@ import com.gorunjinian.metrovault.lib.bitcoin.byteVector32
 
 /**
  * Helper class to track animated QR scanning for descriptors.
- * Supports: UR:CRYPTO-OUTPUT, UR:OUTPUT-DESCRIPTOR, BBQr with text content
+ * Supports: UR:CRYPTO-OUTPUT, UR:OUTPUT-DESCRIPTOR, UR:BYTES, BBQr with text content
  *
- * Similar to AnimatedQRScanner but returns raw descriptor string instead of PSBT.
+ * Similar to AnimatedQRScanner but returns the raw descriptor/config text instead of PSBT.
+ * UR:OUTPUT-DESCRIPTOR payloads (BCR-2023-010) may carry an embedded wallet name,
+ * which is surfaced via [ScanResult.walletName].
  */
 class DescriptorQRScanner {
+
+    /**
+     * Assembled scan output.
+     *
+     * @property content The decoded text (descriptor, BSMS record, or setup file)
+     * @property walletName Wallet name embedded in the QR transport, if any
+     *   (only UR:OUTPUT-DESCRIPTOR carries one)
+     */
+    data class ScanResult(
+        val content: String,
+        val walletName: String? = null
+    )
+
     // For UR formats - bcur-kotlin library handles fountain codes
     private var urDecoder: URDecoder? = null
     private var urFrameCount: Int = 0
@@ -156,10 +171,10 @@ class DescriptorQRScanner {
     }
 
     /**
-     * Get the assembled descriptor string.
+     * Get the assembled scan result (content plus any transport-embedded wallet name).
      * Returns null if not complete.
      */
-    fun getResult(): String? {
+    fun getResult(): ScanResult? {
         if (!isComplete()) return null
 
         return when (detectedFormat) {
@@ -173,11 +188,14 @@ class DescriptorQRScanner {
                         when (ur.type) {
                             "crypto-output" -> {
                                 val decoded = CryptoOutput.fromCbor(item)
-                                reconstructFromCryptoOutput(decoded)
+                                reconstructFromCryptoOutput(decoded)?.let { ScanResult(it) }
                             }
                             "output-descriptor" -> {
                                 val decoded = UROutputDescriptor.fromCbor(item)
-                                decoded.source
+                                ScanResult(
+                                    content = decoded.source,
+                                    walletName = decoded.name?.trim()?.takeIf { it.isNotEmpty() }
+                                )
                             }
                             else -> {
                                 AppLog.w("DescriptorQRScanner") { "Unknown UR type: ${ur.type}" }
@@ -198,7 +216,7 @@ class DescriptorQRScanner {
                         val bytes = ur.toBytes()
                         val content = String(bytes, Charsets.UTF_8)
                         AppLog.d("DescriptorQRScanner") { "UR:BYTES decoded (${content.length} chars)" }
-                        content
+                        ScanResult(content)
                     } catch (e: Exception) {
                         AppLog.e("DescriptorQRScanner") { "Failed to decode UR:BYTES: ${e.message}" }
                         null
@@ -207,10 +225,10 @@ class DescriptorQRScanner {
             }
             "bbqr" -> {
                 bbqrCompleteData?.let { bytes ->
-                    String(bytes, Charsets.UTF_8)
+                    ScanResult(String(bytes, Charsets.UTF_8))
                 }
             }
-            "plain", "unknown" -> singleFrameResult
+            "plain", "unknown" -> singleFrameResult?.let { ScanResult(it) }
             else -> null
         }
     }

@@ -7,12 +7,17 @@ import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.Result
 
 /**
- * Parser for multisig output descriptors.
+ * Parser for multisig wallet configurations.
  *
- * Supports both plain Output Descriptor format and BSMS (BIP-0129) format.
- * BSMS parsing is delegated to the centralized BSMS module.
+ * Single content-format router for everything the import screen can receive
+ * (after the QR transport layer has already unwrapped UR/BBQr to text):
+ * - Plain output descriptors: `wsh(sortedmulti(...))`, with or without checksum/comments
+ * - BSMS (BIP-0129) descriptor records, delegated to [BSMS]
+ * - ColdCard multisig setup files (`Name:`/`Policy:`/`Derivation:` text), delegated to
+ *   [ColdCardSetupFile]
  *
  * @see BSMS
+ * @see ColdCardSetupFile
  */
 class MultisigDescriptorParser {
 
@@ -40,147 +45,198 @@ class MultisigDescriptorParser {
         private val THRESHOLD_PATTERN = Regex("""(?:sorted)?multi\((\d+),""")
     }
 
-    /**
-     * Result of parsing a descriptor.
-     * Returns Result<MultisigConfig, String> where success carries the parsed config and failure carries error message.
-     */
+    /** The content format the input was recognized as. */
+    enum class SourceFormat {
+        DESCRIPTOR,
+        BSMS,
+        SETUP_FILE
+    }
 
     /**
-     * Data class for BSMS format parsing result.
-     * Contains the extracted descriptor and optional verification address.
+     * Result of a successful parse: the config plus format-specific metadata.
      *
-     * @see BSMS.ExtractedData
+     * @property config The parsed multisig configuration
+     * @property sourceFormat Which content format the input was recognized as
+     * @property suggestedName Wallet name carried by the input (setup files only)
+     * @property verificationAddress First-address verification string (BSMS only)
      */
-    data class BsmsData(
-        val descriptor: String,
-        val verificationAddress: String? = null,
-        val pathRestrictions: String? = null,
-        val isBsmsFormat: Boolean = false
+    data class ParsedMultisig(
+        val config: MultisigConfig,
+        val sourceFormat: SourceFormat,
+        val suggestedName: String? = null,
+        val verificationAddress: String? = null
     )
 
     /**
-     * Parse a multisig descriptor string.
-     * Supports both plain Output Descriptor format and BSMS format.
+     * Parse a multisig configuration from any supported text format.
      *
-     * @param descriptor The descriptor string (with or without checksum)
-     * @param localFingerprints List of fingerprints from local wallets to identify which keys we own
-     * @return ParseResult with MultisigConfig on success, or error message
+     * @param input The scanned/decoded text (descriptor, BSMS record, or setup file)
+     * @param localFingerprints Fingerprints of local wallets, to identify which keys we own
      */
-    fun parse(descriptor: String, localFingerprints: List<String>): Result<MultisigConfig, String> {
-        try {
-            AppLog.d(TAG) { "Parsing descriptor" }
-            AppLog.d(TAG) { "Matching against ${localFingerprints.size} local fingerprint(s)" }
+    fun parse(input: String, localFingerprints: List<String>): Result<ParsedMultisig, String> {
+        return try {
+            AppLog.d(TAG) { "Parsing multisig input against ${localFingerprints.size} local fingerprint(s)" }
 
-            // Use BSMS module to extract descriptor from BSMS or plain format
-            val bsmsData = extractFromBsmsOrPlain(descriptor)
-            val extractedDescriptor = bsmsData.descriptor
-            val verificationAddress = bsmsData.verificationAddress
-
-            AppLog.d(TAG) { "Extracted descriptor" }
-            if (bsmsData.isBsmsFormat) {
-                AppLog.d(TAG) { "Input was BSMS format" }
+            if (ColdCardSetupFile.isSetupFile(input)) {
+                AppLog.d(TAG) { "Detected ColdCard setup file format" }
+                parseSetupFile(input, localFingerprints)
+            } else {
+                parseDescriptorOrBsms(input, localFingerprints)
             }
-            if (verificationAddress != null) {
-                AppLog.d(TAG) { "BSMS verification address present" }
-            }
-            if (bsmsData.pathRestrictions != null) {
-                AppLog.d(TAG) { "BSMS path restrictions present" }
-            }
+        } catch (e: Exception) {
+            AppLog.e(TAG, e) { "Failed to parse multisig input: ${e.message}" }
+            Result.Error("Failed to parse descriptor: ${e.message}")
+        }
+    }
 
-            // Remove checksum if present (everything after #)
-            val cleanDescriptor = extractedDescriptor.substringBefore("#").trim()
-            AppLog.d(TAG) { "Clean descriptor (no checksum)" }
+    // ==================== Setup File Path ====================
 
-            // Detect script type
-            val scriptType = MultisigScriptType.fromDescriptor(cleanDescriptor)
-            AppLog.d(TAG) { "Detected script type: $scriptType" }
+    private fun parseSetupFile(
+        input: String,
+        localFingerprints: List<String>
+    ): Result<ParsedMultisig, String> {
+        val parsed = when (val result = ColdCardSetupFile.parse(input)) {
+            is Result.Success -> result.value
+            is Result.Error -> return Result.Error(result.error)
+        }
 
-            // Extract threshold
-            val thresholdMatch = THRESHOLD_PATTERN.find(cleanDescriptor)
-            if (thresholdMatch == null) {
-                AppLog.e(TAG) { "Could not find threshold pattern in descriptor" }
-                return Result.Error("Could not find multisig threshold in descriptor")
-            }
-            val threshold = thresholdMatch.groupValues[1].toIntOrNull()
-                ?: return Result.Error("Invalid threshold value")
-            AppLog.d(TAG) { "Threshold (m): $threshold" }
+        val cosigners = parsed.keys.map { key ->
+            CosignerInfo(
+                xpub = key.xpub,
+                fingerprint = key.fingerprint,
+                derivationPath = key.derivationPath,
+                isLocal = isLocalFingerprint(key.fingerprint, localFingerprints)
+            )
+        }
 
-            // Extract all keys
-            val keyMatches = KEY_PATTERN.findAll(cleanDescriptor).toList()
-            AppLog.d(TAG) { "Key matches found: ${keyMatches.size}" }
-
-            if (keyMatches.isEmpty()) {
-                AppLog.e(TAG) { "No keys matched in descriptor" }
-                return Result.Error("No valid keys found in descriptor. Make sure the descriptor is in standard format.")
-            }
-
-            val cosigners = keyMatches.map { match ->
-                val fingerprint = match.groupValues[1].lowercase()
-                val path = match.groupValues[2].removePrefix("/")
-                val xpub = match.groupValues[3]
-                val isLocal = localFingerprints.any { it.equals(fingerprint, ignoreCase = true) }
-
-                AppLog.d(TAG) { "Found cosigner key (isLocal=$isLocal)" }
-
-                CosignerInfo(
-                    xpub = xpub,
-                    fingerprint = fingerprint,
-                    derivationPath = path,
-                    isLocal = isLocal
+        return finalizeConfig(
+            threshold = parsed.threshold,
+            cosigners = cosigners,
+            scriptType = parsed.scriptType,
+            rawDescriptor = ColdCardSetupFile.toDescriptor(parsed)
+        ).fold(
+            onSuccess = { config ->
+                Result.Success(
+                    ParsedMultisig(
+                        config = config,
+                        sourceFormat = SourceFormat.SETUP_FILE,
+                        suggestedName = parsed.name
+                    )
                 )
-            }
+            },
+            onError = { Result.Error(it) }
+        )
+    }
 
-            val n = cosigners.size
-            AppLog.d(TAG) { "Total cosigners (n): $n" }
+    // ==================== Descriptor / BSMS Path ====================
 
-            // Validate threshold
-            if (threshold > n) {
-                return Result.Error("Threshold ($threshold) cannot be greater than number of keys ($n)")
-            }
-            if (threshold < 1) {
-                return Result.Error("Threshold must be at least 1")
-            }
+    private fun parseDescriptorOrBsms(
+        input: String,
+        localFingerprints: List<String>
+    ): Result<ParsedMultisig, String> {
+        // Use BSMS module to extract descriptor from BSMS or plain format
+        val extracted = BSMS.extractFromInput(input)
+        val extractedDescriptor = extracted.descriptor
+        if (extracted.isBsmsFormat) {
+            AppLog.d(TAG) { "Input was BSMS format" }
+        }
 
-            // Check if we have at least one local key
-            val localKeys = cosigners.filter { it.isLocal }
-            if (localKeys.isEmpty()) {
-                return Result.Error("None of the cosigner keys match your local wallets. Import the corresponding single-sig wallet first.")
-            }
-            AppLog.d(TAG) { "Local keys found: ${localKeys.size}" }
+        // Remove checksum if present (everything after #)
+        val cleanDescriptor = extractedDescriptor.substringBefore("#").trim()
 
-            val config = MultisigConfig(
+        // Detect script type
+        val scriptType = MultisigScriptType.fromDescriptor(cleanDescriptor)
+        AppLog.d(TAG) { "Detected script type: $scriptType" }
+
+        // Extract threshold
+        val thresholdMatch = THRESHOLD_PATTERN.find(cleanDescriptor)
+        if (thresholdMatch == null) {
+            AppLog.e(TAG) { "Could not find threshold pattern in descriptor" }
+            return Result.Error("Could not find multisig threshold in descriptor")
+        }
+        val threshold = thresholdMatch.groupValues[1].toIntOrNull()
+            ?: return Result.Error("Invalid threshold value")
+        AppLog.d(TAG) { "Threshold (m): $threshold" }
+
+        // Extract all keys
+        val keyMatches = KEY_PATTERN.findAll(cleanDescriptor).toList()
+        AppLog.d(TAG) { "Key matches found: ${keyMatches.size}" }
+
+        if (keyMatches.isEmpty()) {
+            AppLog.e(TAG) { "No keys matched in descriptor" }
+            return Result.Error("No valid keys found in descriptor. Make sure the descriptor is in standard format.")
+        }
+
+        val cosigners = keyMatches.map { match ->
+            val fingerprint = match.groupValues[1].lowercase()
+            val path = match.groupValues[2].removePrefix("/")
+            val xpub = match.groupValues[3]
+            CosignerInfo(
+                xpub = xpub,
+                fingerprint = fingerprint,
+                derivationPath = path,
+                isLocal = isLocalFingerprint(fingerprint, localFingerprints)
+            )
+        }
+
+        return finalizeConfig(
+            threshold = threshold,
+            cosigners = cosigners,
+            scriptType = scriptType,
+            rawDescriptor = extractedDescriptor // Keep extracted descriptor (handles both BSMS and plain)
+        ).fold(
+            onSuccess = { config ->
+                Result.Success(
+                    ParsedMultisig(
+                        config = config,
+                        sourceFormat = if (extracted.isBsmsFormat) SourceFormat.BSMS else SourceFormat.DESCRIPTOR,
+                        verificationAddress = extracted.verificationAddress
+                    )
+                )
+            },
+            onError = { Result.Error(it) }
+        )
+    }
+
+    // ==================== Shared Validation ====================
+
+    /**
+     * Common validation and config construction for all content formats.
+     */
+    private fun finalizeConfig(
+        threshold: Int,
+        cosigners: List<CosignerInfo>,
+        scriptType: MultisigScriptType,
+        rawDescriptor: String
+    ): Result<MultisigConfig, String> {
+        val n = cosigners.size
+        AppLog.d(TAG) { "Total cosigners (n): $n" }
+
+        if (threshold > n) {
+            return Result.Error("Threshold ($threshold) cannot be greater than number of keys ($n)")
+        }
+        if (threshold < 1) {
+            return Result.Error("Threshold must be at least 1")
+        }
+
+        val localKeys = cosigners.filter { it.isLocal }
+        if (localKeys.isEmpty()) {
+            return Result.Error("None of the cosigner keys match your local wallets. Import the corresponding single-sig wallet first.")
+        }
+        AppLog.d(TAG) { "Local keys found: ${localKeys.size}" }
+
+        return Result.Success(
+            MultisigConfig(
                 m = threshold,
                 n = n,
                 cosigners = cosigners,
                 localKeyFingerprints = localKeys.map { it.fingerprint },
                 scriptType = scriptType,
-                rawDescriptor = extractedDescriptor // Keep extracted descriptor (handles both BSMS and plain)
+                rawDescriptor = rawDescriptor
             )
-
-            return Result.Success(config)
-
-        } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Failed to parse descriptor: ${e.message}" }
-            return Result.Error("Failed to parse descriptor: ${e.message}")
-        }
-    }
-
-    /**
-     * Extract descriptor from BSMS or plain format.
-     * Delegates to centralized BSMS module for parsing.
-     *
-     * @param input The input string (BSMS format or plain descriptor)
-     * @return BsmsData with extracted information
-     */
-    private fun extractFromBsmsOrPlain(input: String): BsmsData {
-        // Use centralized BSMS module for extraction
-        val extracted = BSMS.extractFromInput(input)
-
-        return BsmsData(
-            descriptor = extracted.descriptor,
-            verificationAddress = extracted.verificationAddress,
-            pathRestrictions = extracted.pathRestrictions,
-            isBsmsFormat = extracted.isBsmsFormat
         )
     }
+
+    private fun isLocalFingerprint(fingerprint: String, localFingerprints: List<String>): Boolean =
+        localFingerprints.any { it.equals(fingerprint, ignoreCase = true) }
 }
