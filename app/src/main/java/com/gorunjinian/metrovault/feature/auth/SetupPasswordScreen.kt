@@ -26,6 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("AssignedValueIsNeverRead")
 @Composable
@@ -54,7 +55,7 @@ fun SetupPasswordScreen(
     // Reset shake after animation
     LaunchedEffect(triggerShake) {
         if (triggerShake) {
-            delay(100)
+            delay(100.milliseconds)
             triggerShake = false
         }
     }

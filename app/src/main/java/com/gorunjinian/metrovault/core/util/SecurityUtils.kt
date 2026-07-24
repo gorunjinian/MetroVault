@@ -7,15 +7,19 @@ import android.content.Context
 import android.os.Build
 import android.view.View
 import android.view.WindowManager
+import com.gorunjinian.metrovault.core.logging.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Security utilities for protecting sensitive data
  */
 object SecurityUtils {
+
+    private const val TAG = "SecurityUtils"
 
     /**
      * Disables screenshots and screen recording for an activity
@@ -71,7 +75,7 @@ object SecurityUtils {
                 clipboard?.setPrimaryClip(ClipData.newPlainText("", ""))
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(TAG, e) { "Failed to clear clipboard: ${e.message}" }
         }
     }
 
@@ -98,7 +102,7 @@ object SecurityUtils {
             // Use application context to ensure the coroutine scope survives navigation
             val appContext = context.applicationContext
             CoroutineScope(Dispatchers.Main).launch {
-                delay(delayMs)
+                delay(delayMs.milliseconds)
                 // Only clear if the same content is still in clipboard
                 val currentClip = try {
                     clipboard?.primaryClip?.getItemAt(0)?.text?.toString()
@@ -110,7 +114,7 @@ object SecurityUtils {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(TAG, e) { "Failed to copy to clipboard: ${e.message}" }
         }
     }
 }

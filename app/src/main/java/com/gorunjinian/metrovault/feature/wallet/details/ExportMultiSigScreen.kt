@@ -34,6 +34,7 @@ import com.gorunjinian.bcur.registry.UROutputDescriptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Content format options for multisig export
@@ -104,7 +105,7 @@ fun ExportMultiSigScreen(
         if (!result.isAnimated || isPaused) return@LaunchedEffect
         
         while (true) {
-            delay(result.recommendedFrameDelayMs)
+            delay(result.recommendedFrameDelayMs.milliseconds)
             currentFrame = (currentFrame + 1) % result.frames.size
         }
     }

@@ -2,6 +2,8 @@ package com.gorunjinian.metrovault.core.crypto
 
 import android.content.Context
 import android.content.SharedPreferences
+
+import android.os.SystemClock
 import androidx.core.content.edit
 import com.gorunjinian.metrovault.core.logging.AppLog
 
@@ -30,6 +32,11 @@ class LoginAttemptManager(context: Context) {
         private const val KEY_FAILED_ATTEMPTS = "failed_attempts"
         private const val KEY_LOCKOUT_UNTIL = "lockout_until"
         private const val KEY_LAST_ATTEMPT = "last_attempt"
+        // Monotonic-clock mirror of the lockout. The device is air-gapped, so
+        // the wall clock can be freely advanced to skip lockouts; elapsedRealtime
+        // can't be manipulated without a reboot.
+        private const val KEY_LOCKOUT_UNTIL_ELAPSED = "lockout_until_elapsed"
+        private const val KEY_ELAPSED_AT_WRITE = "elapsed_at_write"
 
         // Progressive delay strategy (OWASP recommended)
         // Delays start at 3rd attempt to allow 2 free retries
@@ -56,46 +63,55 @@ class LoginAttemptManager(context: Context) {
         val newAttempts = currentAttempts + 1
 
         // Check for permanent lockout
-        if (newAttempts >= MAX_ATTEMPTS_BEFORE_PERMANENT_LOCK) {
-            val lockoutUntil = System.currentTimeMillis() + PERMANENT_LOCKOUT_DURATION
-            prefs.edit {
-                putInt(KEY_FAILED_ATTEMPTS, newAttempts)
-                putLong(KEY_LOCKOUT_UNTIL, lockoutUntil)
-                putLong(KEY_LAST_ATTEMPT, System.currentTimeMillis())
-            }
-            AppLog.w(TAG) { "SECURITY: Permanent lockout triggered after $newAttempts attempts" }
-            return lockoutUntil
+        val isPermanent = newAttempts >= MAX_ATTEMPTS_BEFORE_PERMANENT_LOCK
+        val delay = if (isPermanent) {
+            PERMANENT_LOCKOUT_DURATION
+        } else {
+            val delayIndex = (newAttempts - 1).coerceIn(0, LOCKOUT_DELAYS.size - 1)
+            LOCKOUT_DELAYS[delayIndex]
         }
 
-        // Calculate exponential backoff delay
-        val delayIndex = (newAttempts - 1).coerceIn(0, LOCKOUT_DELAYS.size - 1)
-        val delay = LOCKOUT_DELAYS[delayIndex]
         val lockoutUntil = System.currentTimeMillis() + delay
-
+        val nowElapsed = SystemClock.elapsedRealtime()
         prefs.edit {
             putInt(KEY_FAILED_ATTEMPTS, newAttempts)
             putLong(KEY_LOCKOUT_UNTIL, lockoutUntil)
             putLong(KEY_LAST_ATTEMPT, System.currentTimeMillis())
+            putLong(KEY_LOCKOUT_UNTIL_ELAPSED, nowElapsed + delay)
+            putLong(KEY_ELAPSED_AT_WRITE, nowElapsed)
         }
 
-        AppLog.w(TAG) { "Failed attempt #$newAttempts. Locked out for ${delay/1000}s" }
+        if (isPermanent) {
+            AppLog.w(TAG) { "SECURITY: Permanent lockout triggered after $newAttempts attempts" }
+        } else {
+            AppLog.w(TAG) { "Failed attempt #$newAttempts. Locked out for ${delay / 1000}s" }
+        }
 
         return lockoutUntil
     }
 
     /**
      * Checks if currently locked out
+     *
+     * Takes the stricter of the wall-clock and monotonic-clock deadlines so
+     * advancing the device clock cannot skip a lockout. After a reboot the
+     * monotonic clock resets and only the wall-clock deadline applies.
+     *
      * @return Remaining lockout time in milliseconds (0 if not locked)
      */
     fun getRemainingLockoutTime(): Long {
         val lockoutUntil = prefs.getLong(KEY_LOCKOUT_UNTIL, 0)
-        val now = System.currentTimeMillis()
+        val wallRemaining = (lockoutUntil - System.currentTimeMillis()).coerceAtLeast(0L)
 
-        return if (now < lockoutUntil) {
-            lockoutUntil - now
+        val elapsedAtWrite = prefs.getLong(KEY_ELAPSED_AT_WRITE, -1L)
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val elapsedRemaining = if (elapsedAtWrite in 0..nowElapsed) {
+            (prefs.getLong(KEY_LOCKOUT_UNTIL_ELAPSED, 0) - nowElapsed).coerceAtLeast(0L)
         } else {
-            0L
+            0L // reboot since last write - monotonic deadline no longer meaningful
         }
+
+        return maxOf(wallRemaining, elapsedRemaining)
     }
 
     /**

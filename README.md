@@ -54,7 +54,7 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 | Feature | Description |
 |---------|-------------|
 | **Air-Gapped Operation** | Designed for devices with no internet (Airplane mode, WiFi/Bluetooth disabled) |
-| **Dual-Layer Encryption** | AES-256-GCM with PBKDF2 (210k iterations) + Android Keystore |
+| **Dual-Layer Encryption** | AES-256-GCM with PBKDF2 (600k iterations) + Android Keystore |
 | **Biometric Authentication** | Hardware-backed fingerprint/face unlock with crypto binding |
 | **Plausible Deniability** | Separate "Main" and "Decoy" wallets with different passwords |
 | **Brute-Force Protection** | Exponential backoff rate limiting with 24-hour lockout |

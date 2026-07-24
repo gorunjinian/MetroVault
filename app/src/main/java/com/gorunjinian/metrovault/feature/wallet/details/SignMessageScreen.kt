@@ -45,6 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /** What a single-shot scan fills in. PSBT frames are format-detected, independent of this. */
 private enum class ScanTarget { ADDRESS, MESSAGE }
@@ -176,7 +177,7 @@ fun SignMessageScreen(
         val result = signedQRResult ?: return@LaunchedEffect
         if (showSignedPsbtDisplay && result.isAnimated && result.frames.size > 1 && !isQRPaused) {
             while (true) {
-                delay(result.recommendedFrameDelayMs)
+                delay(result.recommendedFrameDelayMs.milliseconds)
                 if (!isQRPaused) {
                     currentDisplayFrame = (currentDisplayFrame + 1) % result.frames.size
                 }

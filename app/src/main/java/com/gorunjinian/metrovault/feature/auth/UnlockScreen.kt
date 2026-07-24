@@ -31,6 +31,7 @@ import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.core.util.findActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun UnlockScreen(
@@ -63,7 +64,7 @@ fun UnlockScreen(
     // Reset shake after animation
     LaunchedEffect(triggerShake) {
         if (triggerShake) {
-            delay(100)
+            delay(100.milliseconds)
             triggerShake = false
         }
     }

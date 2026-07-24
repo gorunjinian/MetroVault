@@ -27,20 +27,37 @@ MetroVault employs a **defense-in-depth** strategy with multiple layers of prote
 
 When you set up MetroVault, you create a master password. This password:
 
-1. **Is never stored** - only a secure hash is stored
+1. **Is never stored** - only a one-way verifier is stored
 2. **Derives the encryption key** - used to encrypt/decrypt wallet data
 3. **Cannot be recovered** - there is no "forgot password" functionality by design
 
-#### Password Hash Storage
+#### Password Record Storage
 
 ```
-Format: salt:hash:iterations (Base64 encoded)
+Format: salt:verifier:iterations:version (Base64 encoded)
 
 Components:
-- Salt: 256-bit random value (cryptographically secure)
-- Hash: 256-bit PBKDF2 output
-- Iterations: 210,000 (OWASP recommended minimum for 2024)
+- Salt:       256-bit random value (cryptographically secure)
+- Verifier:   256-bit HKDF-SHA256(masterKey, "password-verification")
+- Iterations: PBKDF2 count used for THIS record (600,000 for new records)
+- Version:    record format version (2 = verifier format)
 ```
+
+**Domain separation (important):** The stored verifier is derived from the
+PBKDF2 master key through a one-way HKDF step with a dedicated context string.
+The wallet encryption key is derived from the same master key with a
+*different* context string ("wallet-encryption") and exists only in RAM. An
+attacker who reads the stored verifier therefore cannot compute the wallet
+encryption key — password verification and data encryption are cryptographically
+separated.
+
+**Legacy records:** Versions prior to the verifier format stored the raw PBKDF2
+output (which doubled as the master key) in a 3-part `salt:hash:iterations`
+record. Such records are still accepted and are transparently upgraded to the
+verifier format on the first successful password check. The master key is
+unchanged by the upgrade, so no wallet data needs re-encryption. Legacy records
+keep their original iteration count (210,000) until the next password change,
+which re-derives everything at the current count.
 
 ### Password Verification Flow
 
@@ -58,16 +75,19 @@ Components:
                               │ (not locked)
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                PBKDF2 Key Derivation (~200ms)                   │
+│              PBKDF2 Key Derivation (intentionally slow)         │
 │   • Algorithm: PBKDF2-HMAC-SHA256                               │
-│   • Iterations: 210,000                                         │
-│   • Output: 256-bit key                                         │
+│   • Iterations: from the stored record (600,000 for new)        │
+│   • Output: 256-bit master key                                  │
+│   • Runs ONCE per candidate vault (main, then decoy)            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│           Constant-Time Hash Comparison                         │
-│   • Uses MessageDigest.isEqual() to prevent timing attacks      │
+│           Verifier Derivation + Constant-Time Comparison        │
+│   • Candidate verifier = HKDF(masterKey, "password-verification")│
+│   • Compared with stored verifier via MessageDigest.isEqual()   │
+│     to prevent timing attacks                                   │
 └─────────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┴───────────────┐
@@ -78,9 +98,12 @@ Components:
               │                               │
               ▼                               ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
-│  Initialize Session Key     │   │  Record Failed Attempt      │
-│  Reset attempt counter      │   │  Apply exponential backoff  │
-└─────────────────────────────┘   └─────────────────────────────┘
+│  Session initialized from   │   │  Record Failed Attempt      │
+│  the already-derived master │   │  Apply exponential backoff  │
+│  key (no second PBKDF2 run) │   │  (skipped for biometric-    │
+│  Reset attempt counter      │   │   originated attempts)      │
+│  Upgrade legacy record      │   └─────────────────────────────┘
+└─────────────────────────────┘
 ```
 
 ---
@@ -99,20 +122,23 @@ MetroVault uses a **dual-layer encryption** model to protect sensitive wallet da
 ├─────────────────────────────────────────────────────────────────┤
 │  Input:      User Password + Stored Salt                        │
 │  Algorithm:  PBKDF2-HMAC-SHA256                                 │
-│  Iterations: 210,000                                            │
-│  Output:     256-bit Master Key                                 │
-│  Timing:     ~200ms (intentionally slow)                        │
+│  Iterations: from stored record (600,000 for new records)       │
+│  Output:     256-bit Master Key (RAM only, never stored)        │
+│  Timing:     intentionally slow (hundreds of ms)                │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Wallet Key Derivation                        │
-├─────────────────────────────────────────────────────────────────┤
-│  Input:      Master Key + Context String ("wallet-encryption")  │
-│  Algorithm:  HKDF-SHA256                                        │
-│  Output:     256-bit Wallet Encryption Key                      │
-│  Timing:     <1ms (fast, derived from already-slow master key)  │
-└─────────────────────────────────────────────────────────────────┘
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+┌─────────────────────────────┐ ┌─────────────────────────────────┐
+│  Password Verifier          │ │  Wallet Encryption Key          │
+├─────────────────────────────┤ ├─────────────────────────────────┤
+│  HKDF-SHA256 with context   │ │  HKDF-SHA256 with context       │
+│  "password-verification"    │ │  "wallet-encryption"            │
+│  → 256-bit verifier         │ │  → 256-bit encryption key       │
+│  STORED ON DISK             │ │  RAM ONLY, wiped on logout      │
+│  (one-way: cannot yield the │ │  Timing: <1ms                   │
+│   encryption key)           │ │                                 │
+└─────────────────────────────┘ └─────────────────────────────────┘
 ```
 
 #### HKDF Implementation Details
@@ -129,9 +155,14 @@ Expand Phase:
 Where:
   - PRK: Pseudo-Random Key (intermediate value)
   - IKM: Input Key Material (master key from PBKDF2)
-  - OKM: Output Key Material (final wallet encryption key)
-  - info: Context string (e.g., "wallet-encryption")
+  - OKM: Output Key Material (derived key)
+  - info: Context string — "wallet-encryption" for the data encryption
+    key (RAM only), "password-verification" for the stored verifier
 ```
+
+The two context strings give domain-separated outputs: the stored verifier
+and the encryption key are independent HKDF outputs of the same master key,
+so possession of one reveals nothing about the other.
 
 #### Data Encryption
 
@@ -381,7 +412,7 @@ When session seeds are stored in RAM, they use a specialized `SecureSeedCache` i
 │                                                                 │
 │  App Start ────► Keys not in memory                             │
 │                                                                 │
-│  Login ────────► PBKDF2 derives master key (~200ms)             │
+│  Login ────────► PBKDF2 derives master key (intentionally slow) │
 │              └─► HKDF derives wallet key (<1ms)                 │
 │              └─► Keys stored in RAM only                        │
 │                                                                 │
@@ -395,6 +426,31 @@ When session seeds are stored in RAM, they use a specialized `SecureSeedCache` i
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+All session key state is guarded by a lock: a concurrent emergency wipe
+(triggered by lifecycle events) can never hand a partially-zeroed key to an
+in-flight encryption — an operation either gets a complete copy of the key or
+fails cleanly. The same locking applies to the in-memory seed cache
+(`SecureByteArray`).
+
+### Password Change
+
+Changing a vault's password re-encrypts that vault's key material atomically:
+
+1. The **old** vault key is re-derived from the old password + that vault's
+   stored salt — deliberately *not* taken from the active session, so changing
+   the decoy password from a main-vault session (or vice versa) always uses
+   the correct key
+2. Every encrypted blob in the vault is decrypted with the old key and
+   re-encrypted with the new key in memory
+3. The new password record (current iteration count, verifier format) and all
+   re-encrypted blobs are written in a single atomic commit — a crash before
+   the commit leaves the vault fully intact under the old password
+4. The active session is switched to the new key only if it belongs to the
+   vault being changed
+5. A new password is rejected if it matches the other vault's password (with a
+   deliberately neutral error message that does not reveal the other vault's
+   existence)
 
 ---
 
@@ -442,8 +498,22 @@ MetroVault supports fingerprint/face unlock as a convenient alternative to passw
 | **Algorithm** | AES-256-GCM |
 | **Key Storage** | Android Keystore (hardware-backed when available) |
 | **Authentication** | BIOMETRIC_STRONG (Class 3 biometrics only) |
-| **Key Access** | Requires valid biometric on each use |
+| **Key Access** | Requires valid biometric on each use; on API 30+ the key is explicitly pinned to auth-per-use with `AUTH_BIOMETRIC_STRONG` (device credential can never unlock it) |
 | **Invalidation** | Key invalidated if biometrics change (new fingerprint enrolled) |
+
+### Stale Credential Handling
+
+The biometric-stored password can go stale if the vault password is changed:
+
+- After a password change, the app immediately prompts to re-encrypt the new
+  password under the biometric key. **Any outcome other than a successful
+  update — cancellation, error, or store failure — disables biometric unlock**
+  and removes the stale ciphertext, rather than leaving an old password armed
+- If a biometric unlock ever decrypts a password that no longer matches any
+  vault, biometric unlock is automatically disabled with an explanatory message
+- Failed logins originating from biometric-decrypted passwords are **not**
+  counted toward the rate limiter or the optional data-wipe counter — they are
+  machine-originated, not evidence of brute force
 
 ### Crypto Object Binding
 
@@ -471,13 +541,13 @@ MetroVault implements **exponential backoff** to prevent brute force attacks:
 ┌────────────────────────────────────────────────────────────────┐
 │                 Failed Attempt Delays                          │
 ├────────────────────────────────────────────────────────────────┤
-│  Attempt 1:    No delay                                        │
-│  Attempt 2:    30 seconds                                      │
-│  Attempt 3:    1 minute                                        │
-│  Attempt 4:    5 minutes                                       │
-│  Attempt 5:    15 minutes                                      │
-│  Attempt 6+:   1 hour each                                     │
-│  Attempt 20:   24-hour lockout                                 │
+│  Attempts 1-2:  No delay (2 free retries for typos)            │
+│  Attempt 3:     30 seconds                                     │
+│  Attempt 4:     1 minute                                       │
+│  Attempt 5:     5 minutes                                      │
+│  Attempt 6:     15 minutes                                     │
+│  Attempt 7+:    1 hour each                                    │
+│  Attempt 20+:   24-hour lockout per failure                    │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -498,19 +568,43 @@ MetroVault implements **exponential backoff** to prevent brute force attacks:
 │  • 4-digit PIN: ~4.5 years to exhaust                           │
 │  • 6-character password: effectively impossible                 │
 │                                                                 │
-│  Combined with PBKDF2 (210,000 iterations):                     │
-│  • Each attempt takes ~200ms of CPU time                        │
-│  • GPU acceleration limited (PBKDF2 is memory-hard)             │
+│  Combined with PBKDF2 (600,000 iterations for new records):     │
+│  • Each attempt costs hundreds of ms of CPU time on-device,     │
+│    and the same cost applies to offline cracking of the         │
+│    stored verifier                                              │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Persistence
+### Persistence and Clock Manipulation
 
 Rate limit state is **persisted to disk**:
 - Survives app restarts and device reboots
 - Prevents bypassing via app force-stop
 - Stored in separate SharedPreferences file
+
+Because the device is air-gapped, there is no trusted network time and the
+wall clock can be freely changed in system settings. To blunt the obvious
+bypass (advancing the clock to skip a lockout), every lockout deadline is
+recorded against **both** clocks:
+
+- Wall clock (`currentTimeMillis`) — survives reboots
+- Monotonic clock (`elapsedRealtime`) — cannot be adjusted by the user
+
+The **stricter of the two** is enforced. Advancing the wall clock therefore
+does not shorten a lockout; the only way to reset the monotonic deadline is a
+full reboot, after which the wall-clock deadline still applies. This raises
+the cost of clock-manipulation attacks without requiring secure time.
+
+### Optional Data Wipe on Failed Logins
+
+Users can enable **"Wipe Data on Failed Login"** in Security settings. When
+enabled, the 4th consecutive failed password attempt permanently destroys all
+app data: both vaults, password records, biometric ciphertexts and their
+Keystore keys, settings, and session state. Failed attempts originating from
+biometric unlock never count toward this threshold. This is an explicit
+opt-in, protected by a confirmation dialog, intended for high-threat models
+where seizure of the device is the primary concern.
 
 ---
 
@@ -543,6 +637,12 @@ MetroVault supports a **decoy password** feature for plausible deniability under
 - **Independent Keys**: Each password derives its own session key
 - **No Cross-References**: Decoy mode has no access to main wallet data
 - **Identical UX**: App behavior is indistinguishable between modes
+- **Collision Prevention**: The two passwords can never be set (or changed) to
+  the same value; the rejection message is deliberately neutral so a decoy-mode
+  user never learns that another vault exists
+- **Isolated Password Changes**: Changing either vault's password derives keys
+  from that vault's own stored record and only re-encrypts that vault — the
+  operation is independent of which vault the current session belongs to
 
 ### Coercion Scenario
 
@@ -671,10 +771,11 @@ Behavior:
 
 | Requirement | MetroVault Implementation | Status |
 |-------------|--------------------------|--------|
-| PBKDF2 iterations ≥ 210,000 | 210,000 iterations | ✓ |
+| PBKDF2-HMAC-SHA256 iterations ≥ 600,000 | 600,000 for new records (legacy records upgraded at next password change) | ✓ |
 | Salt ≥ 128 bits | 256-bit salt | ✓ |
+| Don't store password-equivalent material | One-way HKDF verifier stored; master key never persisted | ✓ |
 | Use authenticated encryption | AES-GCM with 128-bit tag | ✓ |
-| Rate limit login attempts | Exponential backoff + permanent lockout | ✓ |
+| Rate limit login attempts | Exponential backoff + 24h lockout, dual-clock enforcement | ✓ |
 | Secure key storage | Android Keystore (hardware-backed) | ✓ |
 
 ---
@@ -697,10 +798,12 @@ MetroVault implements multiple layers of security to protect your Bitcoin:
 | Layer | Protection |
 |-------|------------|
 | **Air-Gap** | No network = no remote attack surface |
-| **Password** | PBKDF2 with 210k iterations prevents offline brute force |
+| **Password** | PBKDF2 (600k iterations for new records) prevents offline brute force |
+| **Verifier Storage** | Only a one-way verifier is stored — it cannot yield the encryption key |
 | **Encryption** | Dual-layer AES-256-GCM protects data at rest |
-| **Biometrics** | Hardware-backed keys with crypto binding |
-| **Rate Limiting** | Exponential backoff prevents online brute force |
+| **Biometrics** | Hardware-backed keys with crypto binding; stale credentials auto-disabled |
+| **Rate Limiting** | Exponential backoff on both wall and monotonic clocks |
+| **Optional Wipe** | Opt-in destruction of all data after 4 consecutive failed logins |
 | **Plausible Deniability** | Decoy password protects against coercion |
 | **UI Hardening** | Screenshot/autofill/clipboard protection |
 

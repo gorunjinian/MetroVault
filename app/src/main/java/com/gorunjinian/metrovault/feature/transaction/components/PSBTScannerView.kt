@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * QR code scanner component for scanning PSBT QR codes.
@@ -34,7 +35,7 @@ import kotlinx.coroutines.withContext
  * PSBT joiner. Hosts that scan PSBTs exclusively (the default) leave this null and every frame
  * goes to [animatedScanner].
  */
-@Suppress("AssignedValueIsNeverRead")
+
 @Composable
 fun PSBTScannerView(
     hasCameraPermission: Boolean,
@@ -75,7 +76,7 @@ fun PSBTScannerView(
     
     LaunchedEffect(frameJustCaptured) {
         if (frameJustCaptured) {
-            delay(200)
+            delay(200.milliseconds)
             frameJustCaptured = false
         }
     }

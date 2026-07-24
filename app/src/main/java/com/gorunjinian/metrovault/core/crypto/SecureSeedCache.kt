@@ -48,11 +48,10 @@ class SecureSeedCache {
             val secureArray = SecureByteArray(seedBytes.size)
             secureArray.copyFrom(seedBytes)
 
-            // Wipe any existing seed for this wallet before replacing
-            cache[walletId]?.close()
-
-            // Store the new secure seed
-            cache[walletId] = secureArray
+            // Atomically replace, then wipe whatever was displaced. put() (not
+            // close-then-put) so a concurrent store can never leak an un-wiped
+            // array.
+            cache.put(walletId, secureArray)?.close()
         } finally {
             // Always wipe the intermediate byte array
             seedBytes.fill(0)

@@ -2,6 +2,7 @@ package com.gorunjinian.metrovault.core.crypto
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
@@ -12,10 +13,12 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import android.util.Base64
 import androidx.core.content.edit
+import com.gorunjinian.metrovault.core.logging.AppLog
 
 class BiometricPasswordManager(context: Context) {
 
     companion object {
+        private const val TAG = "BiometricPasswordManager"
         private const val KEY_ALIAS_MAIN = "biometric_key_main"
         private const val KEY_ALIAS_DECOY = "biometric_key_decoy"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
@@ -55,7 +58,7 @@ class BiometricPasswordManager(context: Context) {
             // Key was invalidated due to new biometric enrollment
             false
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(TAG, e) { "Failed to validate biometric key: ${e.message}" }
             false
         }
     }
@@ -73,7 +76,7 @@ class BiometricPasswordManager(context: Context) {
                 keyStore.deleteEntry(keyAlias)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(TAG, e) { "Failed to delete biometric key: ${e.message}" }
         }
     }
 
@@ -98,21 +101,21 @@ class BiometricPasswordManager(context: Context) {
             // Key was invalidated due to new biometric enrollment
             null
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(TAG, e) { "Failed to create decrypt cipher: ${e.message}" }
             null
         }
     }
-    
+
     fun decryptPassword(isDecoy: Boolean, cipher: Cipher): String? {
         return try {
             val key = if (isDecoy) KEY_ENCRYPTED_PASS_DECOY else KEY_ENCRYPTED_PASS_MAIN
             val encryptedString = prefs.getString(key, null) ?: return null
             val encryptedBytes = Base64.decode(encryptedString, Base64.DEFAULT)
-            
+
             val decryptedBytes = cipher.doFinal(encryptedBytes)
             String(decryptedBytes)
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(TAG, e) { "Failed to decrypt biometric password: ${e.message}" }
             null
         }
     }
@@ -169,6 +172,12 @@ class BiometricPasswordManager(context: Context) {
                     // Invalidate biometric key if new fingerprint/face is enrolled
                     // Prevents attacker from adding their biometric to access wallet
                     setInvalidatedByBiometricEnrollment(true)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        // Explicitly pin auth-per-use to STRONG biometrics only
+                        // (never device credential) instead of relying on the
+                        // legacy defaults for setUserAuthenticationRequired
+                        setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
+                    }
                 }
                 .build()
             
@@ -198,7 +207,7 @@ class BiometricPasswordManager(context: Context) {
                 
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            AppLog.e(TAG, e) { "Failed to store encrypted password: ${e.message}" }
             false
         }
     }

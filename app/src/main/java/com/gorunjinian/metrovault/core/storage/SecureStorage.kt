@@ -9,9 +9,9 @@ import androidx.compose.runtime.Stable
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.security.MessageDigest
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.PBEKeySpec
 import androidx.core.content.edit
+import com.gorunjinian.metrovault.core.crypto.BiometricPasswordManager
+import com.gorunjinian.metrovault.core.crypto.KeyDerivation
 import com.gorunjinian.metrovault.core.crypto.LoginAttemptManager
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import com.gorunjinian.metrovault.core.logging.AppLog
@@ -21,28 +21,40 @@ import com.gorunjinian.metrovault.data.model.WalletSecrets
 import org.json.JSONArray
 
 /**
- * Secure password hash with per-user salt.
- * Stored format: salt:hash:iterations (Base64 encoded)
+ * Secure password record with per-user salt.
+ * Stored format: salt:hash:iterations[:version] (Base64 encoded)
+ *
+ * Version semantics for [hash]:
+ * - [VERSION_LEGACY] (3-part records): hash is the raw PBKDF2 master key.
+ *   Insecure at rest — the same bytes derive the wallet encryption key — so
+ *   legacy records are upgraded in place on the first successful verification.
+ * - [VERSION_VERIFIER]: hash = HKDF(masterKey, "password-verification"), which
+ *   is one-way with respect to the master key and safe to store.
  */
 data class PasswordHash(
     val hash: ByteArray,
     val salt: ByteArray,
-    val iterations: Int = 210000
+    val iterations: Int,
+    val version: Int = VERSION_VERIFIER
 ) {
     fun toStorageString(): String {
-        val saltB64 = Base64.encodeToString(salt, Base64.NO_WRAP)
-        val hashB64 = Base64.encodeToString(hash, Base64.NO_WRAP)
-        return "$saltB64:$hashB64:$iterations"
+        val saltB64 = java.util.Base64.getEncoder().encodeToString(salt)
+        val hashB64 = java.util.Base64.getEncoder().encodeToString(hash)
+        return "$saltB64:$hashB64:$iterations:$version"
     }
 
     companion object {
+        const val VERSION_LEGACY = 1
+        const val VERSION_VERIFIER = 2
+
         fun fromStorageString(str: String): PasswordHash {
             val parts = str.split(":")
-            require(parts.size == 3) { "Invalid password hash format" }
+            require(parts.size == 3 || parts.size == 4) { "Invalid password hash format" }
             return PasswordHash(
-                salt = Base64.decode(parts[0], Base64.NO_WRAP),
-                hash = Base64.decode(parts[1], Base64.NO_WRAP),
-                iterations = parts[2].toInt()
+                salt = java.util.Base64.getDecoder().decode(parts[0]),
+                hash = java.util.Base64.getDecoder().decode(parts[1]),
+                iterations = parts[2].toInt(),
+                version = if (parts.size == 4) parts[3].toInt() else VERSION_LEGACY
             )
         }
     }
@@ -52,22 +64,39 @@ data class PasswordHash(
         if (other !is PasswordHash) return false
         return hash.contentEquals(other.hash) &&
                 salt.contentEquals(other.salt) &&
-                iterations == other.iterations
+                iterations == other.iterations &&
+                version == other.version
     }
 
     override fun hashCode(): Int {
         var result = hash.contentHashCode()
         result = 31 * result + salt.contentHashCode()
         result = 31 * result + iterations
+        result = 31 * result + version
         return result
     }
 }
 
 /**
+ * Result of a login-password verification attempt.
+ *
+ * @property lockedOut true when the failure was caused by rate limiting, not a
+ *   wrong password — callers must not treat this as stale credentials.
+ */
+data class PasswordVerification(
+    val success: Boolean,
+    val isDecoy: Boolean = false,
+    val errorMessage: String? = null,
+    val lockedOut: Boolean = false
+)
+
+/**
  * Simplified secure storage for wallet data.
  *
  * Architecture:
- * - Password verification: PBKDF2 with 210k iterations (at login only)
+ * - Password verification: PBKDF2 (at login only, iteration count stored per
+ *   record) + one-way HKDF verifier stored on disk — the stored verifier
+ *   cannot be used to derive the wallet encryption key
  * - Wallet data: Encrypted with session key (derived via HKDF at login)
  * - Storage: EncryptedSharedPreferences (Android Keystore backed)
  *
@@ -108,6 +137,15 @@ class SecureStorage(private val context: Context) {
         private const val KEY_KEY_IDS = "wallet_key_ids"       // Index of all WalletKeys IDs
         private const val KEY_MIGRATION_VERSION = "migration_version"
         private const val CURRENT_MIGRATION_VERSION = 2        // v2 = WalletKeys refactoring
+
+        // Iteration count for NEWLY created password records (OWASP figure for
+        // PBKDF2-HMAC-SHA256). Existing records keep their stored count until
+        // the next password change (which re-encrypts everything anyway).
+        private const val PBKDF2_ITERATIONS = 600_000
+
+        // Storage prefixes for blobs encrypted with the session key
+        private const val PREFIX_WALLET_KEY = "wallet_key_"
+        private const val PREFIX_WALLET_SECRETS = "wallet_secrets_"
     }
 
     private val masterKey by lazy {
@@ -141,15 +179,24 @@ class SecureStorage(private val context: Context) {
     // ============================================================================
 
     /**
+     * Creates a new verifier-format password record for [password].
+     */
+    private fun createPasswordRecord(password: String): Pair<PasswordHash, ByteArray> {
+        val salt = sessionKeyManager.generateSalt()
+        val masterKey = KeyDerivation.pbkdf2(password, salt, PBKDF2_ITERATIONS)
+        val record = PasswordHash(KeyDerivation.deriveVerifier(masterKey), salt, PBKDF2_ITERATIONS)
+        return record to masterKey
+    }
+
+    /**
      * Sets the main password. Called on first launch.
      */
     fun setMainPassword(password: String): Boolean {
         if (hasMainPassword()) return false
         return try {
-            val salt = sessionKeyManager.generateSalt()
-            val hash = derivePasswordHash(password, salt)
-            val passwordHash = PasswordHash(hash, salt)
-            mainPrefs.edit { putString(KEY_PASSWORD_HASH, passwordHash.toStorageString()) }
+            val (record, masterKey) = createPasswordRecord(password)
+            masterKey.fill(0)
+            mainPrefs.edit { putString(KEY_PASSWORD_HASH, record.toStorageString()) }
             AppLog.d(TAG) { "Password set" }
             true
         } catch (e: Exception) {
@@ -171,10 +218,9 @@ class SecureStorage(private val context: Context) {
         }
 
         return try {
-            val salt = sessionKeyManager.generateSalt()
-            val hash = derivePasswordHash(password, salt)
-            val passwordHash = PasswordHash(hash, salt)
-            decoyPrefs.edit { putString(KEY_DECOY_PASSWORD_HASH, passwordHash.toStorageString()) }
+            val (record, masterKey) = createPasswordRecord(password)
+            masterKey.fill(0)
+            decoyPrefs.edit { putString(KEY_DECOY_PASSWORD_HASH, record.toStorageString()) }
             AppLog.d(TAG) { "Password set" }
             true
         } catch (e: Exception) {
@@ -188,62 +234,95 @@ class SecureStorage(private val context: Context) {
     fun hasDecoyPassword(): Boolean = decoyPrefs.contains(KEY_DECOY_PASSWORD_HASH)
 
     /**
+     * Verifies [password] against the stored record at [key], honoring the
+     * record's stored iteration count and format version.
+     *
+     * On success returns the PBKDF2 master key (caller MUST wipe it) and
+     * silently upgrades legacy records — which stored the raw master key on
+     * disk — to the one-way verifier format. Returns null on mismatch.
+     */
+    private fun verifyStoredPassword(
+        prefs: SharedPreferences,
+        key: String,
+        password: String
+    ): ByteArray? {
+        val stored = try {
+            PasswordHash.fromStorageString(prefs.getString(key, null) ?: return null)
+        } catch (e: Exception) {
+            AppLog.e(TAG) { "Invalid stored password record: ${e.message}" }
+            return null
+        }
+
+        val masterKey = KeyDerivation.pbkdf2(password, stored.salt, stored.iterations)
+        val matches = if (stored.version >= PasswordHash.VERSION_VERIFIER) {
+            MessageDigest.isEqual(KeyDerivation.deriveVerifier(masterKey), stored.hash)
+        } else {
+            MessageDigest.isEqual(masterKey, stored.hash)
+        }
+
+        if (!matches) {
+            masterKey.fill(0)
+            return null
+        }
+
+        if (stored.version < PasswordHash.VERSION_VERIFIER) {
+            // Upgrade in place: stop persisting raw master-key material on disk.
+            // The master key (and thus the wallet encryption key) is unchanged,
+            // so no data re-encryption is needed.
+            val upgraded = PasswordHash(
+                KeyDerivation.deriveVerifier(masterKey), stored.salt, stored.iterations
+            )
+            prefs.edit { putString(key, upgraded.toStorageString()) }
+            AppLog.d(TAG) { "Upgraded password record to verifier format" }
+        }
+
+        return masterKey
+    }
+
+    /**
      * Verifies password with rate limiting.
      * On success, initializes the session key for subsequent operations.
      *
-     * @return Pair<isValid, errorMessage>
+     * @param recordFailure false for machine-originated attempts (e.g. a
+     *   biometric-stored password) so they don't count toward lockout/wipe
      */
-    fun verifyPassword(password: String): Pair<Boolean, String?> {
+    fun verifyPassword(password: String, recordFailure: Boolean = true): PasswordVerification {
         // Check rate limiting first
         if (loginAttemptManager.isLockedOut()) {
             val remaining = loginAttemptManager.getRemainingLockoutTime()
-            return Pair(false, "Too many failed attempts. Try again in ${loginAttemptManager.formatRemainingTime(remaining)}")
+            return PasswordVerification(
+                success = false,
+                errorMessage = "Too many failed attempts. Try again in ${loginAttemptManager.formatRemainingTime(remaining)}",
+                lockedOut = true
+            )
         }
 
-        // Try main password
-        val mainHashStr = mainPrefs.getString(KEY_PASSWORD_HASH, null)
-        if (mainHashStr != null) {
+        // Try main password, then decoy
+        for (isDecoy in listOf(false, true)) {
+            val prefs = if (isDecoy) decoyPrefs else mainPrefs
+            val key = if (isDecoy) KEY_DECOY_PASSWORD_HASH else KEY_PASSWORD_HASH
+            val masterKey = verifyStoredPassword(prefs, key, password) ?: continue
             try {
-                val storedHash = PasswordHash.fromStorageString(mainHashStr)
-                val computedHash = derivePasswordHash(password, storedHash.salt)
-                if (MessageDigest.isEqual(computedHash, storedHash.hash)) {
-                    // Initialize session with the derived key
-                    sessionKeyManager.initializeSession(password, storedHash.salt)
-                    loginAttemptManager.resetAttempts()
-                    AppLog.d(TAG) { "Password verified, session initialized" }
-                    return Pair(true, null)
-                }
-            } catch (e: Exception) {
-                AppLog.e(TAG) { "Error verifying password: ${e.message}" }
+                sessionKeyManager.initializeSessionWithMasterKey(masterKey)
+                loginAttemptManager.resetAttempts()
+                AppLog.d(TAG) { "Password verified, session initialized" }
+                return PasswordVerification(success = true, isDecoy = isDecoy)
+            } finally {
+                masterKey.fill(0)
             }
         }
 
-        // Try decoy password
-        val decoyHashStr = decoyPrefs.getString(KEY_DECOY_PASSWORD_HASH, null)
-        if (decoyHashStr != null) {
-            try {
-                val storedHash = PasswordHash.fromStorageString(decoyHashStr)
-                val computedHash = derivePasswordHash(password, storedHash.salt)
-                if (MessageDigest.isEqual(computedHash, storedHash.hash)) {
-                    // Initialize session with the derived key
-                    sessionKeyManager.initializeSession(password, storedHash.salt)
-                    loginAttemptManager.resetAttempts()
-                    AppLog.d(TAG) { "Password verified, session initialized" }
-                    return Pair(true, null)
-                }
-            } catch (e: Exception) {
-                AppLog.e(TAG) { "Error verifying password: ${e.message}" }
-            }
+        // Failed
+        if (!recordFailure) {
+            return PasswordVerification(success = false, errorMessage = "Incorrect password")
         }
-
-        // Failed - record attempt
         val lockoutUntil = loginAttemptManager.recordFailedAttempt()
         val message = if (lockoutUntil > System.currentTimeMillis()) {
             "Incorrect password. Locked out for ${loginAttemptManager.formatRemainingTime(lockoutUntil - System.currentTimeMillis())}"
         } else {
             "Incorrect password"
         }
-        return Pair(false, message)
+        return PasswordVerification(success = false, errorMessage = message)
     }
 
     /**
@@ -253,41 +332,18 @@ class SecureStorage(private val context: Context) {
         return verifyMainPassword(password) || verifyDecoyPassword(password)
     }
 
-    private fun verifyMainPassword(password: String): Boolean {
-        val hashStr = mainPrefs.getString(KEY_PASSWORD_HASH, null) ?: return false
-        return try {
-            val storedHash = PasswordHash.fromStorageString(hashStr)
-            val computedHash = derivePasswordHash(password, storedHash.salt)
-            MessageDigest.isEqual(computedHash, storedHash.hash)
-        } catch (_: Exception) {
-            false
-        }
-    }
+    private fun verifyMainPassword(password: String): Boolean =
+        verifyStoredPassword(mainPrefs, KEY_PASSWORD_HASH, password)
+            ?.also { it.fill(0) } != null
 
-    private fun verifyDecoyPassword(password: String): Boolean {
-        val hashStr = decoyPrefs.getString(KEY_DECOY_PASSWORD_HASH, null) ?: return false
-        return try {
-            val storedHash = PasswordHash.fromStorageString(hashStr)
-            val computedHash = derivePasswordHash(password, storedHash.salt)
-            MessageDigest.isEqual(computedHash, storedHash.hash)
-        } catch (_: Exception) {
-            false
-        }
-    }
+    private fun verifyDecoyPassword(password: String): Boolean =
+        verifyStoredPassword(decoyPrefs, KEY_DECOY_PASSWORD_HASH, password)
+            ?.also { it.fill(0) } != null
 
     /**
      * Checks if the given password is the decoy password
      */
     fun isDecoyPassword(password: String): Boolean = verifyDecoyPassword(password)
-
-    /**
-     * PBKDF2 key derivation (used only for password verification)
-     */
-    private fun derivePasswordHash(password: String, salt: ByteArray): ByteArray {
-        val spec = PBEKeySpec(password.toCharArray(), salt, 210000, 256)
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        return factory.generateSecret(spec).encoded
-    }
 
     // ============================================================================
     // PASSWORD CHANGE (Atomic with crash recovery)
@@ -296,114 +352,174 @@ class SecureStorage(private val context: Context) {
     /**
      * Changes the main password with atomic transaction safety.
      *
-     * Strategy:
-     * 1. Load all secrets with OLD session key
-     * 2. Pre-encrypt all secrets with NEW key (in memory)
-     * 3. Write everything atomically in a single SharedPreferences commit
-     * 4. Update session to new key
-     *
-     * If app crashes during step 3, data remains in old format (old password still works).
-     * The atomic commit ensures either ALL data is updated or NONE.
+     * @return Pair<success, errorMessage>
      */
-    fun changeMainPassword(oldPassword: String, newPassword: String): Boolean {
-        if (!verifyMainPassword(oldPassword)) return false
-        if (isDecoyPassword(oldPassword)) return false
+    fun changeMainPassword(oldPassword: String, newPassword: String): Pair<Boolean, String?> {
+        if (!verifyMainPassword(oldPassword)) return false to "Current password is incorrect"
+        if (isDecoyPassword(oldPassword)) return false to "Current password is incorrect"
+        // The two vault passwords must never collide: a shared password would
+        // make login ambiguous and half-open both vaults.
+        if (verifyDecoyPassword(newPassword)) {
+            return false to "This password is unavailable — choose a different one"
+        }
 
         return try {
-            changePasswordInternal(oldPassword, newPassword, isDecoy = false)
+            if (changePasswordInternal(oldPassword, newPassword, isDecoy = false)) {
+                true to null
+            } else {
+                false to "Password change failed — no data was modified"
+            }
         } catch (e: Exception) {
             AppLog.e(TAG, e) { "Failed to change password: ${e.message}" }
-            false
+            false to "Password change failed — no data was modified"
         }
     }
 
     /**
      * Changes the decoy password with atomic transaction safety.
+     *
+     * @return Pair<success, errorMessage>
      */
-    fun changeDecoyPassword(oldPassword: String, newPassword: String): Boolean {
-        if (!verifyDecoyPassword(oldPassword)) return false
+    fun changeDecoyPassword(oldPassword: String, newPassword: String): Pair<Boolean, String?> {
+        if (!verifyDecoyPassword(oldPassword)) return false to "Current password is incorrect"
+        // Deliberately the same neutral message as the main-side check: in
+        // decoy mode this dialog is just "Change Password" and the error must
+        // not reveal that another vault exists.
+        if (verifyMainPassword(newPassword)) {
+            return false to "This password is unavailable — choose a different one"
+        }
 
         return try {
-            changePasswordInternal(oldPassword, newPassword, isDecoy = true)
+            if (changePasswordInternal(oldPassword, newPassword, isDecoy = true)) {
+                true to null
+            } else {
+                false to "Password change failed — no data was modified"
+            }
         } catch (e: Exception) {
             AppLog.e(TAG, e) { "Failed to change password: ${e.message}" }
-            false
+            false to "Password change failed — no data was modified"
         }
     }
 
     /**
      * Internal implementation for atomic password change.
-     * Uses a single SharedPreferences.Editor.commit() for atomicity.
+     *
+     * Fully self-contained: the old vault key is re-derived from
+     * [oldPassword] + the vault's stored salt rather than taken from the
+     * ambient session. This makes the operation correct regardless of which
+     * vault the current session belongs to (e.g. changing the decoy password
+     * while logged into the main vault).
+     *
+     * Strategy:
+     * 1. Derive old master key from oldPassword + stored record; verify it
+     * 2. Decrypt every encrypted blob in this vault with the old key
+     * 3. Re-encrypt everything with the new key (in memory)
+     * 4. Write new password record + re-encrypted blobs in ONE atomic commit
+     * 5. Roll the global session to the new key only if the active session
+     *    belongs to the vault being changed
+     *
+     * If the app crashes before step 4 commits, all data remains in the old
+     * format and the old password still works.
      */
     private fun changePasswordInternal(oldPassword: String, newPassword: String, isDecoy: Boolean): Boolean {
         val prefs = if (isDecoy) decoyPrefs else mainPrefs
         val passwordKey = if (isDecoy) KEY_DECOY_PASSWORD_HASH else KEY_PASSWORD_HASH
 
-        // PHASE 1: Load all WalletKeys with current (old) session key
-        // Session is already initialized from verify*Password call
-        val walletKeys = loadAllWalletKeys(isDecoy)
-        if (walletKeys.isEmpty()) {
-            AppLog.d(TAG) { "No wallet keys to re-encrypt during password change" }
-        }
+        val storedStr = prefs.getString(passwordKey, null) ?: return false
+        val stored = PasswordHash.fromStorageString(storedStr)
 
-        // PHASE 2: Generate new credentials
-        val newSalt = sessionKeyManager.generateSalt()
-        val newHash = derivePasswordHash(newPassword, newSalt)
-        val newPasswordHash = PasswordHash(newHash, newSalt)
-
-        // PHASE 3: Pre-encrypt all keys with NEW key (in memory only)
-        // This validates we can encrypt everything before committing
-        val newEncryptedKeys = mutableMapOf<String, String>()
-
-        // Temporarily switch to new session for encryption
-        sessionKeyManager.initializeSession(newPassword, newSalt)
-
+        var oldMasterKey: ByteArray? = null
+        var oldEncKey: ByteArray? = null
+        var newMasterKey: ByteArray? = null
+        var newEncKey: ByteArray? = null
         try {
-            for (walletKeys in walletKeys) {
-                val plaintext = walletKeys.toJson().toByteArray()
+            // PHASE 1: Derive and verify the old vault key (independent of session)
+            oldMasterKey = KeyDerivation.pbkdf2(oldPassword, stored.salt, stored.iterations)
+            val expected = if (stored.version >= PasswordHash.VERSION_VERIFIER) {
+                KeyDerivation.deriveVerifier(oldMasterKey)
+            } else {
+                oldMasterKey
+            }
+            if (!MessageDigest.isEqual(expected, stored.hash)) return false
+            oldEncKey = KeyDerivation.deriveWalletEncryptionKey(oldMasterKey)
+
+            // PHASE 2: Generate new credentials
+            val newSalt = sessionKeyManager.generateSalt()
+            newMasterKey = KeyDerivation.pbkdf2(newPassword, newSalt, PBKDF2_ITERATIONS)
+            newEncKey = KeyDerivation.deriveWalletEncryptionKey(newMasterKey)
+            val newRecord = PasswordHash(
+                KeyDerivation.deriveVerifier(newMasterKey), newSalt, PBKDF2_ITERATIONS
+            )
+
+            // PHASE 3: Decrypt every encrypted blob in this vault with the old
+            // key and re-encrypt with the new key (in memory only). This covers
+            // WalletKeys and any legacy WalletSecrets left by old versions.
+            val reEncrypted = mutableMapOf<String, String>()
+            var totalBlobs = 0
+            var unreadableBlobs = 0
+            for ((prefKey, value) in prefs.all) {
+                if (value !is String) continue  // also skips the "wallet_key_ids" StringSet index
+                if (prefKey == KEY_KEY_IDS) continue
+                val isKeyBlob = prefKey.startsWith(PREFIX_WALLET_KEY)
+                val isSecretsBlob = prefKey.startsWith(PREFIX_WALLET_SECRETS)
+                if (!isKeyBlob && !isSecretsBlob) continue
+
+                totalBlobs++
+                val plaintext = try {
+                    KeyDerivation.decryptAesGcm(Base64.decode(value, Base64.NO_WRAP), oldEncKey)
+                } catch (_: Exception) {
+                    null
+                }
+                if (plaintext == null) {
+                    // The old key is provably correct (verified above), so this
+                    // blob was already unreadable before the change. Preserve it
+                    // unchanged rather than blocking the password change.
+                    unreadableBlobs++
+                    AppLog.w(TAG) { "Blob undecryptable with verified old key - preserving as-is" }
+                    continue
+                }
                 try {
-                    val encrypted = sessionKeyManager.encrypt(plaintext)
-                    val encoded = Base64.encodeToString(encrypted, Base64.NO_WRAP)
-                    newEncryptedKeys[walletKeys.keyId] = encoded
+                    reEncrypted[prefKey] = Base64.encodeToString(
+                        KeyDerivation.encryptAesGcm(plaintext, newEncKey), Base64.NO_WRAP
+                    )
                 } finally {
-                    plaintext.fill(0)  // Wipe sensitive plaintext from memory
+                    plaintext.fill(0)
                 }
             }
-        } catch (e: Exception) {
-            // Encryption failed - restore old session and abort
-            AppLog.e(TAG) { "Failed to pre-encrypt keys: ${e.message}" }
-            val oldHashStr = prefs.getString(passwordKey, null)
-            if (oldHashStr != null) {
-                val oldHash = PasswordHash.fromStorageString(oldHashStr)
-                sessionKeyManager.initializeSession(oldPassword, oldHash.salt)
+
+            // Safety net: if NOTHING decrypted while blobs exist, something is
+            // systematically wrong - abort rather than orphan an entire vault.
+            if (totalBlobs > 0 && reEncrypted.isEmpty()) {
+                AppLog.e(TAG) { "All $totalBlobs blobs failed to decrypt - aborting password change" }
+                return false
             }
-            return false
+
+            // PHASE 4: Atomic write - all or nothing
+            val editor = prefs.edit().putString(passwordKey, newRecord.toStorageString())
+            reEncrypted.forEach { (prefKey, encrypted) -> editor.putString(prefKey, encrypted) }
+            if (!editor.commit()) {
+                AppLog.e(TAG) { "SharedPreferences commit failed during password change" }
+                return false
+            }
+
+            // PHASE 5: Roll the active session only if it belongs to this vault.
+            // (Changing the decoy password from a main session must NOT touch
+            // the main session key, and vice versa.)
+            if (sessionKeyManager.isCurrentEncryptionKey(oldEncKey)) {
+                sessionKeyManager.initializeSessionWithMasterKey(newMasterKey)
+            }
+
+            AppLog.d(TAG) {
+                "Password changed (${reEncrypted.size} blobs re-encrypted" +
+                        (if (unreadableBlobs > 0) ", $unreadableBlobs unreadable preserved" else "") + ")"
+            }
+            return true
+        } finally {
+            oldMasterKey?.fill(0)
+            oldEncKey?.fill(0)
+            newMasterKey?.fill(0)
+            newEncKey?.fill(0)
         }
-
-        // PHASE 4: Atomic write - all or nothing
-        // SharedPreferences.Editor.commit() is atomic for a single edit block
-        val success = prefs.edit()
-            .putString(passwordKey, newPasswordHash.toStorageString())
-            .apply {
-                newEncryptedKeys.forEach { (keyId, encrypted) ->
-                    putString("wallet_key_$keyId", encrypted)
-                }
-            }
-            .commit()  // commit() returns boolean and is synchronous
-
-        if (success) {
-            AppLog.d(TAG) { "Password changed successfully (${walletKeys.size} keys re-encrypted)" }
-        } else {
-            AppLog.e(TAG) { "SharedPreferences commit failed during password change" }
-            // Restore old session since commit failed
-            val oldHashStr = prefs.getString(passwordKey, null)
-            if (oldHashStr != null) {
-                val oldHash = PasswordHash.fromStorageString(oldHashStr)
-                sessionKeyManager.initializeSession(oldPassword, oldHash.salt)
-            }
-        }
-
-        return success
     }
 
     // ============================================================================
@@ -1078,6 +1194,17 @@ class SecureStorage(private val context: Context) {
                 AppLog.d(TAG) { "Biometric passwords wiped" }
             } catch (e: Exception) {
                 AppLog.e(TAG) { "Error clearing biometric prefs: ${e.message}" }
+            }
+
+            // Delete biometric keys from Android Keystore (the encrypted
+            // passwords are gone, so the wrapping keys must not linger)
+            try {
+                val biometricKeys = BiometricPasswordManager(context)
+                biometricKeys.deleteKey(isDecoy = false)
+                biometricKeys.deleteKey(isDecoy = true)
+                AppLog.d(TAG) { "Biometric keystore keys deleted" }
+            } catch (e: Exception) {
+                AppLog.e(TAG) { "Error deleting biometric keystore keys: ${e.message}" }
             }
 
             // Clear user preferences (biometric enabled state, etc.)

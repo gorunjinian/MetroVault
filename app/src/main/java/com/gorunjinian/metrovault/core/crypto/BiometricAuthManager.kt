@@ -57,7 +57,9 @@ class BiometricAuthManager(private val context: Context) {
         subtitle: String = "Use your fingerprint to unlock",
         onSuccess: (BiometricPrompt.CryptoObject) -> Unit,
         onError: (String) -> Unit,
-        onFailed: () -> Unit = {}
+
+        onFailed: () -> Unit = {},
+        onCancel: () -> Unit = {}
     ) {
         val executor = ContextCompat.getMainExecutor(context)
 
@@ -67,9 +69,14 @@ class BiometricAuthManager(private val context: Context) {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    // User cancelled or other error
-                    if (errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
-                        errorCode != BiometricPrompt.ERROR_USER_CANCELED) {
+                    // User dismissed the prompt ("Use Password" / back) vs real error.
+                    // Callers that stage state before prompting (e.g. updating the
+                    // biometric-stored password) must handle onCancel to avoid
+                    // being left half-updated.
+                    if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
+                        errorCode == BiometricPrompt.ERROR_USER_CANCELED) {
+                        onCancel()
+                    } else {
                         onError("Authentication error: $errString")
                     }
                 }

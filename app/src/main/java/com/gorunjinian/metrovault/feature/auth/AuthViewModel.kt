@@ -105,7 +105,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun unlockWithPassword() {
+    fun unlockWithPassword(fromBiometric: Boolean = false) {
         val password = _unlockState.value.password
         if (password.isEmpty()) {
             _unlockState.update { it.copy(errorMessage = "Password cannot be empty") }
@@ -115,16 +115,15 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _unlockState.update { it.copy(isAuthenticating = true) }
 
-            val (isValid, error) = withContext(Dispatchers.IO) {
-                secureStorage.verifyPassword(password)
+            // Machine-originated attempts (biometric-stored password) must not
+            // count toward the lockout/wipe counters - they are not brute force.
+            val result = withContext(Dispatchers.IO) {
+                secureStorage.verifyPassword(password, recordFailure = !fromBiometric)
             }
 
-            if (isValid) {
-                val isDecoy = withContext(Dispatchers.IO) {
-                    secureStorage.isDecoyPassword(password)
-                }
-
-                wallet.setSession(isDecoy)
+            if (result.success) {
+                wallet.setSession(result.isDecoy)
+                val isDecoy = result.isDecoy
                 val loaded = withContext(Dispatchers.IO) {
                     wallet.loadWalletList()
                 }
@@ -148,12 +147,31 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(isAuthenticating = false, errorMessage = "Failed to load wallets") 
                     }
                 }
+            } else if (fromBiometric && !result.lockedOut) {
+                // The biometric-stored password no longer matches any vault -
+                // it is stale (e.g. the password was changed without updating
+                // biometric unlock). Disable biometrics rather than letting
+                // repeated taps feed the failed-attempt counters.
+                val useDecoy = _unlockState.value.biometricTarget ==
+                    UserPreferencesRepository.BIOMETRIC_TARGET_DECOY
+                withContext(Dispatchers.IO) {
+                    biometricPasswordManager.removeBiometricData(useDecoy)
+                }
+                userPreferencesRepository.setBiometricsEnabled(false)
+                userPreferencesRepository.setBiometricTarget(UserPreferencesRepository.BIOMETRIC_TARGET_NONE)
+                _unlockState.update {
+                    it.copy(
+                        isAuthenticating = false,
+                        password = "",
+                        errorMessage = "Saved biometric credentials are outdated. Biometric unlock has been disabled — please use your password."
+                    )
+                }
             } else {
                 // Check if wipe on failed attempts is enabled
                 val wipeEnabled = userPreferencesRepository.wipeOnFailedAttempts.value
                 val failedAttempts = secureStorage.getFailedAttemptCount()
-                
-                if (wipeEnabled && failedAttempts >= 4) {
+
+                if (!fromBiometric && wipeEnabled && failedAttempts >= 4) {
                     // Wipe all data and navigate to setup
                     withContext(Dispatchers.IO) {
                         secureStorage.wipeAllData()
@@ -161,12 +179,12 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     _unlockState.update { it.copy(isAuthenticating = false, password = "", errorMessage = "") }
                     _events.emit(AuthEvent.DataWiped)
                 } else {
-                    _unlockState.update { 
+                    _unlockState.update {
                         it.copy(
-                            isAuthenticating = false, 
+                            isAuthenticating = false,
                             password = "",
-                            errorMessage = error ?: "Incorrect password"
-                        ) 
+                            errorMessage = result.errorMessage ?: "Incorrect password"
+                        )
                     }
                 }
             }
@@ -175,17 +193,17 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun unlockWithBiometrics(cipher: Cipher) {
         viewModelScope.launch {
-            val useDecoy = _unlockState.value.biometricTarget == 
+            val useDecoy = _unlockState.value.biometricTarget ==
                 UserPreferencesRepository.BIOMETRIC_TARGET_DECOY
 
             val decryptedPassword = biometricPasswordManager.decryptPassword(useDecoy, cipher)
 
             if (decryptedPassword != null) {
                 _unlockState.update { it.copy(password = decryptedPassword) }
-                unlockWithPassword()
+                unlockWithPassword(fromBiometric = true)
             } else {
-                _unlockState.update { 
-                    it.copy(errorMessage = "Failed to decrypt password. Please use password to unlock.") 
+                _unlockState.update {
+                    it.copy(errorMessage = "Failed to decrypt password. Please use password to unlock.")
                 }
             }
         }

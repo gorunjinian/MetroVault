@@ -21,6 +21,7 @@ import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.domain.Wallet
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val MAX_WALLET_NAME_LENGTH = 25
 
@@ -41,7 +42,7 @@ fun RenameWalletDialog(
     
     // Request focus and show keyboard when dialog appears
     LaunchedEffect(Unit) {
-        delay(100) // Small delay to ensure dialog is fully composed
+        delay(100.milliseconds) // Small delay to ensure dialog is fully composed
         focusRequester.requestFocus()
         keyboardController?.show()
     }
@@ -117,7 +118,7 @@ fun RenameAccountDialog(
     
     // Request focus and show keyboard when dialog appears
     LaunchedEffect(Unit) {
-        delay(100) // Small delay to ensure dialog is fully composed
+        delay(100.milliseconds) // Small delay to ensure dialog is fully composed
         focusRequester.requestFocus()
         keyboardController?.show()
     }

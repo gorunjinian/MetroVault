@@ -22,7 +22,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -45,13 +44,14 @@ import com.gorunjinian.metrovault.core.qr.configureForQRScanning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.delay
 import com.gorunjinian.metrovault.data.model.DerivationPaths
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportWalletScreen(
     viewModel: ImportWalletViewModel = viewModel(),
     onBack: () -> Unit,
-    onWalletImported: () -> Unit
+    onWalletImported: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
@@ -71,7 +71,7 @@ fun ImportWalletScreen(
     
     // Calculate fingerprint in real-time when passphrase or mnemonic changes
     LaunchedEffect(uiState.mnemonicWords, uiState.bip39Passphrase, uiState.useBip39Passphrase) {
-        delay(150)  // Debounce
+        delay(150.milliseconds)  // Debounce
         viewModel.updateRealtimeFingerprint()
     }
 
@@ -323,7 +323,7 @@ private fun Step1Configuration(
                     } else null,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 )
                 ExposedDropdownMenu(
                     expanded = addressTypeExpanded,
@@ -352,7 +352,7 @@ private fun Step1Configuration(
                             },
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
                         )
-                        if (index < options.size - 1) {
+                        if (index != options.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
@@ -415,7 +415,6 @@ private fun Step1Configuration(
 
 // ========== Step 2: Seed Phrase Input ==========
 
-@Suppress("AssignedValueIsNeverRead")
 @Composable
 private fun Step2SeedPhrase(
     mnemonicWords: List<String>,
@@ -429,10 +428,8 @@ private fun Step2SeedPhrase(
     onNext: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
-    val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    
-    val isMnemonicValid = mnemonicWords.size == expectedWordCount && validateMnemonic(mnemonicWords)
+
     var validationError by remember { mutableStateOf("") }
     
     // SeedQR Scanner state

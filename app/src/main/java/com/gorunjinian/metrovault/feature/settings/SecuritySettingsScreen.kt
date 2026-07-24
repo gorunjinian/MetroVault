@@ -337,7 +337,7 @@ fun SecuritySettingsScreen(
                         "This is a destructive security feature.",
                         color = MaterialTheme.colorScheme.error
                     )
-                    Text("If someone enters the wrong password 3 times in a row, ALL app data will be permanently deleted:")
+                    Text("If someone enters the wrong password 4 times in a row, ALL app data will be permanently deleted:")
                     Text("• All wallets")
                     Text("• All passwords")
                     Text("• All settings")
@@ -392,7 +392,7 @@ fun SecuritySettingsScreen(
             onConfirm = { old, new ->
                 scope.launch {
                     isChangingPassword = true
-                    val success = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val (success, changeError) = withContext(kotlinx.coroutines.Dispatchers.IO) {
                         secureStorage.changeMainPassword(old, new)
                     }
                     if (success) {
@@ -400,6 +400,19 @@ fun SecuritySettingsScreen(
                         isChangingPassword = false
 
                         if (biometricsEnabled && biometricTarget == UserPreferencesRepository.BIOMETRIC_TARGET_MAIN && activity != null) {
+                            // The stored biometric password is now stale. Cancelling
+                            // or failing this prompt must disable biometric unlock -
+                            // otherwise the old password keeps feeding failed logins.
+                            val disableStaleBiometrics = {
+                                biometricPasswordManager.removeBiometricData(isDecoy = false)
+                                userPreferencesRepository.setBiometricsEnabled(false)
+                                userPreferencesRepository.setBiometricTarget(UserPreferencesRepository.BIOMETRIC_TARGET_NONE)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Biometric unlock disabled. Re-enable in settings.",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
                             val cipher = biometricPasswordManager.getEncryptCipher(isDecoy = false)
                             biometricManager.authenticateWithCrypto(
                                 activity = activity,
@@ -421,24 +434,18 @@ fun SecuritySettingsScreen(
                                                 "Biometric unlock updated",
                                                 android.widget.Toast.LENGTH_SHORT
                                             ).show()
+                                        } else {
+                                            disableStaleBiometrics()
                                         }
                                     }
                                 },
-                                onError = { _ ->
-                                    biometricPasswordManager.removeBiometricData(isDecoy = false)
-                                    userPreferencesRepository.setBiometricsEnabled(false)
-                                    userPreferencesRepository.setBiometricTarget(UserPreferencesRepository.BIOMETRIC_TARGET_NONE)
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Biometric unlock disabled. Re-enable in settings.",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                }
+                                onError = { _ -> disableStaleBiometrics() },
+                                onCancel = { disableStaleBiometrics() }
                             )
                         }
                     } else {
                         isChangingPassword = false
-                        android.widget.Toast.makeText(context, "Incorrect password", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, changeError ?: "Password change failed", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -454,7 +461,7 @@ fun SecuritySettingsScreen(
             onConfirm = { old, new ->
                 scope.launch {
                     isChangingDecoyPassword = true
-                    val success = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val (success, changeError) = withContext(kotlinx.coroutines.Dispatchers.IO) {
                         secureStorage.changeDecoyPassword(old, new)
                     }
                     if (success) {
@@ -462,6 +469,18 @@ fun SecuritySettingsScreen(
                         isChangingDecoyPassword = false
 
                         if (biometricsEnabled && biometricTarget == UserPreferencesRepository.BIOMETRIC_TARGET_DECOY && activity != null) {
+                            // Same stale-password hazard as the main flow: any outcome
+                            // other than a successful update must disable biometrics.
+                            val disableStaleBiometrics = {
+                                biometricPasswordManager.removeBiometricData(isDecoy = true)
+                                userPreferencesRepository.setBiometricsEnabled(false)
+                                userPreferencesRepository.setBiometricTarget(UserPreferencesRepository.BIOMETRIC_TARGET_NONE)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Biometric unlock disabled. Re-enable in settings.",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
                             val cipher = biometricPasswordManager.getEncryptCipher(isDecoy = true)
                             biometricManager.authenticateWithCrypto(
                                 activity = activity,
@@ -483,24 +502,18 @@ fun SecuritySettingsScreen(
                                                 "Biometric unlock updated",
                                                 android.widget.Toast.LENGTH_SHORT
                                             ).show()
+                                        } else {
+                                            disableStaleBiometrics()
                                         }
                                     }
                                 },
-                                onError = { _ ->
-                                    biometricPasswordManager.removeBiometricData(isDecoy = true)
-                                    userPreferencesRepository.setBiometricsEnabled(false)
-                                    userPreferencesRepository.setBiometricTarget(UserPreferencesRepository.BIOMETRIC_TARGET_NONE)
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Biometric unlock disabled. Re-enable in settings.",
-                                        android.widget.Toast.LENGTH_LONG
-                                    ).show()
-                                }
+                                onError = { _ -> disableStaleBiometrics() },
+                                onCancel = { disableStaleBiometrics() }
                             )
                         }
                     } else {
                         isChangingDecoyPassword = false
-                        android.widget.Toast.makeText(context, "Incorrect password", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, changeError ?: "Password change failed", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -588,6 +601,11 @@ fun SecuritySettingsScreen(
                                 },
                                 onError = { error ->
                                     android.widget.Toast.makeText(context, "Failed to enable biometric: $error", android.widget.Toast.LENGTH_SHORT).show()
+                                    showBiometricPasswordDialog = false
+                                    selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
+                                },
+                                onCancel = {
+                                    // Nothing stored yet - just close the setup dialog
                                     showBiometricPasswordDialog = false
                                     selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
                                 }

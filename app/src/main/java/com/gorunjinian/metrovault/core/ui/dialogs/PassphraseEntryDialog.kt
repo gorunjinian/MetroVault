@@ -10,6 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Dialog for re-entering BIP39 passphrase when opening a wallet
@@ -39,7 +40,7 @@ fun PassphraseEntryDialog(
     // Calculate fingerprint in real-time as user types (with debounce)
     LaunchedEffect(passphrase) {
         isCalculating = true
-        delay(150)  // 150ms debounce
+        delay(150.milliseconds)  // 150ms debounce
         val fingerprint = calculateFingerprint(passphrase)
         currentFingerprint = fingerprint ?: ""
         isCalculating = false

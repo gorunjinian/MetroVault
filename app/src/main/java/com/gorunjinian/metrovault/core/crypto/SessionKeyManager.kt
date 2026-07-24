@@ -4,37 +4,27 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.security.MessageDigest
 import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.Mac
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * Manages session-based encryption keys for the application.
  *
  * Architecture:
- * - At login: PBKDF2 derives master key from password (slow, ~200ms)
- * - During session: HKDF derives purpose-specific keys instantly (<1ms)
- * - All wallet operations use the session key (no repeated PBKDF2)
+ * - At login: PBKDF2 derives the master key from the password (slow, ~200ms+)
+ * - During session: HKDF-derived wallet encryption key is used for all
+ *   encrypt/decrypt operations (instant)
+ * - All key material lives only in RAM and is wiped on logout
  *
- * Security properties:
- * - PBKDF2 with 210,000 iterations (OWASP 2024 standard)
- * - HKDF-SHA256 for secure key derivation
- * - Keys stored only in RAM, wiped on logout
- * - Thread-safe singleton pattern
+ * Thread safety: wallet saves run on background dispatchers while
+ * [clearSession] can fire from lifecycle callbacks (emergency wipe). All key
+ * state is guarded by [lock] so a concurrent clear can never hand a
+ * partially-zeroed key to an encrypt operation.
  */
 class SessionKeyManager private constructor() {
 
     companion object {
         private const val TAG = "SessionKeyManager"
-        private const val PBKDF2_ITERATIONS = 210000
-        private const val KEY_SIZE_BITS = 256
-        private const val KEY_SIZE_BYTES = 32
-        private const val GCM_IV_SIZE = 12
-        private const val GCM_TAG_BITS = 128
 
         @Volatile
         private var instance: SessionKeyManager? = null
@@ -46,10 +36,12 @@ class SessionKeyManager private constructor() {
         }
     }
 
+    private val lock = Any()
+
     // Master key derived from password via PBKDF2 (set at login)
     private var masterKey: ByteArray? = null
 
-    // Cached derived keys for different purposes
+    // Cached derived key for wallet data encryption
     private var walletEncryptionKey: ByteArray? = null
 
     // Session state - observable for UI to react to session changes
@@ -57,47 +49,40 @@ class SessionKeyManager private constructor() {
     val isSessionActive: StateFlow<Boolean> = _isSessionActive.asStateFlow()
 
     /**
-     * Initializes the session by deriving master key from password.
-     * This is the only slow operation (~200ms) - called once at login.
-     *
-     * @param password User's password
-     * @param salt Salt from stored password hash
-     * @return The derived master key (for password verification)
+     * Initializes the session from an already-derived PBKDF2 master key.
+     * Any previous session keys are wiped first. The caller retains ownership
+     * of [newMasterKey] and must wipe its own copy.
      */
-    fun initializeSession(password: String, salt: ByteArray): ByteArray {
-        AppLog.d(TAG) { "Initializing session - deriving master key" }
-        val startTime = System.currentTimeMillis()
-
-        // PBKDF2 key derivation (slow but secure)
-        val spec = PBEKeySpec(password.toCharArray(), salt, PBKDF2_ITERATIONS, KEY_SIZE_BITS)
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val derivedKey = factory.generateSecret(spec).encoded
-
-        // Store master key for session
-        masterKey = derivedKey.copyOf()
-
-        // Pre-derive the wallet encryption key using HKDF
-        walletEncryptionKey = hkdfDerive(derivedKey, "wallet-encryption".toByteArray())
-
+    fun initializeSessionWithMasterKey(newMasterKey: ByteArray) {
+        synchronized(lock) {
+            masterKey?.fill(0)
+            walletEncryptionKey?.fill(0)
+            masterKey = newMasterKey.copyOf()
+            walletEncryptionKey = KeyDerivation.deriveWalletEncryptionKey(newMasterKey)
+        }
         _isSessionActive.value = true
-
-        val duration = System.currentTimeMillis() - startTime
-        AppLog.d(TAG) { "Session initialized in ${duration}ms" }
-
-        return derivedKey
+        AppLog.d(TAG) { "Session initialized" }
     }
 
     /**
-     * Gets the wallet encryption key for encrypting/decrypting wallet data.
-     * This is instant (<1ms) as the key is pre-derived at login.
+     * Gets a copy of the wallet encryption key. Caller must wipe it after use.
      *
      * @throws IllegalStateException if session is not active
      */
-    fun getWalletEncryptionKey(): ByteArray {
-        check(_isSessionActive.value && walletEncryptionKey != null) {
-            "Session not active. Call initializeSession() first."
-        }
-        return walletEncryptionKey!!.copyOf()
+    fun getWalletEncryptionKey(): ByteArray = synchronized(lock) {
+        val key = walletEncryptionKey
+        check(key != null) { "Session not active. Call initializeSessionWithMasterKey() first." }
+        key.copyOf()
+    }
+
+    /**
+     * Constant-time check whether [candidate] equals the active session's
+     * wallet encryption key. Used by password change to decide whether the
+     * changed vault is the one the current session belongs to.
+     */
+    fun isCurrentEncryptionKey(candidate: ByteArray): Boolean = synchronized(lock) {
+        val key = walletEncryptionKey ?: return false
+        MessageDigest.isEqual(key, candidate)
     }
 
     /**
@@ -109,15 +94,7 @@ class SessionKeyManager private constructor() {
     fun encrypt(plaintext: ByteArray): ByteArray {
         val key = getWalletEncryptionKey()
         return try {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            val secretKey = SecretKeySpec(key, "AES")
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-
-            val iv = cipher.iv
-            val ciphertext = cipher.doFinal(plaintext)
-
-            // Combine: IV + ciphertext
-            iv + ciphertext
+            KeyDerivation.encryptAesGcm(plaintext, key)
         } finally {
             key.fill(0)
         }
@@ -132,15 +109,7 @@ class SessionKeyManager private constructor() {
     fun decrypt(encrypted: ByteArray): ByteArray {
         val key = getWalletEncryptionKey()
         return try {
-            val iv = encrypted.copyOfRange(0, GCM_IV_SIZE)
-            val ciphertext = encrypted.copyOfRange(GCM_IV_SIZE, encrypted.size)
-
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            val secretKey = SecretKeySpec(key, "AES")
-            val gcmSpec = GCMParameterSpec(GCM_TAG_BITS, iv)
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
-
-            cipher.doFinal(ciphertext)
+            KeyDerivation.decryptAesGcm(encrypted, key)
         } finally {
             key.fill(0)
         }
@@ -152,47 +121,13 @@ class SessionKeyManager private constructor() {
      */
     fun clearSession() {
         AppLog.d(TAG) { "Clearing session - wiping all keys" }
-
-        masterKey?.fill(0)
-        masterKey = null
-
-        walletEncryptionKey?.fill(0)
-        walletEncryptionKey = null
-
         _isSessionActive.value = false
-    }
-
-    /**
-     * HKDF-SHA256 key derivation.
-     * Derives a new key from the master key for a specific purpose.
-     *
-     * This is a simplified HKDF implementation using HMAC-SHA256:
-     * - Extract: HMAC(salt, input key material)
-     * - Expand: HMAC(PRK, info || 0x01)
-     *
-     * @param inputKey Master key material
-     * @param info Context/purpose string (e.g., "wallet-encryption")
-     * @return Derived key (32 bytes)
-     */
-    private fun hkdfDerive(inputKey: ByteArray, info: ByteArray): ByteArray {
-        // HKDF-Extract: Use a zero salt (acceptable when input is already strong)
-        val salt = ByteArray(32) // Zero salt
-        val prk = hmacSha256(salt, inputKey)
-
-        // HKDF-Expand: Derive output key
-        val okm = hmacSha256(prk, info + byteArrayOf(0x01))
-
-        prk.fill(0) // Wipe intermediate key
-        return okm
-    }
-
-    /**
-     * HMAC-SHA256 computation
-     */
-    private fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(key, "HmacSHA256"))
-        return mac.doFinal(data)
+        synchronized(lock) {
+            masterKey?.fill(0)
+            masterKey = null
+            walletEncryptionKey?.fill(0)
+            walletEncryptionKey = null
+        }
     }
 
     /**

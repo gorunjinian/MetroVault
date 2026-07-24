@@ -228,7 +228,7 @@ The device is ready. Open MetroVault:
   <img src="../fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" alt="MetroVault home screen with wallets" width="250">
 </p>
 
-1. **Set your master password.** Minimum 8 characters, but use a long, strong one — it derives the key that encrypts everything (PBKDF2, 210,000 iterations). There is **no password recovery** by design; if you forget it, only your mnemonic backups can restore your wallets.
+1. **Set your master password.** Minimum 8 characters, but use a long, strong one — it derives the key that encrypts everything (PBKDF2, 600,000 iterations). There is **no password recovery** by design; if you forget it, only your mnemonic backups can restore your wallets.
 2. **Create or import a wallet.** See [SEED_GENERATION.md](./SEED_GENERATION.md) for exactly how seeds are generated and stored. Write the mnemonic down on paper (never digitally) and verify your backup.
 3. **Export the XPUB** to your online watch-only wallet (Sparrow, BlueWallet, Electrum) via QR code, and you're ready for the signing workflow described in [How It Works](../README.md#-how-it-works).
 

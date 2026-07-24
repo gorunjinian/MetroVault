@@ -40,6 +40,7 @@ import com.gorunjinian.metrovault.feature.wallet.list.WalletsListContent
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 
 enum class BottomNavTab {
@@ -47,7 +48,6 @@ enum class BottomNavTab {
 }
 
 @SuppressLint("LocalContextResourcesRead")
-@Suppress("UNUSED_PARAMETER", "AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -234,7 +234,7 @@ fun HomeScreen(
                     
                     LaunchedEffect(isLongPressing) {
                         if (isLongPressing) {
-                            delay(5000L) // 5 seconds
+                            delay(5000L.milliseconds) // 5 seconds
                             if (isLongPressing) {
                                 view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                 onWhitePaper()
@@ -475,7 +475,7 @@ fun HomeScreen(
                     
                     LaunchedEffect(isLockLongPressing) {
                         if (isLockLongPressing) {
-                            delay(5000L) // 5 seconds
+                            delay(5000L.milliseconds) // 5 seconds
                             if (isLockLongPressing) {
                                 view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                 quoteTriggered = true

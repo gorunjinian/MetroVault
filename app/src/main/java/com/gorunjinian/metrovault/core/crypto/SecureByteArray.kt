@@ -45,14 +45,16 @@ class SecureByteArray(size: Int) : Closeable {
          */
         inline fun <R> use(size: Int, block: (SecureByteArray) -> R): R {
             val secure = SecureByteArray(size)
-            return try {
+            return secure.use { secure ->
                 block(secure)
-            } finally {
-                secure.close()
             }
         }
     }
 
+    // Guards data/closed: close() can race reads from other threads (e.g. an
+    // emergency wipe clearing the seed cache while a signing flow reads a seed).
+    // Without the lock a reader could observe a partially-zeroed buffer.
+    private val stateLock = Any()
     private var data: ByteArray? = ByteArray(size)
     private var closed = false
 
@@ -80,9 +82,11 @@ class SecureByteArray(size: Int) : Closeable {
      * @throws IndexOutOfBoundsException if offsets/length are invalid
      */
     fun copyFrom(source: ByteArray, sourceOffset: Int = 0, destOffset: Int = 0, length: Int = source.size) {
-        checkNotClosed()
-        val dest = data ?: throw IllegalStateException("Data has been cleared")
-        System.arraycopy(source, sourceOffset, dest, destOffset, length)
+        synchronized(stateLock) {
+            checkNotClosed()
+            val dest = data ?: throw IllegalStateException("Data has been cleared")
+            System.arraycopy(source, sourceOffset, dest, destOffset, length)
+        }
     }
 
     /**
@@ -96,9 +100,11 @@ class SecureByteArray(size: Int) : Closeable {
      * @throws IllegalStateException if this array is closed
      */
     fun copyTo(dest: ByteArray, sourceOffset: Int = 0, destOffset: Int = 0, length: Int = size()) {
-        checkNotClosed()
-        val source = data ?: throw IllegalStateException("Data has been cleared")
-        System.arraycopy(source, sourceOffset, dest, destOffset, length)
+        synchronized(stateLock) {
+            checkNotClosed()
+            val source = data ?: throw IllegalStateException("Data has been cleared")
+            System.arraycopy(source, sourceOffset, dest, destOffset, length)
+        }
     }
 
     /**
@@ -112,33 +118,41 @@ class SecureByteArray(size: Int) : Closeable {
      * @return String representation of the data
      */
     fun asString(charset: java.nio.charset.Charset = Charsets.UTF_8): String {
-        checkNotClosed()
-        val source = data ?: throw IllegalStateException("Data has been cleared")
-        return String(source, charset)
+        synchronized(stateLock) {
+            checkNotClosed()
+            val source = data ?: throw IllegalStateException("Data has been cleared")
+            return String(source, charset)
+        }
     }
 
     /**
      * Gets a byte at the specified index.
      */
     operator fun get(index: Int): Byte {
-        checkNotClosed()
-        return data?.get(index) ?: throw IllegalStateException("Data has been cleared")
+        synchronized(stateLock) {
+            checkNotClosed()
+            return data?.get(index) ?: throw IllegalStateException("Data has been cleared")
+        }
     }
 
     /**
      * Sets a byte at the specified index.
      */
     operator fun set(index: Int, value: Byte) {
-        checkNotClosed()
-        data?.set(index, value) ?: throw IllegalStateException("Data has been cleared")
+        synchronized(stateLock) {
+            checkNotClosed()
+            data?.set(index, value) ?: throw IllegalStateException("Data has been cleared")
+        }
     }
 
     /**
      * Gets the size of the array.
      */
     fun size(): Int {
-        checkNotClosed()
-        return data?.size ?: 0
+        synchronized(stateLock) {
+            checkNotClosed()
+            return data?.size ?: 0
+        }
     }
 
     // ==================== Unsafe Access (Deprecated) ====================
@@ -163,22 +177,26 @@ class SecureByteArray(size: Int) : Closeable {
         replaceWith = ReplaceWith("copyFrom(source) or copyTo(dest) or asString()")
     )
     fun get(): ByteArray {
-        checkNotClosed()
-        return data ?: throw IllegalStateException("Data has been cleared")
+        synchronized(stateLock) {
+            checkNotClosed()
+            return data ?: throw IllegalStateException("Data has been cleared")
+        }
     }
 
     /**
      * Zeros the memory and marks as closed
      */
     override fun close() {
-        if (!closed) {
-            data?.let { Arrays.fill(it, 0.toByte()) }
-            data = null
-            closed = true
-            // Clean up the Cleaner registration on Android 13+
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                @Suppress("UNCHECKED_CAST")
-                (cleanable as? java.lang.ref.Cleaner.Cleanable)?.clean()
+        synchronized(stateLock) {
+            if (!closed) {
+                data?.let { Arrays.fill(it, 0.toByte()) }
+                data = null
+                closed = true
+                // Clean up the Cleaner registration on Android 13+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    @Suppress("UNCHECKED_CAST")
+                    (cleanable as? java.lang.ref.Cleaner.Cleanable)?.clean()
+                }
             }
         }
     }
@@ -194,12 +212,14 @@ class SecureByteArray(size: Int) : Closeable {
     protected fun finalize() {
         // Only use finalize() on older Android versions
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            if (!closed) {
-                // Log warning to help developers identify missing close() calls
-                AppLog.w(TAG) { "SecureByteArray cleaned up by finalize() - call close() explicitly for better security" }
-                data?.let { Arrays.fill(it, 0.toByte()) }
-                data = null
-                closed = true
+            synchronized(stateLock) {
+                if (!closed) {
+                    // Log warning to help developers identify missing close() calls
+                    AppLog.w(TAG) { "SecureByteArray cleaned up by finalize() - call close() explicitly for better security" }
+                    data?.let { Arrays.fill(it, 0.toByte()) }
+                    data = null
+                    closed = true
+                }
             }
         }
     }

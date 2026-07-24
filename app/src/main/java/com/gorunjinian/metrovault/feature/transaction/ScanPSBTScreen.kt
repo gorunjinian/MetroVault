@@ -35,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * PSBT Scanning and Signing Screen with animated QR support.
@@ -44,7 +45,6 @@ import kotlinx.coroutines.withContext
  * - Animated QR codes (large PSBTs with multiple frames)
  * - Both "p1/10 data" and "ur:bytes/1-10/data" formats
  */
-@Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @SuppressLint("DefaultLocale")
@@ -85,7 +85,8 @@ fun ScanPSBTScreen(
     var canFinalize by remember { mutableStateOf(false) }
     var isFinalized by remember { mutableStateOf(false) }
     var finalizedTxHex by remember { mutableStateOf<String?>(null) }
-    
+
+    val wallets by wallet.wallets.collectAsState()
     val scope = rememberCoroutineScope()
 
     // ==================== Permission ====================
@@ -136,7 +137,7 @@ fun ScanPSBTScreen(
         signedQRResult?.let { result ->
             if (result.isAnimated && result.frames.size > 1 && !isQRPaused) {
                 while (true) {
-                    delay(result.recommendedFrameDelayMs)
+                    delay(result.recommendedFrameDelayMs.milliseconds)
                     if (!isQRPaused) {
                         currentDisplayFrame = (currentDisplayFrame + 1) % result.frames.size
                     }
@@ -426,7 +427,7 @@ fun ScanPSBTScreen(
                     // Surface an early notice for an unverified multisig wallet (the authoritative
                     // block lives in Wallet.signPsbt; this just disables Sign and explains why).
                     val activeMultisigMeta = wallet.getActiveWalletId()?.let { id ->
-                        wallet.wallets.value.find { it.id == id }
+                        wallets.find { it.id == id }
                     }?.takeIf { it.isMultisig }
                     val signBlockedReason = if (activeMultisigMeta != null && !wallet.isMultisigRegistered(activeMultisigMeta)) {
                         "This multisig wallet isn't verified yet. Register it from Wallet Details before signing."
