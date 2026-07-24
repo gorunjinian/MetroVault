@@ -1,12 +1,9 @@
 package com.gorunjinian.metrovault.feature.home
 
 import android.annotation.SuppressLint
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -296,14 +293,7 @@ fun HomeScreen(
                 key = { it },
                 beyondViewportPageCount = 1,
                 // Disable swiping in edit mode to prevent accidental page changes
-                userScrollEnabled = !isEditMode,
-                flingBehavior = PagerDefaults.flingBehavior(
-                    state = pagerState,
-                    snapAnimationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    )
-                )
+                userScrollEnabled = !isEditMode
             ) { page ->
                 // Add bottom padding within each page content for scrollable area clearance
                 Box(
