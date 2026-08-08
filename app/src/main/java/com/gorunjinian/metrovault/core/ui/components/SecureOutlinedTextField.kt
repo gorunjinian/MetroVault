@@ -21,79 +21,12 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.util.SecurityUtils
-
-/**
- * A secure password field with an explicit, accessible show/hide control.
- *
- * Passwords remain hidden by default and visibility is local to this field. The state is
- * deliberately not saveable, so a recreated screen always returns to the hidden state.
- */
-@Composable
-fun SecurePasswordTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    label: @Composable (() -> Unit)? = null,
-    placeholder: @Composable (() -> Unit)? = null,
-    leadingIcon: @Composable (() -> Unit)? = null,
-    supportingText: @Composable (() -> Unit)? = null,
-    isError: Boolean = false,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    keyboardActions: KeyboardActions = KeyboardActions.Default,
-    singleLine: Boolean = true,
-    enabled: Boolean = true,
-    readOnly: Boolean = false,
-    colors: TextFieldColors = OutlinedTextFieldDefaults.colors()
-) {
-    var isPasswordVisible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(value.isEmpty()) {
-        if (value.isEmpty()) isPasswordVisible = false
-    }
-
-    SecureOutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier,
-        label = label,
-        placeholder = placeholder,
-        leadingIcon = leadingIcon,
-        trailingIcon = {
-            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
-                Icon(
-                    painter = painterResource(
-                        if (isPasswordVisible) {
-                            R.drawable.ic_visibility_off
-                        } else {
-                            R.drawable.ic_visibility
-                        }
-                    ),
-                    contentDescription = if (isPasswordVisible) "Hide password" else "Show password"
-                )
-            }
-        },
-        supportingText = supportingText,
-        isError = isError,
-        visualTransformation = if (isPasswordVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
-        keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions,
-        singleLine = singleLine,
-        enabled = enabled,
-        readOnly = readOnly,
-        isPasswordField = true,
-        colors = colors
-    )
-}
 
 /**
  * A wrapper around OutlinedTextField that completely disables:
@@ -204,6 +137,77 @@ fun SecureOutlinedTextField(
         minLines = minLines,
         enabled = enabled,
         readOnly = readOnly,
+        colors = colors
+    )
+}
+
+/**
+ * A secure password field with an explicit, accessible show/hide control.
+ *
+ * Passwords remain hidden by default and visibility is local to this field. The state is
+ * deliberately not saveable, so a recreated screen always returns to the hidden state.
+ * Clearing the field also drops back to hidden.
+ */
+@Composable
+fun SecurePasswordTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: @Composable (() -> Unit)? = null,
+    placeholder: @Composable (() -> Unit)? = null,
+    leadingIcon: @Composable (() -> Unit)? = null,
+    supportingText: @Composable (() -> Unit)? = null,
+    isError: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    singleLine: Boolean = true,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    colors: TextFieldColors = OutlinedTextFieldDefaults.colors()
+) {
+    var isPasswordVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(value.isEmpty()) {
+        if (value.isEmpty()) isPasswordVisible = false
+    }
+
+    SecureOutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        label = label,
+        placeholder = placeholder,
+        leadingIcon = leadingIcon,
+        trailingIcon = {
+            IconButton(
+                onClick = { isPasswordVisible = !isPasswordVisible },
+                enabled = enabled
+            ) {
+                Icon(
+                    painter = painterResource(
+                        if (isPasswordVisible) {
+                            R.drawable.ic_visibility_off
+                        } else {
+                            R.drawable.ic_visibility
+                        }
+                    ),
+                    contentDescription = if (isPasswordVisible) "Hide password" else "Show password"
+                )
+            }
+        },
+        supportingText = supportingText,
+        isError = isError,
+        visualTransformation = if (isPasswordVisible) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        singleLine = singleLine,
+        enabled = enabled,
+        readOnly = readOnly,
+        isPasswordField = true,
         colors = colors
     )
 }
