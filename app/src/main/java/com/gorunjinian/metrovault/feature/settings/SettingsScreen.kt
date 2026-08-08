@@ -5,10 +5,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.core.ui.components.SecurePasswordTextField
 import com.gorunjinian.metrovault.core.ui.components.SettingsSectionCard
 
 /**
@@ -94,13 +93,11 @@ fun BiometricPasswordDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(message)
-                SecureOutlinedTextField(
+                SecurePasswordTextField(
                     value = password,
                     onValueChange = { password = it },
                     label = { Text("Password") },
-                    visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
-                    isPasswordField = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

@@ -19,7 +19,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,7 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.crypto.BiometricAuthManager
-import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.core.ui.components.SecurePasswordTextField
 import com.gorunjinian.metrovault.core.util.findActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -206,16 +205,14 @@ fun UnlockScreen(
 
                     if (!uiState.isAuthenticating) {
                         // Password field with shake animation
-                        SecureOutlinedTextField(
+                        SecurePasswordTextField(
                             value = uiState.password,
                             onValueChange = { viewModel.updatePassword(it) },
                             label = { Text("Password") },
-                            visualTransformation = PasswordVisualTransformation(),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
                             singleLine = true,
-                            isPasswordField = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(
                                 onDone = {

@@ -6,14 +6,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.core.ui.components.SecurePasswordTextField
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
@@ -65,38 +64,32 @@ fun ChangePasswordDialog(
                     }
                 } else {
                     // Input state
-                    SecureOutlinedTextField(
+                    SecurePasswordTextField(
                         value = oldPassword,
                         onValueChange = { oldPassword = it },
                         label = { Text("Current Password") },
-                        visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
-                        isPasswordField = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
                             onNext = { newPasswordFocusRequester.requestFocus() }
                         )
                     )
-                    SecureOutlinedTextField(
+                    SecurePasswordTextField(
                         value = newPassword,
                         onValueChange = { newPassword = it },
                         label = { Text("New Password") },
-                        visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
-                        isPasswordField = true,
                         modifier = Modifier.focusRequester(newPasswordFocusRequester),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
                             onNext = { confirmPasswordFocusRequester.requestFocus() }
                         )
                     )
-                    SecureOutlinedTextField(
+                    SecurePasswordTextField(
                         value = confirmPassword,
                         onValueChange = { confirmPassword = it },
                         label = { Text("Confirm New Password") },
-                        visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
-                        isPasswordField = true,
                         modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(
@@ -160,26 +153,22 @@ fun AddDecoyPasswordDialog(
             Column {
                 Text("This password will open a separate, empty vault. Use it to protect your main wallets under duress.")
                 Spacer(modifier = Modifier.height(16.dp))
-                SecureOutlinedTextField(
+                SecurePasswordTextField(
                     value = password,
                     onValueChange = { password = it },
                     label = { Text("Decoy Password") },
-                    visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
-                    isPasswordField = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(
                         onNext = { confirmPasswordFocusRequester.requestFocus() }
                     )
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                SecureOutlinedTextField(
+                SecurePasswordTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
                     label = { Text("Confirm Password") },
-                    visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
-                    isPasswordField = true,
                     modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(
@@ -380,13 +369,11 @@ fun ConfirmPasswordDialog(
                     }
                 } else {
                     Text("Enter password to continue")
-                    SecureOutlinedTextField(
+                    SecurePasswordTextField(
                         value = password,
                         onValueChange = { password = it },
                         label = { Text("Password") },
-                        visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
-                        isPasswordField = true,
                         isError = errorMessage.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
