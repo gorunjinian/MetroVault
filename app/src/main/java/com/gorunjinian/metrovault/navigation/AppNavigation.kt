@@ -49,6 +49,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.DescriptorsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportMultiSigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.VerifyMultisigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
+import com.gorunjinian.metrovault.feature.wallet.details.CoordinatorExportScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SPAddressScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ScriptTypeScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SilentPaymentExportScreen
@@ -92,6 +93,7 @@ sealed class Screen(val route: String) {
     }
     object ScanPSBT : Screen("scan_psbt")
     object ExportOptions : Screen("export_options")
+    object CoordinatorExport : Screen("coordinator_export")
     object ExportMultiSig : Screen("export_multisig")
     object VerifyMultisig : Screen("verify_multisig?walletId={walletId}") {
         fun createRoute(walletId: String): String =
@@ -458,11 +460,19 @@ fun AppNavigation(
                 userPreferencesRepository = userPreferencesRepository,
                 isStatelessWallet = wallet.hasStatelessWallet(),
                 onBack = { navController.navigateBackOr(Screen.Home) },
+                onExportCoordinator = { navController.navigate(Screen.CoordinatorExport.route) },
                 onViewAccountKeys = { navController.navigate(Screen.AccountKeys.route) },
                 onViewDescriptors = { navController.navigate(Screen.Descriptors.route) },
                 onViewRootKey = { navController.navigate(Screen.RootKey.route) },
                 onViewSeedPhrase = { navController.navigate(Screen.SeedPhrase.route) },
                 onViewSilentPayments = { navController.navigate(Screen.SilentPaymentExport.route) }
+            )
+        }
+
+        composable(Screen.CoordinatorExport.route) {
+            CoordinatorExportScreen(
+                wallet = wallet,
+                onBack = { navController.navigateBackOr(Screen.ExportOptions) }
             )
         }
 

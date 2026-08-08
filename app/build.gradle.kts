@@ -181,6 +181,7 @@ dependencies {
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.secp256k1.jvm.test)
+    testImplementation(libs.json)
     androidTestImplementation(libs.junit.ext)
     androidTestImplementation(libs.espresso.core)
 }

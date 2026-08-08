@@ -14,6 +14,7 @@ import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletState
+import com.gorunjinian.metrovault.data.model.CoordinatorExportResult
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import com.gorunjinian.metrovault.data.model.PsbtDetails
@@ -21,6 +22,7 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import com.gorunjinian.metrovault.domain.service.bitcoin.KeyEncodingService
+import com.gorunjinian.metrovault.domain.service.bitcoin.CoordinatorExportService
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigChangeValidator
@@ -72,6 +74,7 @@ class   Wallet(context: Context) {
     private val silentPaymentManager = SilentPaymentManager()
     private val signingService = WalletSigningService(secureStorage, bitcoinService)
     private val keyEncodingService = KeyEncodingService()
+    private val coordinatorExportService = CoordinatorExportService(keyEncodingService, AddressService())
 
     private val walletStates = ConcurrentHashMap<String, WalletState>()
     private val _walletMetadataList = mutableListOf<WalletMetadata>()
@@ -1015,6 +1018,43 @@ class   Wallet(context: Context) {
         // Fallback to metadata for multisig wallets
         val metadata = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
         return metadata?.name ?: "No Wallet"
+    }
+
+    /**
+     * Builds a watch-only coordinator export from the active account public key. No mnemonic,
+     * seed bytes, private descriptor, or extended private key is passed into the export service.
+     */
+    fun getActiveCoordinatorExport(): CoordinatorExportResult {
+        if (isActiveMultisig()) {
+            return CoordinatorExportResult.Unsupported(
+                "Coordinator export currently supports single-signature wallets only. Use the existing multisig export instead."
+            )
+        }
+        if (isActiveSilentPayment()) {
+            return CoordinatorExportResult.Unsupported(
+                "Silent Payments wallets are not supported by this coordinator export. Use the existing Silent Payments export instead."
+            )
+        }
+        val state = getActiveWalletState()
+            ?: return CoordinatorExportResult.Error("The active wallet is not loaded.")
+        val accountPublicKey = state.getAccountPublicKey()
+            ?: return CoordinatorExportResult.Error("The active account public key is unavailable.")
+        return try {
+            CoordinatorExportResult.Available(
+                coordinatorExportService.buildExport(
+                    walletName = state.name,
+                    masterFingerprint = state.fingerprint,
+                    derivationPath = state.derivationPath,
+                    accountPublicKey = accountPublicKey
+                )
+            )
+        } catch (_: IllegalArgumentException) {
+            CoordinatorExportResult.Unsupported(
+                "This wallet type or derivation path is not supported. Supported single-signature paths are BIP44, BIP49, BIP84, and BIP86."
+            )
+        } catch (_: Exception) {
+            CoordinatorExportResult.Error("Could not build a safe public coordinator export.")
+        }
     }
 
     fun getActiveWalletDerivationPath(): String {

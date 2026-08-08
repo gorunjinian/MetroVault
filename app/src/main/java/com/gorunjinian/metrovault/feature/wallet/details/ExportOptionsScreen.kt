@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.ActionCard
@@ -41,6 +42,7 @@ fun ExportOptionsScreen(
     userPreferencesRepository: UserPreferencesRepository,
     isStatelessWallet: Boolean = false,
     onBack: () -> Unit,
+    onExportCoordinator: () -> Unit,
     onViewAccountKeys: () -> Unit,
     onViewDescriptors: () -> Unit,
     onViewRootKey: () -> Unit,
@@ -87,6 +89,49 @@ fun ExportOptionsScreen(
                 style = MaterialTheme.typography.headlineSmall
             )
 
+            Text(
+                text = "Export to another wallet",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            ElevatedCard(
+                onClick = onExportCoordinator,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_qr_code_scanner),
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Export to wallet coordinator", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Import this wallet into Nunchuk or another watch-only coordinator",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                "Public data only — cannot spend funds",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+
             // Cards 1 & 2: View Account Extended Keys and View Output Descriptors.
             // Hidden for SP-flagged wallets — BIP-352 wallets have no meaningful xpub or wpkh/tr
             // descriptor; the SP-equivalent export is the spscan/descriptor inside the Silent
@@ -116,6 +161,12 @@ fun ExportOptionsScreen(
                     onClick = onViewSilentPayments
                 )
             }
+
+            Text(
+                text = "Sensitive recovery material",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error
+            )
 
             // Card 3: View Root Key
             ActionCard(
@@ -226,5 +277,54 @@ fun ExportOptionsScreen(
                 pendingTarget = null
             }
         )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 412, heightDp = 915)
+@Composable
+private fun ExportOptionsPreview() {
+    MaterialTheme {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text("Export Options", style = MaterialTheme.typography.headlineSmall)
+            Text("Export to another wallet", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            PreviewExportCard(
+                "Export to wallet coordinator",
+                "Import this wallet into Nunchuk or another watch-only coordinator",
+                "Public data only — cannot spend funds"
+            )
+            PreviewExportCard(
+                "Advanced: Account Extended Keys",
+                "Inspect raw public keys or password-protected private keys"
+            )
+            PreviewExportCard(
+                "Advanced: Output Descriptors",
+                "Inspect watch-only or password-protected spending descriptors"
+            )
+            Text("Sensitive recovery material", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+            PreviewExportCard("View BIP32 Root Key", "Show your wallet's main BIP32 root key")
+            PreviewExportCard("View Seed Phrase", "Show your recovery seed phrase or SeedQR")
+        }
+    }
+}
+
+@Composable
+private fun PreviewExportCard(title: String, description: String, badge: String? = null) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            badge?.let {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(it, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
     }
 }

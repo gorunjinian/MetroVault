@@ -32,6 +32,12 @@ class KeyEncodingService {
         return accountPublicKey.encode(prefix)
     }
 
+    /** Encodes an account public key using standard BIP32 xpub/tpub version bytes. */
+    fun getStandardAccountXpub(
+        accountPublicKey: DeterministicWallet.ExtendedPublicKey,
+        isTestnet: Boolean = false
+    ): String = encodeBip32Public(accountPublicKey, isTestnet)
+
     /**
      * Gets the extended public key for a specific account number.
      * Handles account derivation and encoding in one step.
