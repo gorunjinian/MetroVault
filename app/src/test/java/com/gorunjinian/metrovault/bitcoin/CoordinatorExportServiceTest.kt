@@ -21,7 +21,9 @@ class CoordinatorExportServiceTest {
         val expectedXpub = "xpub6DBqChRqCJXqVDNaczA3SfbP2WodPn5HQAdH2BCZZMrA1SsTfc7NH5Q7zNAVJqSWj8fTpt2DefyFy9tyFGWuQseDLArFS95k7re8rGrtGeD"
         val expectedQr = "[3CA02B0D/84h/0h/0h]$expectedXpub/<0;1>/*"
 
-        val normalized = CoordinatorExportService.normalizeToStandardXpub(zpub, isTestnet = false)
+        // The zpub and the xpub are the same account key under different version bytes.
+        val (_, decoded) = DeterministicWallet.ExtendedPublicKey.decode(zpub)
+        val normalized = decoded.encode(DeterministicWallet.xpub)
         assertEquals(expectedXpub, normalized)
         assertEquals(
             expectedQr,
@@ -44,7 +46,7 @@ class CoordinatorExportServiceTest {
         assertTrue(test.standardAccountXpub.startsWith("tpub"))
         assertEquals(17, test.accountNumber)
         assertEquals("Bitcoin testnet", test.networkName)
-        assertTrue(test.nunchukJson.contains("\"chain\": \"XTN\""))
+        assertTrue(test.coldcardJson.contains("\"chain\": \"XTN\""))
     }
 
     @Test
@@ -57,22 +59,31 @@ class CoordinatorExportServiceTest {
         )
         vectors.forEach { (path, section, name) ->
             val exported = export(path)
-            val json = JSONObject(exported.nunchukJson)
+            val json = JSONObject(exported.coldcardJson)
             assertEquals(name, json.getJSONObject(section).getString("name"))
-            assertEquals(path.replace("'", "h"), json.getJSONObject(section).getString("deriv"))
+            // Coldcard writes hardened markers as apostrophes in `deriv`, unlike the descriptor.
+            assertEquals(path, json.getJSONObject(section).getString("deriv"))
         }
     }
 
     @Test
     fun jsonRoundTripsAndContainsPublicDescriptorAndFirstAddress() {
         val exported = export("m/49'/0'/3'")
-        val parsed = JSONObject(exported.nunchukJson)
+        val parsed = JSONObject(exported.coldcardJson)
         val section = parsed.getJSONObject("bip49")
 
         assertEquals("BTC", parsed.getString("chain"))
         assertEquals(exported.masterFingerprint, parsed.getString("xfp"))
         assertEquals(3, parsed.getInt("account"))
+        assertEquals("m/49'/0'/3'", section.getString("deriv"))
         assertEquals(exported.standardAccountXpub, section.getString("xpub"))
+
+        // The section xfp is the account node's own fingerprint, not the master repeated. It is
+        // derivable from the exported xpub, and must not collide with the top-level value.
+        val (_, accountKey) = DeterministicWallet.ExtendedPublicKey.decode(exported.standardAccountXpub)
+        val expectedAccountXfp = accountKey.fingerprint().toString(16).padStart(8, '0').uppercase()
+        assertEquals(expectedAccountXfp, section.getString("xfp"))
+        assertNotEquals(parsed.getString("xfp"), section.getString("xfp"))
         assertEquals(exported.slip132AccountXpub, section.getString("_pub"))
         assertEquals(exported.descriptor, section.getString("desc"))
         assertEquals(exported.firstReceiveAddress, section.getString("first"))
@@ -112,8 +123,7 @@ class CoordinatorExportServiceTest {
         val master = DeterministicWallet.generate(MnemonicCode.toSeed(mnemonic.split(" "), ""))
         val accountXprv = master.derivePrivateKey("m/84'/0'/0'").encode(DeterministicWallet.xprv)
 
-        assertFails { CoordinatorExportService.normalizeToStandardXpub(accountXprv, isTestnet = false) }
-        assertFails {
+        assertRejects {
             CoordinatorExportService.buildNunchukSignerRecord(
                 "3CA02B0D",
                 "m/84'/0'/0'",
@@ -125,12 +135,12 @@ class CoordinatorExportServiceTest {
     @Test
     fun rejectsMalformedFingerprintPathAndKey() {
         val valid = export("m/84'/0'/0'")
-        assertFails { CoordinatorExportService.buildNunchukSignerRecord("1234", "m/84'/0'/0'", valid.standardAccountXpub) }
-        assertFails { CoordinatorExportService.buildNunchukSignerRecord("3CA02B0D", "m/352'/0'/0'", valid.standardAccountXpub) }
-        assertFails { CoordinatorExportService.buildNunchukSignerRecord("3CA02B0D", "m/84'/0'/0'", "xpub-not-a-key") }
-        assertFails { CoordinatorExportService.buildNunchukSignerRecord("3CA02B0D", "m/84'/1'/0'", valid.standardAccountXpub) }
-        assertFails { CoordinatorExportService.normalizeToStandardXpub(valid.standardAccountXpub, isTestnet = true) }
-        assertFails { CoordinatorExportService.parseAccountPath("m/84'/0'/2147483648'") }
+        assertRejects { CoordinatorExportService.buildNunchukSignerRecord("1234", "m/84'/0'/0'", valid.standardAccountXpub) }
+        assertRejects { CoordinatorExportService.buildNunchukSignerRecord("3CA02B0D", "m/352'/0'/0'", valid.standardAccountXpub) }
+        assertRejects { CoordinatorExportService.buildNunchukSignerRecord("3CA02B0D", "m/84'/0'/0'", "xpub-not-a-key") }
+        assertRejects { CoordinatorExportService.buildNunchukSignerRecord("3CA02B0D", "m/84'/1'/0'", valid.standardAccountXpub) }
+        assertRejects { CoordinatorExportService.parseAccountPath("m/84'/0'/2147483648'") }
+        assertRejects { CoordinatorExportService.parseAccountPath("m/84'/2'/0'") }
     }
 
     @Test
@@ -152,7 +162,7 @@ class CoordinatorExportServiceTest {
         service.buildExport("Test Wallet", fingerprint, path, account)
     }
 
-    private fun assertFails(block: () -> Unit) {
+    private fun assertRejects(block: () -> Unit) {
         try {
             block()
             fail("Expected IllegalArgumentException")

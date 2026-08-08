@@ -20,6 +20,13 @@ class CoordinatorExportService(
         val scriptType: ScriptType
     ) {
         val isTestnet: Boolean get() = coinType == 1
+
+        /**
+         * The path with apostrophe hardened markers (`m/84'/0'/0'`). Coldcard writes its `deriv`
+         * field and its multisig `Derivation:` lines this way, so the Coldcard-shaped JSON uses
+         * this form while descriptors keep the `h` form their checksum was computed over.
+         */
+        val apostropheForm: String get() = normalized.replace('h', '\'')
     }
 
     fun buildExport(
@@ -53,8 +60,9 @@ class CoordinatorExportService(
         ) { "Could not derive the first receiving address" }.address
 
         val signerRecord = buildNunchukSignerRecord(fingerprint, path.normalized, standardXpub)
-        val json = buildNunchukJson(
+        val json = buildColdcardJson(
             fingerprint = fingerprint,
+            accountFingerprint = formatFingerprint(accountPublicKey.fingerprint()),
             path = path,
             standardXpub = standardXpub,
             slip132Xpub = slip132Xpub,
@@ -75,12 +83,14 @@ class CoordinatorExportService(
             descriptor = descriptor,
             firstReceiveAddress = firstAddress,
             nunchukSignerRecord = signerRecord,
-            nunchukJson = json
+            coldcardJson = json
         )
     }
 
     companion object {
-        private val ACCOUNT_PATH = Regex("^m/(44|49|84|86)(['hH])/(0|1)(['hH])/(0|[1-9][0-9]*)(['hH])$")
+        // Groups: 1 = purpose, 2 = coin type, 3 = account. The hardened markers are matched but
+        // not captured — any of ' h H is accepted and normalized to h on the way out.
+        private val ACCOUNT_PATH = Regex("^m/(44|49|84|86)['hH]/([01])['hH]/(0|[1-9][0-9]*)['hH]$")
         private val FINGERPRINT = Regex("^[0-9a-fA-F]{8}$")
         private const val MAX_ACCOUNT = 0x7fffffffL
 
@@ -98,26 +108,12 @@ class CoordinatorExportService(
         }
 
         @JvmStatic
-        fun normalizeToStandardXpub(extendedPublicKey: String, isTestnet: Boolean): String {
-            val (prefix, decoded) = runCatching {
-                DeterministicWallet.ExtendedPublicKey.decode(extendedPublicKey)
-            }.getOrElse { throw IllegalArgumentException("Malformed extended public key") }
-            val allowedPrefixes = if (isTestnet) {
-                setOf(DeterministicWallet.tpub, DeterministicWallet.upub, DeterministicWallet.vpub)
-            } else {
-                setOf(DeterministicWallet.xpub, DeterministicWallet.ypub, DeterministicWallet.zpub)
-            }
-            require(prefix in allowedPrefixes) { "Extended public key does not match the selected network" }
-            return decoded.encode(if (isTestnet) DeterministicWallet.tpub else DeterministicWallet.xpub)
-        }
-
-        @JvmStatic
         fun parseAccountPath(path: String): AccountPath {
             val match = ACCOUNT_PATH.matchEntire(path)
                 ?: throw IllegalArgumentException("Expected a supported BIP44/49/84/86 account path")
             val purpose = match.groupValues[1].toInt()
-            val coinType = match.groupValues[3].toInt()
-            val accountLong = match.groupValues[5].toLongOrNull()
+            val coinType = match.groupValues[2].toInt()
+            val accountLong = match.groupValues[3].toLongOrNull()
                 ?: throw IllegalArgumentException("Malformed account number")
             require(accountLong <= MAX_ACCOUNT) { "Account number is outside the BIP32 range" }
             val account = accountLong.toInt()
@@ -135,6 +131,10 @@ class CoordinatorExportService(
             require(FINGERPRINT.matches(value)) { "Master fingerprint must be exactly eight hexadecimal characters" }
             return value.uppercase()
         }
+
+        /** Formats a BIP32 key fingerprint as eight uppercase hex digits, matching Coldcard. */
+        private fun formatFingerprint(value: Long): String =
+            value.toString(16).padStart(8, '0').uppercase()
 
         private fun validateAccountPublicKey(xpub: String, path: AccountPath) {
             val (prefix, decoded) = runCatching {
@@ -167,8 +167,24 @@ class CoordinatorExportService(
             require(Regex("#[a-z0-9]{8}$").containsMatchIn(descriptor)) { "Descriptor checksum is missing" }
         }
 
-        private fun buildNunchukJson(
+
+        /**
+         * Builds the Coldcard "Generic JSON" export for one account, the payload Sparrow reads
+         * under Airgapped Hardware Wallet → Coldcard.
+         *
+         * [fingerprint] is the wallet master fingerprint and appears at the top level, which is
+         * where coordinators take the keystore origin from. [accountFingerprint] is the account
+         * node's *own* fingerprint and appears inside the section, mirroring Coldcard, which
+         * derives it per node — a section value that merely repeated the master would carry no
+         * information. The origin of record stays the top-level value and the descriptor.
+         *
+         * Coldcard also emits a top-level `xpub` holding the master key at `m`. MetroVault omits
+         * it deliberately: it would let a recipient derive every other account and script type,
+         * far beyond the single account being exported, and no coordinator needs it to import.
+         */
+        private fun buildColdcardJson(
             fingerprint: String,
+            accountFingerprint: String,
             path: AccountPath,
             standardXpub: String,
             slip132Xpub: String,
@@ -177,17 +193,20 @@ class CoordinatorExportService(
         ): String {
             val section = "bip${path.purpose}"
             val fields = mutableListOf(
-                "      \"name\": \"${jsonEscape(sectionName(path.scriptType))}\"",
-                "      \"deriv\": \"${jsonEscape(path.normalized)}\"",
-                "      \"xpub\": \"${jsonEscape(standardXpub)}\"",
-                "      \"desc\": \"${jsonEscape(descriptor)}\""
+                "    \"name\": \"${jsonEscape(sectionName(path.scriptType))}\"",
+                "    \"xfp\": \"${jsonEscape(accountFingerprint)}\"",
+                "    \"deriv\": \"${jsonEscape(path.apostropheForm)}\"",
+                "    \"xpub\": \"${jsonEscape(standardXpub)}\"",
+                "    \"desc\": \"${jsonEscape(descriptor)}\""
             )
             if (slip132Xpub != standardXpub) {
-                fields += "      \"_pub\": \"${jsonEscape(slip132Xpub)}\""
+                fields += "    \"_pub\": \"${jsonEscape(slip132Xpub)}\""
             }
-            fields += "      \"first\": \"${jsonEscape(firstAddress)}\""
+            fields += "    \"first\": \"${jsonEscape(firstAddress)}\""
             return buildString {
                 appendLine("{")
+                // XTN is the Coldcard format's only testnet code. These keys are testnet4, which
+                // is indistinguishable from testnet3 here (coin type 1, tpub, tb1), so XTN holds.
                 appendLine("  \"chain\": \"${if (path.isTestnet) "XTN" else "BTC"}\",")
                 appendLine("  \"xfp\": \"$fingerprint\",")
                 appendLine("  \"account\": ${path.accountNumber},")
@@ -212,13 +231,18 @@ class CoordinatorExportService(
             ScriptType.P2TR -> "Taproot (BIP86)"
         }
 
+        /**
+         * Escapes a JSON string body. Deliberately *not* [org.json.JSONObject.quote]: that also
+         * escapes `/` as `\/`, which is legal JSON but is not what Coldcard emits, inflates the
+         * QR payload, and trips consumers that string-match instead of parsing. Derivation paths
+         * and descriptors are almost all slashes, so the difference is not academic.
+         */
         private fun jsonEscape(value: String): String = buildString(value.length) {
             value.forEach { char ->
                 when (char) {
                     '\\' -> append("\\\\")
                     '"' -> append("\\\"")
                     '\b' -> append("\\b")
-                    '\u000C' -> append("\\f")
                     '\n' -> append("\\n")
                     '\r' -> append("\\r")
                     '\t' -> append("\\t")

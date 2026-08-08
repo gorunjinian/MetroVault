@@ -472,6 +472,7 @@ fun AppNavigation(
         composable(Screen.CoordinatorExport.route) {
             CoordinatorExportScreen(
                 wallet = wallet,
+                userPreferencesRepository = userPreferencesRepository,
                 onBack = { navController.navigateBackOr(Screen.ExportOptions) }
             )
         }

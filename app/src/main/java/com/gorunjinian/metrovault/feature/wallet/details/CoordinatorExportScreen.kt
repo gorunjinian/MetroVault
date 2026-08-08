@@ -2,6 +2,7 @@ package com.gorunjinian.metrovault.feature.wallet.details
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,12 +14,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -26,25 +26,41 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.gorunjinian.metrovault.core.ui.components.CopyableValueCard
+import com.gorunjinian.metrovault.core.ui.components.InfoCard
+import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.core.ui.components.TapToCopyQRCard
 import com.gorunjinian.metrovault.data.model.CoordinatorExportData
 import com.gorunjinian.metrovault.data.model.CoordinatorExportResult
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/**
+ * Which coordinator QR is on screen. The two payloads are mutually exclusive so Sparrow's
+ * Coldcard scanner can never be handed the non-JSON Nunchuk signer record by mistake.
+ */
+private enum class CoordinatorQrFormat {
+    NUNCHUK,
+    SPARROW_COLDCARD
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CoordinatorExportScreen(
     wallet: Wallet,
+    userPreferencesRepository: UserPreferencesRepository,
     onBack: () -> Unit
 ) {
     val result by produceState<CoordinatorExportResult?>(initialValue = null, key1 = wallet) {
         value = withContext(Dispatchers.Default) { wallet.getActiveCoordinatorExport() }
     }
+    val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
     Scaffold(
         topBar = {
             MetroTopBar(
@@ -62,18 +78,19 @@ fun CoordinatorExportScreen(
 
             is CoordinatorExportResult.Available -> CoordinatorExportContent(
                 data = current.data,
+                tapToCopyEnabled = tapToCopyEnabled,
                 modifier = Modifier.padding(padding)
             )
 
             is CoordinatorExportResult.Unsupported -> CoordinatorExportUnavailable(
                 title = "Unsupported wallet",
-                message = current.message,
+                message = current.reason.message,
                 modifier = Modifier.padding(padding)
             )
 
             is CoordinatorExportResult.Error -> CoordinatorExportUnavailable(
                 title = "Export unavailable",
-                message = current.message,
+                message = current.reason.message,
                 modifier = Modifier.padding(padding)
             )
         }
@@ -83,6 +100,7 @@ fun CoordinatorExportScreen(
 @Composable
 private fun CoordinatorExportContent(
     data: CoordinatorExportData,
+    tapToCopyEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
     var visibleQr by remember { mutableStateOf<CoordinatorQrFormat?>(null) }
@@ -94,48 +112,58 @@ private fun CoordinatorExportContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Spacer(Modifier.height(0.dp))
-        Text("Export to wallet coordinator", style = MaterialTheme.typography.headlineSmall)
-        Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Text(
-                "Public data only — cannot spend funds",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.labelLarge
-            )
-        }
-        Text(
-            "This export contains public wallet information only. It lets Nunchuk monitor addresses and construct transactions, but it cannot sign.",
-            style = MaterialTheme.typography.bodyMedium
+
+        InfoCard(
+            text = "Public wallet information only. A coordinator can watch addresses and build " +
+                "transactions with this, but it cannot sign.",
+            tone = InfoTone.Info,
+            textStyle = MaterialTheme.typography.bodyMedium
         )
 
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ExportDetail("Wallet name", data.walletName)
+                ExportDetail("Wallet", data.walletName)
                 ExportDetail("Network", data.networkName)
                 ExportDetail("Address type", data.addressType)
-                ExportDetail("Account number", data.accountNumber.toString())
-                ExportDetail("Derivation path", data.derivationPath)
-                ExportDetail("Master fingerprint", data.masterFingerprint)
+                ExportDetail("Account", data.accountNumber.toString(), mono = true)
+                ExportDetail("Derivation path", data.derivationPath, mono = true)
+                ExportDetail("Master fingerprint", data.masterFingerprint, mono = true)
             }
         }
 
-        Surface(
-            color = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Text(
-                "Privacy warning: anyone who receives this export can discover this account's addresses, balances, and transaction history.",
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
+        CopyableValueCard(
+            value = data.standardAccountXpub,
+            clipboardLabel = "Account xpub",
+            label = "Account xpub",
+            sensitive = false,
+            enabled = tapToCopyEnabled
+        )
+
+        CopyableValueCard(
+            value = data.descriptor,
+            clipboardLabel = "Output descriptor",
+            label = "Output descriptor",
+            sensitive = false,
+            enabled = tapToCopyEnabled
+        )
+
+        CopyableValueCard(
+            value = data.firstReceiveAddress,
+            clipboardLabel = "First receive address",
+            label = "First receive address",
+            sensitive = false,
+            enabled = tapToCopyEnabled
+        )
+
+        InfoCard(
+            text = "After importing, confirm the coordinator shows this same master fingerprint, " +
+                "derivation path, and first receive address.",
+            tone = InfoTone.Neutral,
+            textStyle = MaterialTheme.typography.bodySmall
+        )
 
         Button(
             onClick = {
@@ -149,7 +177,7 @@ private fun CoordinatorExportContent(
             TapToCopyQRCard(
                 data = data.nunchukSignerRecord,
                 clipboardLabel = "Nunchuk public signer record",
-                tapToCopyEnabled = true,
+                tapToCopyEnabled = tapToCopyEnabled,
                 contentDescription = "Nunchuk public signer QR",
                 modifier = Modifier.fillMaxWidth()
             )
@@ -180,9 +208,9 @@ private fun CoordinatorExportContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             TapToCopyQRCard(
-                data = data.nunchukJson,
+                data = data.coldcardJson,
                 clipboardLabel = "Sparrow Coldcard public wallet JSON",
-                tapToCopyEnabled = true,
+                tapToCopyEnabled = tapToCopyEnabled,
                 contentDescription = "Sparrow Coldcard public wallet QR",
                 modifier = Modifier.fillMaxWidth()
             )
@@ -191,17 +219,26 @@ private fun CoordinatorExportContent(
     }
 }
 
-private enum class CoordinatorQrFormat {
-    NUNCHUK,
-    SPARROW_COLDCARD
-}
-
+/** Two-column metadata row: muted label on the left, value right-aligned. */
 @Composable
-private fun ExportDetail(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyLarge)
-        HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+private fun ExportDetail(label: String, value: String, mono: Boolean = false) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = if (mono) FontFamily.Monospace else null,
+            textAlign = TextAlign.End
+        )
     }
 }
 
@@ -215,28 +252,5 @@ private fun CoordinatorExportUnavailable(title: String, message: String, modifie
         Text(title, style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(12.dp))
         Text(message, style = MaterialTheme.typography.bodyLarge)
-    }
-}
-
-@Preview(showBackground = true, widthDp = 412, heightDp = 915)
-@Composable
-private fun CoordinatorExportPreview() {
-    MaterialTheme {
-        CoordinatorExportContent(
-            data = CoordinatorExportData(
-                walletName = "Cold savings",
-                networkName = "Bitcoin mainnet",
-                addressType = "Native SegWit (BIP84)",
-                accountNumber = 0,
-                derivationPath = "m/84h/0h/0h",
-                masterFingerprint = "3CA02B0D",
-                standardAccountXpub = "xpub6DBqChRqCJXqVDNaczA3SfbP2WodPn5HQAdH2BCZZMrA1SsTfc7NH5Q7zNAVJqSWj8fTpt2DefyFy9tyFGWuQseDLArFS95k7re8rGrtGeD",
-                slip132AccountXpub = "zpub6rrMp2mfVfcoBokpHhjHrqnPNT6XH24HEPfiaxzLKNbv7eVvAvSVXCiQ2n5fJekMYQu5KqDLZzgMjj86gfLw1M1R4rF6bxiifJmRdP2smxV",
-                descriptor = "wpkh([3ca02b0d/84h/0h/0h]xpub.../<0;1>/*)#example1",
-                firstReceiveAddress = "bc1qexample",
-                nunchukSignerRecord = "[3CA02B0D/84h/0h/0h]xpub6DBqChRqCJXqVDNaczA3SfbP2WodPn5HQAdH2BCZZMrA1SsTfc7NH5Q7zNAVJqSWj8fTpt2DefyFy9tyFGWuQseDLArFS95k7re8rGrtGeD/<0;1>/*",
-                nunchukJson = "{}"
-            )
-        )
     }
 }

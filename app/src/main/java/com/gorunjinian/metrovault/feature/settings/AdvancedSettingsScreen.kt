@@ -246,7 +246,7 @@ fun AdvancedSettingsScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_qr_code_scanner),
+                        painter = painterResource(R.drawable.ic_person_shield),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)

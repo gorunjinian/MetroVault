@@ -14,6 +14,7 @@ import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletState
+import com.gorunjinian.metrovault.data.model.CoordinatorExportError
 import com.gorunjinian.metrovault.data.model.CoordinatorExportResult
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
@@ -74,7 +75,7 @@ class   Wallet(context: Context) {
     private val silentPaymentManager = SilentPaymentManager()
     private val signingService = WalletSigningService(secureStorage, bitcoinService)
     private val keyEncodingService = KeyEncodingService()
-    private val coordinatorExportService = CoordinatorExportService(keyEncodingService, AddressService())
+    private val coordinatorExportService = CoordinatorExportService(keyEncodingService)
 
     private val walletStates = ConcurrentHashMap<String, WalletState>()
     private val _walletMetadataList = mutableListOf<WalletMetadata>()
@@ -1026,19 +1027,15 @@ class   Wallet(context: Context) {
      */
     fun getActiveCoordinatorExport(): CoordinatorExportResult {
         if (isActiveMultisig()) {
-            return CoordinatorExportResult.Unsupported(
-                "Coordinator export currently supports single-signature wallets only. Use the existing multisig export instead."
-            )
+            return CoordinatorExportResult.Unsupported(CoordinatorExportError.MULTISIG_WALLET)
         }
         if (isActiveSilentPayment()) {
-            return CoordinatorExportResult.Unsupported(
-                "Silent Payments wallets are not supported by this coordinator export. Use the existing Silent Payments export instead."
-            )
+            return CoordinatorExportResult.Unsupported(CoordinatorExportError.SILENT_PAYMENT_WALLET)
         }
         val state = getActiveWalletState()
-            ?: return CoordinatorExportResult.Error("The active wallet is not loaded.")
+            ?: return CoordinatorExportResult.Error(CoordinatorExportError.WALLET_NOT_LOADED)
         val accountPublicKey = state.getAccountPublicKey()
-            ?: return CoordinatorExportResult.Error("The active account public key is unavailable.")
+            ?: return CoordinatorExportResult.Error(CoordinatorExportError.ACCOUNT_KEY_UNAVAILABLE)
         return try {
             CoordinatorExportResult.Available(
                 coordinatorExportService.buildExport(
@@ -1048,12 +1045,13 @@ class   Wallet(context: Context) {
                     accountPublicKey = accountPublicKey
                 )
             )
-        } catch (_: IllegalArgumentException) {
-            CoordinatorExportResult.Unsupported(
-                "This wallet type or derivation path is not supported. Supported single-signature paths are BIP44, BIP49, BIP84, and BIP86."
-            )
-        } catch (_: Exception) {
-            CoordinatorExportResult.Error("Could not build a safe public coordinator export.")
+        } catch (e: IllegalArgumentException) {
+            // Validation messages are value-free by construction, so this cannot leak key material.
+            AppLog.w(TAG, e) { "Coordinator export rejected the active account" }
+            CoordinatorExportResult.Unsupported(CoordinatorExportError.UNSUPPORTED_DERIVATION_PATH)
+        } catch (e: Exception) {
+            AppLog.e(TAG, e) { "Coordinator export failed" }
+            CoordinatorExportResult.Error(CoordinatorExportError.BUILD_FAILED)
         }
     }
 
