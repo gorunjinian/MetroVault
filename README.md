@@ -18,6 +18,7 @@
 
 <p align="center">
   <a href="https://f-droid.org/packages/com.gorunjinian.metrovault/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80"></a>
+  <a href="https://www.openapk.net/metrovault/com.gorunjinian.metrovault/"><img src="https://www.openapk.net/images/openapk-badge.png" alt="Get it on OpenAPK" height="80"></a>
   <a href="https://github.com/gorunjinian/MetroVault/releases"><img src="https://raw.githubusercontent.com/machiav3lli/oandbackupx/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png" alt="Get it on GitHub" height="80"></a>
 </p>
 
@@ -157,6 +158,15 @@ git clone https://github.com/gorunjinian/MetroVault.git
 <a href="https://github.com/gorunjinian/MetroVault/releases"><img src="https://raw.githubusercontent.com/machiav3lli/oandbackupx/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png" alt="Get it on GitHub" height="70"></a>
 
 Check the [Releases](https://github.com/gorunjinian/MetroVault/releases) page for pre-built, signed APKs.
+
+### Option 4: Download APK from OpenAPK
+
+<a href="https://www.openapk.net/metrovault/com.gorunjinian.metrovault/"><img src="https://www.openapk.net/images/openapk-badge.png" alt="Get it on OpenAPK" height="70"></a>
+
+[OpenAPK](https://www.openapk.net/metrovault/com.gorunjinian.metrovault/) mirrors the release APK. Before installing, verify it matches the official build:
+
+- **Package ID:** `com.gorunjinian.metrovault`
+- **Signing certificate SHA-256:** `1245554ceb17cea21e9912af7bf60d38d716f5884d4b3664e5338462cc76fd03`
 
 > ⚠️ **Security Note:** For production use, always build from source and install on a factory-reset device that remains permanently offline.
 
