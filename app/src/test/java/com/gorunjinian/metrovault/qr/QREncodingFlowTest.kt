@@ -27,7 +27,15 @@ class QREncodingFlowTest {
     companion object {
         val PSBT_MAGIC = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte())
         val samplePsbtBytes = PSBT_MAGIC + ByteArray(500) { (it % 256).toByte() }
-        val largePsbtBytes = PSBT_MAGIC + ByteArray(3000) { (it % 256).toByte() }
+
+        /**
+         * High-entropy body, because the BBQr flows below compress before splitting. A real PSBT
+         * is mostly signatures, pubkeys and txids and so barely deflates; a 0..255 byte ramp (the
+         * previous fixture) deflates to a few dozen bytes and fits in a single BBQr frame, which
+         * silently defeated the multi-part assertions. Seeded for determinism — java.util.Random's
+         * algorithm is specified, so the bytes are identical on every JVM.
+         */
+        val largePsbtBytes = PSBT_MAGIC + ByteArray(3000).also { java.util.Random(20260811L).nextBytes(it) }
         val sampleTxBytes = ByteArray(150) { (it * 7 % 256).toByte() }
         val descriptorString = "wsh(sortedmulti(2,[abcdef01/48h/0h/0h/2h]xpub6ExampleKey1/0/*,[12345678/48h/0h/0h/2h]xpub6ExampleKey2/0/*))"
 

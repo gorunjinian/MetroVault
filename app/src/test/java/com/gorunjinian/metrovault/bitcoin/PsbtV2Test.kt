@@ -8,14 +8,37 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Test
 import java.util.Base64
 
 /**
  * Parses a real PSBT v2 (BIP-370) silent-payment send exported from Sparrow, confirming the
  * synthesize-tx reader (Step 0 / M1) reconstructs the transaction and surfaces the SP recipient.
+ *
+ * DISABLED: the fixture these tests read was never committed. `PsbtV2Test` was merged in 6f40a42
+ * with `app/src/test/resources/bip-0370/sparrow-sp-send-v2.psbt.base64` left untracked, and the
+ * file is not present in any branch, tag, or dangling object — it is unrecoverable, not misplaced.
+ * Every test that calls [fixtureBytes] therefore died on the `!!` with an NPE. They are [Ignore]d
+ * rather than deleted so the assertions survive for whenever a fixture is restored.
+ *
+ * To re-enable: export a silent-payment send from Sparrow (signet or testnet is fine), save its
+ * base64 to that path, drop the [Ignore] annotations, and re-pin the values the fixture asserts —
+ * `lockTime`/`fallbackLocktime` (currently 0x000e82bb), the 1-input/2-output shape, and which
+ * output index carries the SP info. The fixture must be a genuine third-party export: generating
+ * it with our own [com.gorunjinian.metrovault.lib.bitcoin.Psbt.write] would make
+ * [v2WriteRoundTripIsByteIdentical] tautological and lose the point of the test.
+ *
+ * Coverage that remains in place meanwhile: [v1IsRejected] here (needs no fixture), and
+ * `SilentPaymentV2SignTest`, which builds v2 PSBTs programmatically and covers v2 read/write/sign.
+ * What is lost is specifically validation against a third-party implementation's bytes.
  */
 class PsbtV2Test {
+    private companion object {
+        const val MISSING_FIXTURE =
+            "Fixture /bip-0370/sparrow-sp-send-v2.psbt.base64 was never committed — see class KDoc"
+    }
+
     private fun fixtureBytes(): ByteArray {
         val b64 = this::class.java.getResourceAsStream("/bip-0370/sparrow-sp-send-v2.psbt.base64")!!
             .readBytes().toString(Charsets.UTF_8).trim()
@@ -29,6 +52,7 @@ class PsbtV2Test {
     }
 
     @Test
+    @Ignore(MISSING_FIXTURE)
     fun v2WriteRoundTripIsByteIdentical() {
         // Read the real Sparrow v2 PSBT, re-serialize, and require byte-for-byte equality.
         val original = fixtureBytes()
@@ -37,6 +61,7 @@ class PsbtV2Test {
     }
 
     @Test
+    @Ignore(MISSING_FIXTURE)
     fun parsesSparrowV2SilentPaymentPsbt() {
         val psbt = parse()
         assertEquals(2L, psbt.global.version)
@@ -51,6 +76,7 @@ class PsbtV2Test {
     }
 
     @Test
+    @Ignore(MISSING_FIXTURE)
     fun inputOutpointMatchesNonWitnessUtxo() {
         val psbt = parse()
         val input = psbt.inputs[0]
@@ -63,6 +89,7 @@ class PsbtV2Test {
     }
 
     @Test
+    @Ignore(MISSING_FIXTURE)
     fun silentPaymentRecipientOutputIsSurfaced() {
         val psbt = parse()
         // Exactly one output is an SP recipient (carries PSBT_OUT_SP_V0_INFO, no scriptPubKey yet).
@@ -78,6 +105,7 @@ class PsbtV2Test {
     }
 
     @Test
+    @Ignore(MISSING_FIXTURE)
     fun nonSpOutputDecodesToValidScript() {
         val psbt = parse()
         // The change output is a standard P2WPKH; confirm it parses as a script.
@@ -102,6 +130,7 @@ class PsbtV2Test {
     }
 
     @Test
+    @Ignore(MISSING_FIXTURE)
     fun absentSpInfoOnChangeOutput() {
         val psbt = parse()
         val nonSp = psbt.outputs.first { it.silentPaymentInfo == null }
