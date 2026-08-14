@@ -89,7 +89,7 @@ class CoordinatorExportService(
 
         return CoordinatorExportData(
             walletName = walletName,
-            networkName = if (path.isTestnet) "Bitcoin testnet" else "Bitcoin mainnet",
+            networkName = if (path.isTestnet) "testnet4" else "mainnet",
             addressType = addressTypeName(path.scriptType),
             accountNumber = path.accountNumber,
             derivationPath = path.normalized,

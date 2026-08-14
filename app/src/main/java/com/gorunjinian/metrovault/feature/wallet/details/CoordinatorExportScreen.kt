@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,7 @@ import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.core.ui.components.TapToCopyQRCard
+import com.gorunjinian.metrovault.core.ui.util.AddressFormatter
 import com.gorunjinian.metrovault.data.model.CoordinatorExportData
 import com.gorunjinian.metrovault.data.model.CoordinatorExportResult
 import com.gorunjinian.metrovault.data.model.DerivationPaths
@@ -241,7 +243,7 @@ fun CoordinatorExportScreen(
                         "In Nunchuk, add this device as a key for a multisig wallet by scanning this QR."
                     format == CoordinatorFormat.NUNCHUK ->
                         "In Nunchuk, choose Add Signer via QR and scan this code. It contains only " +
-                            "public information and cannot sign."
+                            "public key and cannot sign."
                     combinedActive ->
                         "One JSON with every address type (BIP44/49/84/86) plus both BIP48 " +
                             "multisig keys. The importing software picks what it needs."
@@ -351,13 +353,21 @@ private fun SingleSigExportContent(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            ExportDetail("Wallet Name", data.walletName)
+            ExportDetail("Wallet name", data.walletName)
             ExportDetail("Network", data.networkName)
             ExportDetail("Address type", data.addressType)
             ExportDetail("Account", data.accountNumber.toString(), mono = true)
             ExportDetail("Derivation path", data.derivationPath, mono = true)
             ExportDetail("Master fingerprint", data.masterFingerprint, mono = true)
-            ExportDetail("First address", data.firstReceiveAddress, mono = true)
+            ExportDetail(
+                "First address",
+                AddressFormatter.formatTruncatedAddress(
+                    data.firstReceiveAddress,
+                    groupsBeforeEllipsis = 1,
+                    groupsAfterEllipsis = 2
+                ),
+                mono = true
+            )
         }
     }
 
@@ -380,7 +390,11 @@ private fun SingleSigExportContent(
 
 /** Two-column metadata row: muted label on the left, value right-aligned. */
 @Composable
-private fun ExportDetail(label: String, value: String, mono: Boolean = false) {
+private fun ExportDetail(label: String, value: String, mono: Boolean = false) =
+    ExportDetail(label, AnnotatedString(value), mono)
+
+@Composable
+private fun ExportDetail(label: String, value: AnnotatedString, mono: Boolean = false) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),

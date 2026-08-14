@@ -14,29 +14,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
+import com.gorunjinian.metrovault.core.ui.util.AddressFormatter
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
-
-/**
- * Formats an address for display by showing first 12 and last 12 characters with ellipsis.
- * Each 4 characters are separated by 2 spaces for readability.
- * Example: "bc1q  ab12  cd34  ...  wx89  yz00"
- */
-private fun formatTruncatedAddress(address: String): String {
-    if (address.length <= 28) return address // Short enough to show fully
-
-    val first10 = address.take(10)
-    val last15 = address.takeLast(15)
-
-    // Format with 2 spaces every 5 characters
-    fun formatWithSpaces(s: String): String {
-        return s.chunked(5).joinToString("   ")
-    }
-
-    return "${formatWithSpaces(first10)}  ...  ${formatWithSpaces(last15)}"
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -222,7 +204,7 @@ fun AddressesScreen(
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(
-                                            text = formatTruncatedAddress(addressInfo.address),
+                                            text = AddressFormatter.formatTruncatedAddress(addressInfo.address),
                                             style = MaterialTheme.typography.bodyMedium
                                         )
                                     }

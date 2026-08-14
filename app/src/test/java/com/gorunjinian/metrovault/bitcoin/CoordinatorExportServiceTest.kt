@@ -46,7 +46,7 @@ class CoordinatorExportServiceTest {
         assertEquals(0, main.accountNumber)
         assertTrue(test.standardAccountXpub.startsWith("tpub"))
         assertEquals(17, test.accountNumber)
-        assertEquals("Bitcoin testnet", test.networkName)
+        assertEquals("testnet4", test.networkName)
         assertTrue(test.coldcardJson.contains("\"chain\": \"XTN\""))
     }
 
