@@ -1023,43 +1023,11 @@ class   Wallet(context: Context) {
     }
 
     /**
-     * Builds a watch-only coordinator export from the active account public key. No mnemonic,
-     * seed bytes, private descriptor, or extended private key is passed into the export service.
-     */
-    fun getActiveCoordinatorExport(): CoordinatorExportResult {
-        if (isActiveMultisig()) {
-            return CoordinatorExportResult.Unsupported(CoordinatorExportError.MULTISIG_WALLET)
-        }
-        if (isActiveSilentPayment()) {
-            return CoordinatorExportResult.Unsupported(CoordinatorExportError.SILENT_PAYMENT_WALLET)
-        }
-        val state = getActiveWalletState()
-            ?: return CoordinatorExportResult.Error(CoordinatorExportError.WALLET_NOT_LOADED)
-        val accountPublicKey = state.getAccountPublicKey()
-            ?: return CoordinatorExportResult.Error(CoordinatorExportError.ACCOUNT_KEY_UNAVAILABLE)
-        return try {
-            CoordinatorExportResult.Available(
-                coordinatorExportService.buildExport(
-                    walletName = state.name,
-                    masterFingerprint = state.fingerprint,
-                    derivationPath = state.derivationPath,
-                    accountPublicKey = accountPublicKey
-                )
-            )
-        } catch (e: IllegalArgumentException) {
-            // Validation messages are value-free by construction, so this cannot leak key material.
-            AppLog.w(TAG, e) { "Coordinator export rejected the active account" }
-            CoordinatorExportResult.Unsupported(CoordinatorExportError.UNSUPPORTED_DERIVATION_PATH)
-        } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Coordinator export failed" }
-            CoordinatorExportResult.Error(CoordinatorExportError.BUILD_FAILED)
-        }
-    }
-
-    /**
-     * Coordinator export for an arbitrary [accountNumber] under the active wallet's purpose.
-     * The active account reuses its cached public key, so xpub-only stateless wallets can still
-     * export it; other accounts are derived from the master key when one is loaded.
+     * Builds a watch-only coordinator export for an arbitrary [accountNumber] under the active
+     * wallet's purpose. No mnemonic, seed bytes, private descriptor, or extended private key is
+     * passed into the export service. The active account reuses its cached public key, so
+     * xpub-only stateless wallets can still export it; other accounts are derived from the
+     * master key when one is loaded.
      */
     fun getCoordinatorExportForAccount(accountNumber: Int): CoordinatorExportResult {
         if (isActiveMultisig()) {
@@ -1121,24 +1089,6 @@ class   Wallet(context: Context) {
         } catch (e: Exception) {
             AppLog.e(TAG, e) { "Combined coordinator export failed for account $accountNumber" }
             null
-        }
-    }
-
-    /** Nunchuk signer record for [accountNumber] under the wallet's own purpose. Empty on error. */
-    fun getNunchukSignerRecordForAccount(accountNumber: Int): String {
-        val state = getActiveWalletState() ?: return ""
-        val accountPublicKey = getAccountPublicKeyForAccount(state, accountNumber) ?: return ""
-        return try {
-            CoordinatorExportService.buildNunchukSignerRecord(
-                masterFingerprint = state.fingerprint,
-                derivationPath = DerivationPaths.withAccountNumber(state.derivationPath, accountNumber),
-                standardAccountXpub = keyEncodingService.getStandardAccountXpub(
-                    accountPublicKey, isActiveWalletTestnet()
-                )
-            )
-        } catch (e: Exception) {
-            AppLog.w(TAG, e) { "Nunchuk signer record unavailable for account $accountNumber" }
-            ""
         }
     }
 

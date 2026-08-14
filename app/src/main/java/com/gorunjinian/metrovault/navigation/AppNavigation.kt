@@ -50,8 +50,6 @@ import com.gorunjinian.metrovault.feature.wallet.details.ExportMultiSigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.VerifyMultisigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.CoordinatorExportScreen
-import com.gorunjinian.metrovault.feature.wallet.details.NunchukQRScreen
-import com.gorunjinian.metrovault.feature.wallet.details.SparrowQRScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SPAddressScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ScriptTypeScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SilentPaymentExportScreen
@@ -96,8 +94,6 @@ sealed class Screen(val route: String) {
     object ScanPSBT : Screen("scan_psbt")
     object ExportOptions : Screen("export_options")
     object CoordinatorExport : Screen("coordinator_export")
-    object NunchukQR : Screen("nunchuk_qr")
-    object SparrowQR : Screen("sparrow_qr")
     object ExportMultiSig : Screen("export_multisig")
     object VerifyMultisig : Screen("verify_multisig?walletId={walletId}") {
         fun createRoute(walletId: String): String =
@@ -477,25 +473,7 @@ fun AppNavigation(
             CoordinatorExportScreen(
                 wallet = wallet,
                 userPreferencesRepository = userPreferencesRepository,
-                onShowNunchukQr = { navController.navigate(Screen.NunchukQR.route) },
-                onShowSparrowQr = { navController.navigate(Screen.SparrowQR.route) },
                 onBack = { navController.navigateBackOr(Screen.ExportOptions) }
-            )
-        }
-
-        composable(Screen.NunchukQR.route) {
-            NunchukQRScreen(
-                wallet = wallet,
-                userPreferencesRepository = userPreferencesRepository,
-                onBack = { navController.navigateBackOr(Screen.CoordinatorExport) }
-            )
-        }
-
-        composable(Screen.SparrowQR.route) {
-            SparrowQRScreen(
-                wallet = wallet,
-                userPreferencesRepository = userPreferencesRepository,
-                onBack = { navController.navigateBackOr(Screen.CoordinatorExport) }
             )
         }
 
