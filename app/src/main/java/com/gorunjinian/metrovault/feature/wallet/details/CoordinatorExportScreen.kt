@@ -20,10 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -33,7 +30,6 @@ import com.gorunjinian.metrovault.core.ui.components.CopyableValueCard
 import com.gorunjinian.metrovault.core.ui.components.InfoCard
 import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
-import com.gorunjinian.metrovault.core.ui.components.TapToCopyQRCard
 import com.gorunjinian.metrovault.data.model.CoordinatorExportData
 import com.gorunjinian.metrovault.data.model.CoordinatorExportResult
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
@@ -41,20 +37,13 @@ import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * Which coordinator QR is on screen. The two payloads are mutually exclusive so Sparrow's
- * Coldcard scanner can never be handed the non-JSON Nunchuk signer record by mistake.
- */
-private enum class CoordinatorQrFormat {
-    NUNCHUK,
-    SPARROW_COLDCARD
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CoordinatorExportScreen(
     wallet: Wallet,
     userPreferencesRepository: UserPreferencesRepository,
+    onShowNunchukQr: () -> Unit,
+    onShowSparrowQr: () -> Unit,
     onBack: () -> Unit
 ) {
     val result by produceState<CoordinatorExportResult?>(initialValue = null, key1 = wallet) {
@@ -79,6 +68,8 @@ fun CoordinatorExportScreen(
             is CoordinatorExportResult.Available -> CoordinatorExportContent(
                 data = current.data,
                 tapToCopyEnabled = tapToCopyEnabled,
+                onShowNunchukQr = onShowNunchukQr,
+                onShowSparrowQr = onShowSparrowQr,
                 modifier = Modifier.padding(padding)
             )
 
@@ -101,9 +92,10 @@ fun CoordinatorExportScreen(
 private fun CoordinatorExportContent(
     data: CoordinatorExportData,
     tapToCopyEnabled: Boolean,
+    onShowNunchukQr: () -> Unit,
+    onShowSparrowQr: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var visibleQr by remember { mutableStateOf<CoordinatorQrFormat?>(null) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -166,55 +158,19 @@ private fun CoordinatorExportContent(
         )
 
         Button(
-            onClick = {
-                visibleQr = if (visibleQr == CoordinatorQrFormat.NUNCHUK) null else CoordinatorQrFormat.NUNCHUK
-            },
+            onClick = onShowNunchukQr,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (visibleQr == CoordinatorQrFormat.NUNCHUK) "Hide Nunchuk QR" else "Show Nunchuk QR")
-        }
-        if (visibleQr == CoordinatorQrFormat.NUNCHUK) {
-            TapToCopyQRCard(
-                data = data.nunchukSignerRecord,
-                clipboardLabel = "Nunchuk public signer record",
-                tapToCopyEnabled = tapToCopyEnabled,
-                contentDescription = "Nunchuk public signer QR",
-                modifier = Modifier.fillMaxWidth()
-            )
+            Text("Show Nunchuk QR")
         }
 
         Button(
-            onClick = {
-                visibleQr = if (visibleQr == CoordinatorQrFormat.SPARROW_COLDCARD) {
-                    null
-                } else {
-                    CoordinatorQrFormat.SPARROW_COLDCARD
-                }
-            },
+            onClick = onShowSparrowQr,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                if (visibleQr == CoordinatorQrFormat.SPARROW_COLDCARD) {
-                    "Hide Sparrow / Coldcard QR"
-                } else {
-                    "Show Sparrow / Coldcard QR"
-                }
-            )
+            Text("Show Sparrow / Coldcard QR")
         }
-        if (visibleQr == CoordinatorQrFormat.SPARROW_COLDCARD) {
-            Text(
-                "In Sparrow, choose Airgapped Hardware Wallet, then scan this QR using the Coldcard option.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            TapToCopyQRCard(
-                data = data.coldcardJson,
-                clipboardLabel = "Sparrow Coldcard public wallet JSON",
-                tapToCopyEnabled = tapToCopyEnabled,
-                contentDescription = "Sparrow Coldcard public wallet QR",
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+
         Spacer(Modifier.height(24.dp))
     }
 }

@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import com.gorunjinian.metrovault.data.model.CoordinatorExportData
+import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.ScriptType
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 
@@ -28,6 +29,21 @@ class CoordinatorExportService(
          */
         val apostropheForm: String get() = normalized.replace('h', '\'')
     }
+
+    /**
+     * Account public keys for every section of the combined export, all derived for the same
+     * account number and network. Single-signature keys sit at depth three
+     * (`m/purpose'/coin'/account'`), the BIP48 keys at depth four
+     * (`m/48'/coin'/account'/script'`).
+     */
+    data class CombinedAccountKeys(
+        val bip44: DeterministicWallet.ExtendedPublicKey,
+        val bip49: DeterministicWallet.ExtendedPublicKey,
+        val bip84: DeterministicWallet.ExtendedPublicKey,
+        val bip86: DeterministicWallet.ExtendedPublicKey,
+        val bip48P2shP2wsh: DeterministicWallet.ExtendedPublicKey,
+        val bip48P2wsh: DeterministicWallet.ExtendedPublicKey
+    )
 
     fun buildExport(
         walletName: String,
@@ -87,6 +103,101 @@ class CoordinatorExportService(
         )
     }
 
+    /**
+     * Builds the combined Coldcard "Generic JSON" export: every supported single-signature
+     * section (bip44/49/84/86) plus both BIP48 multisig sections in one payload, so the
+     * importing coordinator never has to ask which wallet type the user wants.
+     *
+     * Divergences from a real Coldcard export, all deliberate: the legacy `bip45` section is
+     * omitted (obsolete pre-BIP48 multisig), the bip48 sections carry no `desc` field (Coldcard
+     * writes `sortedmulti(M,...)` placeholders that are not parseable descriptors), and — as in
+     * [buildExport] — there is no top-level master `xpub`.
+     */
+    fun buildCombinedExport(
+        masterFingerprint: String,
+        accountNumber: Int,
+        isTestnet: Boolean,
+        keys: CombinedAccountKeys
+    ): String {
+        val fingerprint = normalizeFingerprint(masterFingerprint)
+        val coin = if (isTestnet) 1 else 0
+        val sections = mutableListOf<Pair<String, List<Pair<String, String>>>>()
+
+        listOf(
+            Triple(44, ScriptType.P2PKH, keys.bip44),
+            Triple(49, ScriptType.P2SH_P2WPKH, keys.bip49),
+            Triple(84, ScriptType.P2WPKH, keys.bip84),
+            Triple(86, ScriptType.P2TR, keys.bip86)
+        ).forEach { (purpose, scriptType, key) ->
+            val path = parseAccountPath("m/${purpose}h/${coin}h/${accountNumber}h")
+            val standardXpub = keyEncodingService.getStandardAccountXpub(key, isTestnet)
+            validateAccountPublicKey(standardXpub, path)
+            val slip132Xpub = keyEncodingService.getAccountXpub(key, scriptType, isTestnet)
+            val descriptor = keyEncodingService.getWalletDescriptor(
+                fingerprint = fingerprint,
+                accountPath = path.normalized,
+                accountPublicKey = key,
+                scriptType = scriptType,
+                isTestnet = isTestnet
+            )
+            validateDescriptor(descriptor, fingerprint, path, standardXpub)
+            val firstAddress = requireNotNull(
+                addressService.generateAddress(
+                    accountPublicKey = key,
+                    index = 0,
+                    isChange = false,
+                    scriptType = scriptType,
+                    isTestnet = isTestnet
+                )
+            ) { "Could not derive the first receiving address" }.address
+
+            val fields = mutableListOf(
+                "name" to sectionName(scriptType),
+                "xfp" to formatFingerprint(key.fingerprint()),
+                "deriv" to path.apostropheForm,
+                "xpub" to standardXpub,
+                "desc" to descriptor
+            )
+            if (slip132Xpub != standardXpub) {
+                fields += "_pub" to slip132Xpub
+            }
+            fields += "first" to firstAddress
+            sections += "bip$purpose" to fields
+        }
+
+        listOf(
+            Triple("bip48_1", DerivationPaths.Bip48ScriptType.P2SH_P2WSH, keys.bip48P2shP2wsh),
+            Triple("bip48_2", DerivationPaths.Bip48ScriptType.P2WSH, keys.bip48P2wsh)
+        ).forEach { (sectionKey, bip48ScriptType, key) ->
+            val scriptIndex = bip48ScriptIndex(bip48ScriptType)
+            val standardXpub = keyEncodingService.getStandardAccountXpub(key, isTestnet)
+            validateBip48PublicKey(standardXpub, isTestnet, scriptIndex)
+            // The SLIP-132 encoding comes from the same in-memory key, so unlike buildExport no
+            // cross-check decode is possible or needed — decode() rejects Zpub/Ypub prefixes.
+            val slip132Xpub = keyEncodingService.getBip48Xpub(key, bip48ScriptType, isTestnet)
+            sections += sectionKey to listOf(
+                "name" to bip48SectionName(bip48ScriptType),
+                "xfp" to formatFingerprint(key.fingerprint()),
+                "deriv" to "m/48'/$coin'/$accountNumber'/$scriptIndex'",
+                "xpub" to standardXpub,
+                "_pub" to slip132Xpub
+            )
+        }
+
+        return buildString {
+            appendLine("{")
+            appendLine("  \"chain\": \"${if (isTestnet) "XTN" else "BTC"}\",")
+            appendLine("  \"xfp\": \"$fingerprint\",")
+            appendLine("  \"account\": $accountNumber,")
+            sections.forEachIndexed { index, (sectionKey, fields) ->
+                appendLine("  \"$sectionKey\": {")
+                appendLine(sectionLines(fields))
+                appendLine(if (index == sections.lastIndex) "  }" else "  },")
+            }
+            append("}")
+        }
+    }
+
     companion object {
         // Groups: 1 = purpose, 2 = coin type, 3 = account. The hardened markers are matched but
         // not captured — any of ' h H is accepted and normalized to h on the way out.
@@ -105,6 +216,28 @@ class CoordinatorExportService(
             validateAccountPublicKey(standardAccountXpub, path)
             val origin = path.normalized.removePrefix("m/")
             return "[$fingerprint/$origin]$standardAccountXpub/<0;1>/*"
+        }
+
+        /**
+         * Builds the Nunchuk signer record for a BIP48 multisig key: the bracketed key origin
+         * `[fingerprint/48h/coin h/account h/script h]` (without the spaces), the key itself,
+         * then the receive/change multipath suffix. The key must be standard xpub/tpub encoded —
+         * Nunchuk resolves the script type from the path, not from a SLIP-132 prefix.
+         */
+        @JvmStatic
+        fun buildNunchukBip48SignerRecord(
+            masterFingerprint: String,
+            accountNumber: Int,
+            bip48ScriptType: DerivationPaths.Bip48ScriptType,
+            standardAccountXpub: String,
+            isTestnet: Boolean
+        ): String {
+            val fingerprint = normalizeFingerprint(masterFingerprint)
+            require(accountNumber in 0..MAX_ACCOUNT) { "Account number is outside the BIP32 range" }
+            val scriptIndex = bip48ScriptIndex(bip48ScriptType)
+            validateBip48PublicKey(standardAccountXpub, isTestnet, scriptIndex)
+            val coin = if (isTestnet) 1 else 0
+            return "[$fingerprint/48h/${coin}h/${accountNumber}h/${scriptIndex}h]$standardAccountXpub/<0;1>/*"
         }
 
         @JvmStatic
@@ -145,6 +278,31 @@ class CoordinatorExportService(
             require(decoded.depth == 3) { "Account public key must be at depth three" }
             val expectedChild = DeterministicWallet.hardened(path.accountNumber.toLong())
             require(decoded.path.lastChildNumber == expectedChild) { "Account public key does not match the account path" }
+        }
+
+        /** `1` for P2SH-P2WSH, `2` for P2WSH — the hardened script-type index BIP48 defines. */
+        private fun bip48ScriptIndex(scriptType: DerivationPaths.Bip48ScriptType): Int =
+            when (scriptType) {
+                DerivationPaths.Bip48ScriptType.P2SH_P2WSH -> 1
+                DerivationPaths.Bip48ScriptType.P2WSH -> 2
+            }
+
+        private fun bip48SectionName(scriptType: DerivationPaths.Bip48ScriptType): String =
+            when (scriptType) {
+                DerivationPaths.Bip48ScriptType.P2SH_P2WSH -> "p2sh-p2wsh"
+                DerivationPaths.Bip48ScriptType.P2WSH -> "p2wsh"
+            }
+
+        private fun validateBip48PublicKey(xpub: String, isTestnet: Boolean, scriptIndex: Int) {
+            val (prefix, decoded) = runCatching {
+                DeterministicWallet.ExtendedPublicKey.decode(xpub)
+            }.getOrElse { throw IllegalArgumentException("Malformed BIP48 account xpub") }
+            val expectedPrefix = if (isTestnet) DeterministicWallet.tpub else DeterministicWallet.xpub
+            require(prefix == expectedPrefix) { "BIP48 public key does not match the selected network" }
+            require(decoded.depth == 4) { "BIP48 public key must be at depth four" }
+            require(decoded.path.lastChildNumber == DeterministicWallet.hardened(scriptIndex.toLong())) {
+                "BIP48 public key does not match the script type"
+            }
         }
 
         private fun validateEquivalentPublicKeys(standard: String, slip132: String) {
@@ -193,16 +351,16 @@ class CoordinatorExportService(
         ): String {
             val section = "bip${path.purpose}"
             val fields = mutableListOf(
-                "    \"name\": \"${jsonEscape(sectionName(path.scriptType))}\"",
-                "    \"xfp\": \"${jsonEscape(accountFingerprint)}\"",
-                "    \"deriv\": \"${jsonEscape(path.apostropheForm)}\"",
-                "    \"xpub\": \"${jsonEscape(standardXpub)}\"",
-                "    \"desc\": \"${jsonEscape(descriptor)}\""
+                "name" to sectionName(path.scriptType),
+                "xfp" to accountFingerprint,
+                "deriv" to path.apostropheForm,
+                "xpub" to standardXpub,
+                "desc" to descriptor
             )
             if (slip132Xpub != standardXpub) {
-                fields += "    \"_pub\": \"${jsonEscape(slip132Xpub)}\""
+                fields += "_pub" to slip132Xpub
             }
-            fields += "    \"first\": \"${jsonEscape(firstAddress)}\""
+            fields += "first" to firstAddress
             return buildString {
                 appendLine("{")
                 // XTN is the Coldcard format's only testnet code. These keys are testnet4, which
@@ -211,11 +369,15 @@ class CoordinatorExportService(
                 appendLine("  \"xfp\": \"$fingerprint\",")
                 appendLine("  \"account\": ${path.accountNumber},")
                 appendLine("  \"$section\": {")
-                appendLine(fields.joinToString(",\n"))
+                appendLine(sectionLines(fields))
                 appendLine("  }")
                 append("}")
             }
         }
+
+        /** Renders one section's field lines: escaped, four-space indented, comma-joined. */
+        private fun sectionLines(fields: List<Pair<String, String>>): String =
+            fields.joinToString(",\n") { (key, value) -> "    \"$key\": \"${jsonEscape(value)}\"" }
 
         private fun sectionName(scriptType: ScriptType): String = when (scriptType) {
             ScriptType.P2PKH -> "p2pkh"
