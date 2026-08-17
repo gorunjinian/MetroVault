@@ -17,20 +17,21 @@ import com.gorunjinian.metrovault.core.ui.dialogs.VerifyPasswordDialog
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 /**
- * Enum to track which sensitive view flow is active.
- * Used to determine where to navigate after password confirmation.
+ * Recovery-material view requiring the warning + password gate before navigating.
+ * [noun] fills the shared security-warning text.
  */
-private enum class SensitiveViewTarget {
-    SEED_PHRASE,
-    ROOT_KEY
+private enum class SensitiveViewTarget(val noun: String) {
+    SEED_PHRASE("seed phrase"),
+    ROOT_KEY("BIP32 root key")
 }
 
 /**
- * ExportOptionsScreen - Navigation hub with 4 export options:
- * 1. View Account Keys - Navigates to AccountKeysScreen
- * 2. View Descriptors - Navigates to DescriptorsScreen
- * 3. View BIP32 Root Key - Requires password confirmation, then navigates to RootKeyScreen
- * 4. View Seed Phrase - Requires password confirmation, then navigates to SeedPhraseScreen
+ * ExportOptionsScreen - Navigation hub for the wallet's exports.
+ *
+ * Watch-only exports on top: guided coordinator setup, raw account keys and descriptors, and
+ * Silent Payments material — each gated to the wallet types it applies to. Below the divider,
+ * the recovery material (BIP32 root key, seed phrase) sits behind a security warning plus
+ * password confirmation.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,16 +58,11 @@ fun ExportOptionsScreen(
     // Coordinator export is single-sig only. Hide the card rather than letting the user tap
     // through to an "Unsupported wallet" screen, matching how the cards below are gated.
     val canExportToCoordinator = remember { !wallet.isActiveMultisig() && !wallet.isActiveSilentPayment() }
-    // Password confirmation state
-    var showPasswordDialog by remember { mutableStateOf(false) }
-    
-    // Track which sensitive view is being accessed
+
+    // Sensitive-view gate: pick a target, acknowledge the warning, then confirm the password.
     var pendingTarget by remember { mutableStateOf<SensitiveViewTarget?>(null) }
-    
-    // Warning dialog for seed phrase and BIP32 key
-    var showSeedWarningDialog by remember { mutableStateOf(false) }
-    var showRootKeyWarningDialog by remember { mutableStateOf(false) }
-    
+    var warningAcknowledged by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             MetroTopBar(
@@ -84,7 +80,7 @@ fun ExportOptionsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(modifier = Modifier.height(0.dp))
-            
+
             Text(
                 text = "Export Options",
                 style = MaterialTheme.typography.headlineSmall
@@ -94,7 +90,7 @@ fun ExportOptionsScreen(
                 ActionCard(
                     icon = R.drawable.ic_qr_code_scanner,
                     title = "Export to Wallet Coordinator",
-                    description = "formats for Nunchuk or other watch-only coordinators",
+                    description = "Watch-only setup for Sparrow, Nunchuk & Coldcard-compatible apps",
                     onClick = onExportCoordinator
                 )
             }
@@ -137,7 +133,10 @@ fun ExportOptionsScreen(
                 icon = R.drawable.ic_root,
                 title = "View BIP32 Root Key",
                 description = "Show your wallet's main BIP32 root key",
-                onClick = { showRootKeyWarningDialog = true },
+                onClick = {
+                    pendingTarget = SensitiveViewTarget.ROOT_KEY
+                    warningAcknowledged = false
+                },
                 iconTint = MaterialTheme.colorScheme.error,
                 descriptionColor = MaterialTheme.colorScheme.error
             )
@@ -148,37 +147,38 @@ fun ExportOptionsScreen(
                     icon = R.drawable.ic_privacy_tip,
                     title = "View Seed Phrase",
                     description = "Show your recovery seed phrase or SeedQR",
-                    onClick = { showSeedWarningDialog = true },
+                    onClick = {
+                        pendingTarget = SensitiveViewTarget.SEED_PHRASE
+                        warningAcknowledged = false
+                    },
                     iconTint = MaterialTheme.colorScheme.error,
                     descriptionColor = MaterialTheme.colorScheme.error
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
-    // Root key warning dialog
-    if (showRootKeyWarningDialog) {
+    val target = pendingTarget
+    if (target != null && !warningAcknowledged) {
         AlertDialog(
-            onDismissRequest = { showRootKeyWarningDialog = false },
+            onDismissRequest = { pendingTarget = null },
             title = { Text("Security Warning") },
             text = {
-                Text("Your BIP32 root key is the master key to your funds. Never share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.")
+                Text(
+                    "Your ${target.noun} is the master key to your funds. Never share it with " +
+                        "anyone.\n\nEnsure you are in a private location and no one is watching " +
+                        "your screen."
+                )
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showRootKeyWarningDialog = false
-                        pendingTarget = SensitiveViewTarget.ROOT_KEY
-                        showPasswordDialog = true
-                    }
-                ) {
+                TextButton(onClick = { warningAcknowledged = true }) {
                     Text("I Understand")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRootKeyWarningDialog = false }) {
+                TextButton(onClick = { pendingTarget = null }) {
                     Text("Cancel")
                 }
             },
@@ -190,55 +190,18 @@ fun ExportOptionsScreen(
         )
     }
 
-    // Seed phrase warning dialog
-    if (showSeedWarningDialog) {
-        AlertDialog(
-            onDismissRequest = { showSeedWarningDialog = false },
-            title = { Text("Security Warning") },
-            text = {
-                Text("Your seed phrase is the master key to your funds. Never share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSeedWarningDialog = false
-                        pendingTarget = SensitiveViewTarget.SEED_PHRASE
-                        showPasswordDialog = true
-                    }
-                ) {
-                    Text("I Understand")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSeedWarningDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-            icon = {
-                Icon(painter = painterResource(R.drawable.ic_warning),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error)
-            }
-        )
-    }
-    
     // Password confirmation dialog for sensitive views
-    if (showPasswordDialog) {
+    if (target != null && warningAcknowledged) {
         VerifyPasswordDialog(
             secureStorage = secureStorage,
             isDecoyMode = wallet.isDecoyMode,
-            onDismiss = {
-                showPasswordDialog = false
-                pendingTarget = null
-            },
+            onDismiss = { pendingTarget = null },
             onVerified = {
-                showPasswordDialog = false
-                when (pendingTarget) {
+                pendingTarget = null
+                when (target) {
                     SensitiveViewTarget.SEED_PHRASE -> onViewSeedPhrase()
                     SensitiveViewTarget.ROOT_KEY -> onViewRootKey()
-                    null -> { /* shouldn't happen */ }
                 }
-                pendingTarget = null
             }
         )
     }
