@@ -15,14 +15,24 @@ import com.gorunjinian.metrovault.core.util.SecurityUtils
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModelProvider
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.feature.settings.SettingsViewModel
 
-class MainActivity : AppCompatActivity() {
+// FragmentActivity, not AppCompatActivity: nothing here uses AppCompatDelegate,
+// there are no XML layouts to inflate through AppCompatViewInflater, and Compose
+// does all the theming. FragmentActivity is the real floor — BiometricPrompt
+// requires it — and staying at that floor lets R8 drop appcompat's delegate and
+// widget tree, worth ~7 KB of the release APK (measured by reverting it).
+//
+// This is independent of Theme.MetroVault's parent: that must stay AppCompat for
+// androidx.biometric's sake on API 26–27 (see themes.xml) whichever base class is
+// used here, and AppCompatActivity would still build and run against it. Going
+// back up is a size regression, not a correctness one.
+class MainActivity : FragmentActivity() {
 
     private lateinit var settingsViewModel: SettingsViewModel
 

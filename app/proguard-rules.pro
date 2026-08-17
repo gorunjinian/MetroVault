@@ -1,52 +1,56 @@
-# Add project specific ProGuard rules here.
-# By default, the flags in this file are appended to flags specified
-# in /usr/local/Cellar/android-sdk/24.3.3/tools/proguard/proguard-android.txt
 
-
-# Keep security-crypto
--keep class androidx.security.crypto.** { *; }
--dontwarn androidx.security.crypto.**
-
-# Keep ZXing (QR code generation + scanner decoder configuration)
--keep class com.google.zxing.BarcodeFormat { *; }
--keep class com.google.zxing.EncodeHintType { *; }
--keep class com.google.zxing.DecodeHintType { *; }
--keep class com.google.zxing.qrcode.QRCodeWriter { *; }
--keep class com.google.zxing.qrcode.decoder.ErrorCorrectionLevel { *; }
--keep class com.google.zxing.qrcode.encoder.** { *; }
--keep class com.google.zxing.common.BitMatrix { *; }
--dontwarn com.google.zxing.**
-
-# Keep our crypto classes
--keep class com.gorunjinian.metrovault.crypto.** { *; }
--keep class com.gorunjinian.metrovault.wallet.** { *; }
-
-# Prevent obfuscation of sensitive crypto operations
--keepclassmembers class * {
-    @javax.crypto.* *;
-}
+# R8 rules for MetroVault.
+#
+# Sizing note: every `-keep ... { *; }` below is a hole in R8's shrinker. Widen
+# one and the whole subtree survives — the blanket Tink keep this file used to
+# carry was worth ~1.2 MB of dex on its own. Keep the rules as narrow as the
+# reflection/JNI they exist to protect.
 
 # =====================================
-# Google Tink (used by EncryptedSharedPreferences)
+# Google Tink (via androidx.security-crypto / EncryptedSharedPreferences)
 # =====================================
--keep class com.google.crypto.tink.** { *; }
+# NO blanket keep here on purpose. security-crypto's own consumer proguard.txt
+# is "Intentionally empty ... this library is safe to shrink", and tink-android
+# ships the one rule it genuinely needs (a `<fields>` keep on shaded-protobuf
+# GeneratedMessageLite subclasses) in META-INF/proguard/protobuf.pro, which AGP
+# applies automatically. Key managers reach Tink's registry through direct
+# AeadConfig/DeterministicAeadConfig.register() calls, so R8 traces them.
+# Keeping com.google.crypto.tink.** dragged in jwt, signature, hybrid, prf,
+# streamingaead, daead and the full proto/protobuf surface — none of it used.
 -dontwarn com.google.crypto.tink.**
 
-# javax.annotation classes (required by Tink)
+# javax.annotation classes (referenced by Tink, absent on Android)
 -dontwarn javax.annotation.**
 -dontwarn javax.annotation.concurrent.**
 
-# Keep Tink proto classes
--keep class com.google.crypto.tink.proto.** { *; }
+# =====================================
+# androidx.security-crypto
+# =====================================
+# Also shrink-safe per its own (empty) consumer rules; no keep needed.
+-dontwarn androidx.security.crypto.**
 
 # =====================================
-# Secp256k1 Native JNI Library (Bitcoin crypto)
+# ZXing (QR generation + scanner decoder configuration)
 # =====================================
+# Enum classes are read reflectively by ZXing's hint maps, so their fields stay.
+-keepclassmembers enum com.google.zxing.BarcodeFormat { *; }
+-keepclassmembers enum com.google.zxing.EncodeHintType { *; }
+-keepclassmembers enum com.google.zxing.DecodeHintType { *; }
+-keepclassmembers enum com.google.zxing.qrcode.decoder.ErrorCorrectionLevel { *; }
+-dontwarn com.google.zxing.**
+
+# =====================================
+# Secp256k1 native JNI library (Bitcoin crypto)
+# =====================================
+# Deliberately left broad. The native side resolves Secp256k1CFunctions,
+# NativeSecp256k1Util$AssertFailException and Secp256k1Context by name, and the
+# whole package is only ~10 KB of dex — not worth trading a name-lookup crash in
+# the signing path for. Do not narrow this to save bytes.
 -keep class fr.acinq.secp256k1.** { *; }
 -keepclassmembers class fr.acinq.secp256k1.** { *; }
 -dontwarn fr.acinq.secp256k1.**
 
-# Keep native method declarations
+# Keep native method declarations (JNI name-based lookup) app-wide.
 -keepclasseswithmembernames class * {
     native <methods>;
 }

@@ -4,13 +4,12 @@ bbqr = "1.0.3"
 bcur-kotlin = "1.0.5"
 kotlin = "2.4.10"
 core-ktx = "1.19.0"
-appcompat = "1.7.1"
+appcompat = "1.8.0"
 activity = "1.13.0"
-fragment = "1.8.9"
+fragment = "1.9.0"
 splashscreen = "1.2.0"
-material = "1.14.0"
-compose-bom = "2026.06.01"
-compose-ui-text = "1.11.4"
+compose-bom = "2026.08.00"
+compose-ui-text = "1.12.0"
 lifecycle = "2.11.0"
 navigation = "2.9.8"
 security-crypto = "1.1.0"
@@ -20,11 +19,10 @@ zxing-embedded = "4.3.0"
 coroutines = "1.11.0"
 secp256k1 = "0.23.0"
 reorderable = "3.1.0"
-window = "1.5.1"
 junit = "4.13.2"
 junit-ext = "1.3.0"
 espresso = "3.7.0"
-json = "20260719"
+json = "20260814"
 
 [libraries]
 # Core Android
@@ -34,14 +32,10 @@ activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref
 fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragment" }
 splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
 
-# Material
-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
-
 # Jetpack Compose (BOM-managed)
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 compose-ui-text = { group = "androidx.compose.ui", name = "ui-text", version.ref = "compose-ui-text" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity" }
@@ -75,9 +69,6 @@ secp256k1-jvm-test = { group = "fr.acinq.secp256k1", name = "secp256k1-kmp-jni-j
 
 # Reorderable
 reorderable = { group = "sh.calvin.reorderable", name = "reorderable", version.ref = "reorderable" }
-
-# Other
-window = { group = "androidx.window", name = "window", version.ref = "window" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }

@@ -106,7 +106,25 @@ android {
                 "META-INF/NOTICE",
                 "META-INF/NOTICE.txt",
                 "META-INF/notice.txt",
-                "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+
+                // Per-artifact license copies AndroidX ships under
+                // META-INF/androidx/**; ~22 KB compressed, none of it read at
+                // runtime. Attribution lives in the About screen and LICENSE.
+                "META-INF/androidx/**",
+                "META-INF/*.version",
+                "META-INF/*.kotlin_module",
+                "META-INF/com/android/build/gradle/**",
+
+                // kotlin-reflect metadata. Only kotlin.reflect.full reads these
+                // and nothing in the app uses it, so the descriptors are dead
+                // weight. Re-check if kotlin-reflect is ever added.
+                "kotlin/**",
+                "**/*.kotlin_builtins",
+                "**/*.kotlin_metadata",
+
+                // kotlinx-coroutines debug-agent probe table; debug tooling only.
+                "DebugProbesKt.bin"
             )
         }
     }
@@ -129,13 +147,20 @@ base.archivesName.set("MetroVault-${android.defaultConfig.versionName}")
 dependencies {
     // Core Android
     implementation(libs.core.ktx)
-    implementation(libs.appcompat)
     implementation(libs.activity.ktx)
     implementation(libs.fragment.ktx)
     implementation(libs.splashscreen)
 
-    // Material 3
-    implementation(libs.material)
+    // appcompat is not used directly (MainActivity is a FragmentActivity and
+    // there are no XML layouts) — androidx.biometric pulls it in and asks for
+    // 1.2.0. Declared here only to pin the resolved version forward.
+    implementation(libs.appcompat)
+
+    // NOTE: com.google.android.material (View-based Material Components) is
+    // deliberately absent. It was only ever the parent of Theme.MetroVault, and
+    // it dragged in cardview, constraintlayout, coordinatorlayout,
+    // dynamicanimation, recyclerview, transition and viewpager2 — all unused by
+    // a Compose-only app. Compose Material 3 (below) is a separate artifact.
 
     // Reorderable drag-and-drop for LazyColumn
     implementation(libs.reorderable)
@@ -144,7 +169,6 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
-    implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.viewmodel.compose)
@@ -175,8 +199,12 @@ dependencies {
     implementation(kotlin("stdlib"))
     implementation(libs.secp256k1.android)
 
-    implementation(libs.window)
     implementation(libs.compose.ui.text)
+
+    // Removed as unused and not needed transitively by anything else:
+    //  - androidx.compose.ui:ui-tooling-preview — no @Preview in main source
+    //    (add it back as debugImplementation if previews are reintroduced)
+    //  - androidx.window — no WindowMetrics/WindowInfoTracker usage
 
     // Testing
     testImplementation(libs.junit)
