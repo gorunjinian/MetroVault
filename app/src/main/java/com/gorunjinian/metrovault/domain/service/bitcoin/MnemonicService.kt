@@ -76,6 +76,26 @@ class MnemonicService {
     }
 
     /**
+     * Encodes caller-supplied, already-normalized entropy without adding system randomness.
+     * The caller must enforce source-strength requirements before invoking this method.
+     */
+    fun generateMnemonicFromEntropy(wordCount: Int, entropy: ByteArray): List<String> {
+        val expectedSize = when (wordCount) {
+            12 -> 16
+            24 -> 32
+            else -> throw IllegalArgumentException("Physical-only generation supports 12 or 24 words")
+        }
+        require(entropy.size == expectedSize) { "Entropy length does not match word count" }
+
+        val entropyCopy = entropy.copyOf()
+        return try {
+            MnemonicCode.toMnemonics(entropyCopy)
+        } finally {
+            entropyCopy.fill(0)
+        }
+    }
+
+    /**
      * Validates a BIP39 mnemonic phrase.
      */
     fun validateMnemonic(words: List<String>): Boolean {

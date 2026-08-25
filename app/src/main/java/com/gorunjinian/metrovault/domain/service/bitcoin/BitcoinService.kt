@@ -44,6 +44,9 @@ class BitcoinService {
     fun generateMnemonicWithUserEntropy(wordCount: Int = 24, userEntropy: ByteArray?): List<String> =
         mnemonicService.generateMnemonicWithUserEntropy(wordCount, userEntropy)
 
+    fun generateMnemonicFromEntropy(wordCount: Int, entropy: ByteArray): List<String> =
+        mnemonicService.generateMnemonicFromEntropy(wordCount, entropy)
+
     fun validateMnemonic(words: List<String>): Boolean =
         mnemonicService.validateMnemonic(words)
 

@@ -28,7 +28,57 @@ MetroVault follows the standard Bitcoin wallet derivation process:
 
 ## Entropy Sources
 
-MetroVault provides three methods for generating entropy:
+The recommended **Device + physical** mode always obtains the full BIP39 entropy size from
+`SecureRandom`. Optional physical input never replaces that device randomness. The physical
+sequence is serialized and SHA-256-normalized, then `MnemonicService` computes
+`SHA256(normalizedPhysicalEntropy || systemEntropy)` and uses the required 16 or 32 bytes as BIP39
+entropy.
+
+The explicit **Physical only (reproducible)** mode does not use `SecureRandom`. It is enabled only
+after the estimated physical source reaches the selected BIP39 strength (128 bits for 12 words or
+256 bits for 24 words). The resulting mnemonic is deterministic: the same source, exact sequence,
+mode, and word count produce the same wallet. Hashing normalizes input; it does not increase the
+entropy supplied by the user.
+
+### Physical entropy serialization (version 1)
+
+The frozen byte format is:
+
+```text
+ASCII("BitSawan physical entropy") || 00 || version || source || mode || count_be32 || symbols
+```
+
+- `version`: `01`
+- `source`: coin `01`, dice `02`, cards `03`
+- `mode`: `00` for coin/dice, cards with replacement `01`, cards without replacement `02`
+- `symbols`: coin Heads/Tails=`0/1`; dice=`1..6`; cards=`0..51`
+- Card IDs are suit-major in Clubs, Diamonds, Hearts, Spades order and rank-major in
+  `A,2,3,4,5,6,7,8,9,10,J,Q,K` order.
+
+Every symbol is retained, including incomplete coin bytes and odd final dice rolls. Deterministic
+vectors in `PhysicalEntropyTest` freeze both serialization and normalization.
+
+### Physical-only deterministic formats
+
+For compatibility with `bitcoin_seed_converter_fully_offline.html`, coin and dice use:
+
+```text
+COIN:<bits>    # Heads=1, Tails=0
+DICE:<digits>  # each recorded result is 1..6
+```
+
+Cards use comma-separated, zero-padded canonical IDs and an explicit mode/version domain:
+
+```text
+CARDS-WITH-REPLACEMENT-V1:<ids>
+CARDS-WITHOUT-REPLACEMENT-V1:<ids>
+```
+
+SHA-256 of the selected payload supplies 32 deterministic bytes; 12-word generation uses the
+first 16 bytes, while 24-word generation uses all 32. Fixed payload, digest, entropy, and mnemonic
+vectors are tested.
+
+BitSawan uses system entropy and supports three optional physical sources:
 
 ### 1. System Entropy (Default)
 
@@ -55,11 +105,9 @@ For users who prefer verifiable randomness:
 ├─────────────────────────────────────────────────────────────────┤
 │  • Heads = 0, Tails = 1                                         │
 │  • Each flip = 1 bit of entropy                                 │
-│  • 12-word mnemonic: requires 128 flips                         │
-│  • 24-word mnemonic: requires 256 flips                         │
-│                                                                 │
-│  Packing: 8 flips → 1 byte                                      │
-│  Example: H,T,T,H,T,H,H,T → 0b01101001 → 0x69                   │
+│  • About 128 flips supply 128 bits of physical entropy          │
+│  • About 256 flips supply 256 bits of physical entropy          │
+│  • Every flip is retained in the canonical serialization        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -72,24 +120,39 @@ Casino-grade dice provide excellent physical randomness:
 │                      Dice Roll Method                           │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Each roll (1-6) contributes ~2.58 bits (log₂(6))             │
-│  • Two rolls combined: (roll1 - 1) × 6 + (roll2 - 1)            │
-│  • Result: 0-35 packed into one byte                            │
+│  • Every roll is retained in the canonical serialization        │
 │                                                                 │
 │  12-word mnemonic: ~50 rolls (128 bits / 2.58 bits per roll)    │
 │  24-word mnemonic: ~100 rolls                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Entropy Mixing (When User Entropy Is Provided)
+### 4. Playing Card Entropy
 
-User entropy is **never used alone**. It is always mixed with system entropy:
+The default mode draws from a standard 52-card deck **with replacement**, so repeated cards are
+allowed and each independent draw contributes `log2(52) ≈ 5.70044` bits. About 23 draws reach 128
+bits and about 45 reach 256 bits.
+
+After recording a with-replacement draw, return that card to the bottom of the deck. Before the
+next draw, cut/split the deck at unpredictable positions a randomly selected 1–5 times, choosing a
+fresh number of cuts for each round. The entropy estimate assumes this makes the next card
+effectively uniform; a predictable or poorly mixed deck contributes less entropy than displayed.
+
+Without replacement, repeated cards are rejected and the entropy estimate after `n` draws is
+`log2(52! / (52-n)!)`. A complete shuffled deck has about 225.58 bits, so this mode cannot itself
+supply 256 bits of physical entropy. Device randomness is added only when Seed Randomness is set
+to the recommended Device + physical mode.
+
+### Entropy Mixing (Device + physical mode)
+
+In the recommended mode, user entropy is never used alone and is mixed with system entropy:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Entropy Mixing Process                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  userEntropy (coin/dice)  +  systemEntropy (SecureRandom)       │
+│ normalized physical input + systemEntropy (SecureRandom)        │
 │                    │                  │                         │
 │                    └────────┬─────────┘                         │
 │                             │                                   │
@@ -105,7 +168,9 @@ User entropy is **never used alone**. It is always mixed with system entropy:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Security Guarantee**: Even if the user's coin flips are biased or dice are loaded, the result is cryptographically secure because system entropy is always included.
+**Device + physical security guarantee**: Even if the physical source is poor, full-size system
+entropy is still included. This guarantee does not apply to Physical only mode, whose security is
+bounded by the actual unpredictability of the recorded sequence.
 
 ---
 

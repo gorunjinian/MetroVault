@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.log2
 
 /**
  * ViewModel for the Create Wallet multi-step wizard.
@@ -44,8 +43,9 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         val isTestnet: Boolean = false,  // Testnet wallet toggle
 
         // Step 2: Entropy
-        val entropyType: String = "", // "coin" or "dice"
-        val collectedEntropy: List<Int> = emptyList(),
+        val physicalEntropy: PhysicalEntropyState = PhysicalEntropyState(),
+        val physicalEntropyMode: PhysicalEntropyMode = PhysicalEntropyMode.MIX_WITH_DEVICE,
+        val entropyErrorMessage: String = "",
 
         // Step 3: Generated mnemonic
         val generatedMnemonic: List<String> = emptyList(),
@@ -67,24 +67,55 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         // Derived properties
         val requiredEntropyBits: Int get() = if (wordCount == 12) 128 else 256
 
-        val entropyBytes: ByteArray get() = calculateEntropyBytes(entropyType, collectedEntropy)
+        val entropyType: String get() = when (physicalEntropy.source) {
+            EntropySource.COIN -> "coin"
+            EntropySource.DICE -> "dice"
+            EntropySource.CARDS -> "cards"
+            null -> ""
+        }
+        val collectedEntropy: List<Int> get() = physicalEntropy.inputs
+        val cardsWithReplacement: Boolean get() = physicalEntropy.cardsWithReplacement
+
+        val entropyBytes: ByteArray get() = if (collectedEntropy.isEmpty()) {
+            ByteArray(0)
+        } else {
+            PhysicalEntropy.normalizedHash(physicalEntropy)
+        }
 
         // Calculate bits collected based on entropy type
         // Coin flip: 1 bit per flip (log2(2) = 1)
         // Dice roll: ~2.58 bits per roll (log2(6) ≈ 2.585)
-        val bitsCollected: Double get() = if (entropyType == "coin") {
-            collectedEntropy.size.toDouble()
-        } else {
-            collectedEntropy.size * log2(6.0)
-        }
+        val bitsCollected: Double get() = physicalEntropy.bitsCollected
 
         // Progress is based on bits collected, not packed byte array size
         val entropyProgress: Float get() =
             (bitsCollected.toFloat() / requiredEntropyBits).coerceIn(0f, 1f)
 
+        val canGenerateMnemonic: Boolean get() =
+            physicalEntropyMode == PhysicalEntropyMode.MIX_WITH_DEVICE ||
+                PhysicalEntropy.hasRequiredEntropy(physicalEntropy, wordCount)
+
         val entropyInputCount: String get() = "${collectedEntropy.size} ${
-            if (entropyType == "coin") "coin flips" else "dice rolls"
+            when (physicalEntropy.source) {
+                EntropySource.COIN -> "coin tosses"
+                EntropySource.DICE -> "dice rolls"
+                EntropySource.CARDS -> "card draws"
+                null -> "inputs"
+            }
         }"
+
+        val hasUnsavedDraft: Boolean get() =
+            currentStep > 1 ||
+                hasShownEntropyInfo ||
+                wordCount != 12 ||
+                selectedDerivationPath != DerivationPaths.NATIVE_SEGWIT ||
+                accountNumber != 0 ||
+                isTestnet ||
+                physicalEntropy.source != null ||
+                generatedMnemonic.isNotEmpty() ||
+                useBip39Passphrase ||
+                bip39Passphrase.isNotEmpty() ||
+                confirmBip39Passphrase.isNotEmpty()
     }
 
     private val _uiState = MutableStateFlow(UiState())
@@ -120,16 +151,21 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         if (currentStep > 1) {
             _uiState.update { it.copy(currentStep = currentStep - 1) }
         } else {
-            viewModelScope.launch {
-                _events.emit(CreateWalletEvent.NavigateBack)
-            }
+            discardDraftAndExit()
+        }
+    }
+
+    fun discardDraftAndExit() {
+        clearSensitiveData()
+        viewModelScope.launch {
+            _events.emit(CreateWalletEvent.NavigateBack)
         }
     }
 
     // ========== Step 1: Configuration ==========
 
     fun setWordCount(count: Int) {
-        _uiState.update { it.copy(wordCount = count) }
+        _uiState.update { it.copy(wordCount = count, entropyErrorMessage = "") }
     }
 
     fun setDerivationPath(path: String) {
@@ -156,19 +192,55 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
     // ========== Step 2: Entropy ==========
 
     fun setEntropyType(type: String) {
+        val source = when (type) {
+            "coin" -> EntropySource.COIN
+            "dice" -> EntropySource.DICE
+            "cards" -> EntropySource.CARDS
+            else -> return
+        }
         _uiState.update {
-            it.copy(entropyType = type, collectedEntropy = emptyList())
+            it.copy(
+                physicalEntropy = it.physicalEntropy.selectSource(source),
+                entropyErrorMessage = ""
+            )
         }
     }
 
     fun addEntropyInput(value: Int) {
         _uiState.update {
-            it.copy(collectedEntropy = it.collectedEntropy + value)
+            it.copy(physicalEntropy = it.physicalEntropy.add(value), entropyErrorMessage = "")
         }
     }
 
+    fun removeLastEntropyInput() {
+        _uiState.update {
+            it.copy(physicalEntropy = it.physicalEntropy.removeLast(), entropyErrorMessage = "")
+        }
+    }
+
+    fun removeEntropyInput(index: Int) {
+        _uiState.update {
+            it.copy(physicalEntropy = it.physicalEntropy.removeAt(index), entropyErrorMessage = "")
+        }
+    }
+
+    fun setCardsWithReplacement(enabled: Boolean) {
+        _uiState.update {
+            it.copy(
+                physicalEntropy = it.physicalEntropy.setCardsWithReplacement(enabled),
+                entropyErrorMessage = ""
+            )
+        }
+    }
+
+    fun setPhysicalEntropyMode(mode: PhysicalEntropyMode) {
+        _uiState.update { it.copy(physicalEntropyMode = mode, entropyErrorMessage = "") }
+    }
+
     fun resetEntropy() {
-        _uiState.update { it.copy(collectedEntropy = emptyList()) }
+        _uiState.update {
+            it.copy(physicalEntropy = it.physicalEntropy.reset(), entropyErrorMessage = "")
+        }
     }
 
     fun dismissEntropyInfo() {
@@ -176,7 +248,15 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun showSecurityWarning() {
-        _uiState.update { it.copy(showWarningDialog = true) }
+        _uiState.update { state ->
+            if (state.canGenerateMnemonic) {
+                state.copy(showWarningDialog = true, entropyErrorMessage = "")
+            } else {
+                state.copy(
+                    entropyErrorMessage = "Physical-only mode requires at least ${state.requiredEntropyBits} estimated bits."
+                )
+            }
+        }
     }
 
     fun dismissSecurityWarning() {
@@ -188,21 +268,41 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
             _uiState.update { it.copy(showWarningDialog = false) }
 
             val state = _uiState.value
-            val userEntropyBytes = if (state.collectedEntropy.isNotEmpty()) {
-                state.entropyBytes
-            } else {
-                null
+            if (!state.canGenerateMnemonic) {
+                _uiState.update {
+                    it.copy(
+                        showWarningDialog = false,
+                        entropyErrorMessage = "Physical-only mode requires at least ${state.requiredEntropyBits} estimated bits."
+                    )
+                }
+                return@launch
             }
 
-            val mnemonic = withContext(Dispatchers.IO) {
-                wallet.generateMnemonic(state.wordCount, userEntropyBytes)
+            val entropyBytes = when {
+                state.physicalEntropyMode == PhysicalEntropyMode.PHYSICAL_ONLY ->
+                    PhysicalEntropy.deterministicBip39Entropy(state.physicalEntropy, state.wordCount)
+                state.collectedEntropy.isNotEmpty() -> state.entropyBytes
+                else -> null
+            }
+
+            val mnemonic = try {
+                withContext(Dispatchers.IO) {
+                    if (state.physicalEntropyMode == PhysicalEntropyMode.PHYSICAL_ONLY) {
+                        wallet.generateMnemonicFromEntropy(state.wordCount, requireNotNull(entropyBytes))
+                    } else {
+                        wallet.generateMnemonic(state.wordCount, entropyBytes)
+                    }
+                }
+            } finally {
+                entropyBytes?.fill(0)
             }
 
             _uiState.update {
                 it.copy(
                     generatedMnemonic = mnemonic,
                     currentStep = 3,
-                    errorMessage = ""
+                    errorMessage = "",
+                    entropyErrorMessage = ""
                 )
             }
         }
@@ -278,7 +378,9 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
                             generatedMnemonic = emptyList(),
                             bip39Passphrase = "",
                             confirmBip39Passphrase = "",
-                            collectedEntropy = emptyList()
+                            physicalEntropy = PhysicalEntropyState(),
+                            physicalEntropyMode = PhysicalEntropyMode.MIX_WITH_DEVICE,
+                            entropyErrorMessage = ""
                         )
                     }
                     _events.emit(CreateWalletEvent.WalletCreated)
@@ -293,62 +395,6 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
     // ========== Cleanup ==========
 
     fun clearSensitiveData() {
-        _uiState.update {
-            it.copy(
-                generatedMnemonic = emptyList(),
-                bip39Passphrase = "",
-                confirmBip39Passphrase = "",
-                collectedEntropy = emptyList()
-            )
-        }
-    }
-
-    companion object {
-        /**
-         * Converts collected entropy inputs to a byte array.
-         * For coins: packs bits (0=Heads, 1=Tails) into bytes
-         * For dice: converts dice values to bytes using the raw values
-         */
-        private fun calculateEntropyBytes(entropyType: String, inputs: List<Int>): ByteArray {
-            if (inputs.isEmpty()) return ByteArray(0)
-
-            return when (entropyType) {
-                "coin" -> {
-                    // Pack coin flips as bits into bytes
-                    val bytes = mutableListOf<Byte>()
-                    var currentByte = 0
-                    var bitCount = 0
-
-                    for (flip in inputs) {
-                        currentByte = (currentByte shl 1) or flip
-                        bitCount++
-
-                        if (bitCount == 8) {
-                            bytes.add(currentByte.toByte())
-                            currentByte = 0
-                            bitCount = 0
-                        }
-                    }
-
-                    bytes.toByteArray()
-                }
-                "dice" -> {
-                    // Use dice values directly, each roll contributes ~2.58 bits
-                    // Pack pairs of dice rolls into bytes for efficiency
-                    val bytes = mutableListOf<Byte>()
-
-                    for (i in inputs.indices step 2) {
-                        if (i + 1 < inputs.size) {
-                            // Combine two dice values (1-6) into one byte
-                            val combined = (inputs[i] - 1) * 6 + (inputs[i + 1] - 1)
-                            bytes.add(combined.toByte())
-                        }
-                    }
-
-                    bytes.toByteArray()
-                }
-                else -> ByteArray(0)
-            }
-        }
+        _uiState.value = UiState()
     }
 }

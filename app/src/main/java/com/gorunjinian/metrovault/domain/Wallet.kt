@@ -188,6 +188,11 @@ class   Wallet(context: Context) {
         return bitcoinService.generateMnemonicWithUserEntropy(wordCount, userEntropy)
     }
 
+    /** Physical-only path; caller must validate source strength before supplying entropy. */
+    fun generateMnemonicFromEntropy(wordCount: Int, entropy: ByteArray): List<String> {
+        return bitcoinService.generateMnemonicFromEntropy(wordCount, entropy)
+    }
+
     /**
      * Creates a wallet from mnemonic.
      *
