@@ -37,6 +37,7 @@ import com.gorunjinian.metrovault.domain.manager.SilentPaymentManager
 import com.gorunjinian.metrovault.domain.manager.StatelessWalletManager
 import com.gorunjinian.metrovault.domain.manager.WalletAccountManager
 import com.gorunjinian.metrovault.domain.manager.WalletSessionManager
+import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1022,10 +1023,13 @@ class   Wallet(context: Context) {
     }
 
     /**
-     * Builds a watch-only coordinator export from the active account public key. No mnemonic,
-     * seed bytes, private descriptor, or extended private key is passed into the export service.
+     * Builds a watch-only coordinator export for an arbitrary [accountNumber] under the active
+     * wallet's purpose. No mnemonic, seed bytes, private descriptor, or extended private key is
+     * passed into the export service. The active account reuses its cached public key, so
+     * xpub-only stateless wallets can still export it; other accounts are derived from the
+     * master key when one is loaded.
      */
-    fun getActiveCoordinatorExport(): CoordinatorExportResult {
+    fun getCoordinatorExportForAccount(accountNumber: Int): CoordinatorExportResult {
         if (isActiveMultisig()) {
             return CoordinatorExportResult.Unsupported(CoordinatorExportError.MULTISIG_WALLET)
         }
@@ -1034,24 +1038,104 @@ class   Wallet(context: Context) {
         }
         val state = getActiveWalletState()
             ?: return CoordinatorExportResult.Error(CoordinatorExportError.WALLET_NOT_LOADED)
-        val accountPublicKey = state.getAccountPublicKey()
+        val accountPublicKey = getAccountPublicKeyForAccount(state, accountNumber)
             ?: return CoordinatorExportResult.Error(CoordinatorExportError.ACCOUNT_KEY_UNAVAILABLE)
         return try {
             CoordinatorExportResult.Available(
                 coordinatorExportService.buildExport(
                     walletName = state.name,
                     masterFingerprint = state.fingerprint,
-                    derivationPath = state.derivationPath,
+                    derivationPath = DerivationPaths.withAccountNumber(state.derivationPath, accountNumber),
                     accountPublicKey = accountPublicKey
                 )
             )
         } catch (e: IllegalArgumentException) {
-            // Validation messages are value-free by construction, so this cannot leak key material.
-            AppLog.w(TAG, e) { "Coordinator export rejected the active account" }
+            AppLog.w(TAG, e) { "Coordinator export rejected account $accountNumber" }
             CoordinatorExportResult.Unsupported(CoordinatorExportError.UNSUPPORTED_DERIVATION_PATH)
         } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Coordinator export failed" }
+            AppLog.e(TAG, e) { "Coordinator export failed for account $accountNumber" }
             CoordinatorExportResult.Error(CoordinatorExportError.BUILD_FAILED)
+        }
+    }
+
+    /**
+     * Combined Coldcard Generic JSON for [accountNumber]: all four single-sig sections plus both
+     * BIP48 multisig sections in one payload. Requires the master key (five of the six sections
+     * are outside the wallet's own account path), so xpub-only wallets return null.
+     */
+    fun getCombinedCoordinatorExportForAccount(accountNumber: Int): String? {
+        if (isActiveMultisig() || isActiveSilentPayment()) return null
+        val state = getActiveWalletState() ?: return null
+        val master = state.getMasterPrivateKey() ?: return null
+        val isTestnet = isActiveWalletTestnet()
+        return try {
+            coordinatorExportService.buildCombinedExport(
+                masterFingerprint = state.fingerprint,
+                accountNumber = accountNumber,
+                isTestnet = isTestnet,
+                keys = CoordinatorExportService.CombinedAccountKeys(
+                    bip44 = master.derivePrivateKey(DerivationPaths.legacy(accountNumber, isTestnet)).extendedPublicKey,
+                    bip49 = master.derivePrivateKey(DerivationPaths.nestedSegwit(accountNumber, isTestnet)).extendedPublicKey,
+                    bip84 = master.derivePrivateKey(DerivationPaths.nativeSegwit(accountNumber, isTestnet)).extendedPublicKey,
+                    bip86 = master.derivePrivateKey(DerivationPaths.taproot(accountNumber, isTestnet)).extendedPublicKey,
+                    bip48P2shP2wsh = master.derivePrivateKey(
+                        DerivationPaths.bip48(accountNumber, DerivationPaths.Bip48ScriptType.P2SH_P2WSH, isTestnet)
+                    ).extendedPublicKey,
+                    bip48P2wsh = master.derivePrivateKey(
+                        DerivationPaths.bip48(accountNumber, DerivationPaths.Bip48ScriptType.P2WSH, isTestnet)
+                    ).extendedPublicKey
+                )
+            )
+        } catch (e: Exception) {
+            AppLog.e(TAG, e) { "Combined coordinator export failed for account $accountNumber" }
+            null
+        }
+    }
+
+    /** Nunchuk BIP48 multisig signer record for [accountNumber]. Empty on error. */
+    fun getNunchukBip48SignerRecordForAccount(
+        accountNumber: Int,
+        bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
+    ): String {
+        val state = getActiveWalletState() ?: return ""
+        val master = state.getMasterPrivateKey() ?: return ""
+        val isTestnet = isActiveWalletTestnet()
+        return try {
+            val bip48Key = master.derivePrivateKey(
+                DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
+            ).extendedPublicKey
+            CoordinatorExportService.buildNunchukBip48SignerRecord(
+                masterFingerprint = state.fingerprint,
+                accountNumber = accountNumber,
+                bip48ScriptType = bip48ScriptType,
+                standardAccountXpub = keyEncodingService.getStandardAccountXpub(bip48Key, isTestnet),
+                isTestnet = isTestnet
+            )
+        } catch (e: Exception) {
+            AppLog.w(TAG, e) { "Nunchuk BIP48 signer record unavailable for account $accountNumber" }
+            ""
+        }
+    }
+
+    /**
+     * Account public key at [accountNumber] under the active wallet's own purpose. Prefers the
+     * cached key when the account matches the active one; otherwise derives from the master key.
+     */
+    private fun getAccountPublicKeyForAccount(
+        state: WalletState,
+        accountNumber: Int
+    ): DeterministicWallet.ExtendedPublicKey? {
+        if (DerivationPaths.getAccountNumber(state.derivationPath) == accountNumber) {
+            state.getAccountPublicKey()?.let { return it }
+        }
+        val master = state.getMasterPrivateKey() ?: return null
+        return try {
+            master.derivePrivateKey(
+                DerivationPaths.withAccountNumber(state.derivationPath, accountNumber)
+            ).extendedPublicKey
+        } catch (e: Exception) {
+            AppLog.e(TAG, e) { "Failed to derive the account public key for account $accountNumber" }
+            null
         }
     }
 

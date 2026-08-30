@@ -17,6 +17,9 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.core.ui.components.TapToCopyQRCard
+import com.gorunjinian.metrovault.feature.wallet.details.components.AccountSelectorDropdown
+import com.gorunjinian.metrovault.feature.wallet.details.components.Bip48ScriptTypeToggle
+import com.gorunjinian.metrovault.feature.wallet.details.components.rememberAccountExportState
 
 /**
  * DescriptorsScreen - Displays wallet output descriptors with QR codes.
@@ -33,30 +36,20 @@ fun DescriptorsScreen(
 ) {
     // For descriptors view: false = public, true = private
     var showPrivate by remember { mutableStateOf(false) }
-    
+
     // Export mode: false = single-sig descriptor, true = multisig key (BIP48)
     var exportForMultisig by remember { mutableStateOf(false) }
-    
+
     // BIP48 script type for multisig export
     var bip48ScriptType by remember { mutableStateOf(DerivationPaths.Bip48ScriptType.P2WSH) }
-    
+
     // Password confirmation state
     var showPasswordDialog by remember { mutableStateOf(false) }
 
-    // Account selection state - unified for both stateless and persistent wallets
-    val walletsList by wallet.wallets.collectAsState()
-    val walletId = wallet.getActiveWalletId()
-    val activeWalletMetadata = remember(walletsList, walletId) {
-        walletsList.find { it.id == walletId }
-    }
-    
-    // Get unified wallet info (handles stateless vs persistent internally)
-    val walletInfo = wallet.getActiveWalletInfo(activeWalletMetadata)
-    val accounts = walletInfo.accounts
-    val baseDerivationPath = walletInfo.derivationPath
-    var selectedAccountNumber by remember { mutableIntStateOf(walletInfo.accountNumber) }
-    var accountDropdownExpanded by remember { mutableStateOf(false) }
-    
+    val accountState = rememberAccountExportState(wallet)
+    val baseDerivationPath = accountState.baseDerivationPath
+    val selectedAccountNumber = accountState.selectedAccountNumber
+
     // Compute display data based on export mode
     val displayData = remember(selectedAccountNumber, baseDerivationPath, exportForMultisig, showPrivate, bip48ScriptType) {
         if (exportForMultisig) {
@@ -80,13 +73,9 @@ fun DescriptorsScreen(
     val exportTypeLabel = if (exportForMultisig) "Multisig Descriptor" else "Descriptor"
     val keyTypeLabel = if (showPrivate) "Spending" else "Watch-Only"
     val fullLabel = "$keyTypeLabel $exportTypeLabel"
-    
-    // Display name for selected account
-    val selectedAccountName = activeWalletMetadata?.getAccountDisplayName(selectedAccountNumber)
-        ?: "Account $selectedAccountNumber"
-    
+
     val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
-    
+
     Scaffold(
         topBar = {
             MetroTopBar(
@@ -116,79 +105,24 @@ fun DescriptorsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(modifier = Modifier.height(0.dp))
-            
-            // Account Selector Dropdown
-            ExposedDropdownMenuBox(
-                expanded = accountDropdownExpanded,
-                onExpandedChange = { accountDropdownExpanded = it }
-            ) {
-                OutlinedTextField(
-                    value = selectedAccountName,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(fullLabel) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountDropdownExpanded) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
-                )
-                ExposedDropdownMenu(
-                    expanded = accountDropdownExpanded,
-                    onDismissRequest = { accountDropdownExpanded = false }
-                ) {
-                    accounts.forEach { accountNum ->
-                        val accountName = activeWalletMetadata?.getAccountDisplayName(accountNum)
-                            ?: "Account $accountNum"
-                        val accountPath = if (exportForMultisig) {
-                            DerivationPaths.bip48(accountNum, bip48ScriptType, wallet.isActiveWalletTestnet())
-                        } else {
-                            DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
-                        }
-                        DropdownMenuItem(
-                            text = {
-                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                    Text(
-                                        text = accountName,
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                    Text(
-                                        text = accountPath,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            onClick = {
-                                selectedAccountNumber = accountNum
-                                accountDropdownExpanded = false
-                            },
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
-                        )
-                        if (accountNum != accounts.last()) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            )
-                        }
+
+            AccountSelectorDropdown(
+                label = fullLabel,
+                state = accountState,
+                accountDetail = { accountNum ->
+                    if (exportForMultisig) {
+                        DerivationPaths.bip48(accountNum, bip48ScriptType, wallet.isActiveWalletTestnet())
+                    } else {
+                        DerivationPaths.withAccountNumber(baseDerivationPath, accountNum)
                     }
                 }
-            }
+            )
 
             // BIP48 Script Type Selector (only shown in multisig mode)
             if (exportForMultisig) {
-                SegmentedToggle(
-                    options = listOf(
-                        DerivationPaths.Bip48ScriptType.P2WSH.displayName,
-                        DerivationPaths.Bip48ScriptType.P2SH_P2WSH.displayName
-                    ),
-                    selectedIndex = if (bip48ScriptType == DerivationPaths.Bip48ScriptType.P2WSH) 0 else 1,
-                    onSelect = { index ->
-                        bip48ScriptType = if (index == 0) {
-                            DerivationPaths.Bip48ScriptType.P2WSH
-                        } else {
-                            DerivationPaths.Bip48ScriptType.P2SH_P2WSH
-                        }
-                    },
+                Bip48ScriptTypeToggle(
+                    scriptType = bip48ScriptType,
+                    onScriptTypeChange = { bip48ScriptType = it },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -251,11 +185,11 @@ fun DescriptorsScreen(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
-    
+
     // Password confirmation dialog
     if (showPasswordDialog) {
         VerifyPasswordDialog(
