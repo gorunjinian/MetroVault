@@ -73,6 +73,27 @@ import java.net.URLEncoder
 private const val ANIMATION_DURATION = 250
 private const val INITIAL_OFFSET_X = 0.08f // 8% horizontal offset for subtler movement
 
+// Back navigation transitions, hoisted because they feed two separate NavHost parameters.
+// Navigation 2.10.0 routes the predictive back gesture through predictivePopEnterTransition /
+// predictivePopExitTransition instead of popEnterTransition / popExitTransition; their defaults
+// (fadeIn(spring) + scaleOut(0.7f)) are not our slide, so the gesture stopped matching the app
+// bar back arrow. Passing the same lambdas to both pairs keeps the two paths identical.
+private val backEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    fadeIn(animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)) +
+    slideInHorizontally(
+        initialOffsetX = { -(it * INITIAL_OFFSET_X).toInt() },
+        animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)
+    )
+}
+
+private val backExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    fadeOut(animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)) +
+    slideOutHorizontally(
+        targetOffsetX = { (it * INITIAL_OFFSET_X).toInt() },
+        animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)
+    )
+}
+
 sealed class Screen(val route: String) {
     object SetupPassword : Screen("setup_password")
     object Unlock : Screen("unlock")
@@ -223,22 +244,12 @@ fun AppNavigation(
                 animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)
             )
         },
-        // Back navigation: simplified enter
-        popEnterTransition = {
-            fadeIn(animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)) +
-            slideInHorizontally(
-                initialOffsetX = { -(it * INITIAL_OFFSET_X).toInt() },
-                animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)
-            )
-        },
-        // Back navigation: simplified exit
-        popExitTransition = {
-            fadeOut(animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)) +
-            slideOutHorizontally(
-                targetOffsetX = { (it * INITIAL_OFFSET_X).toInt() },
-                animationSpec = tween(ANIMATION_DURATION, easing = FastOutSlowInEasing)
-            )
-        }
+        // Back navigation (app bar back arrow, navigateUp, popBackStack)
+        popEnterTransition = backEnter,
+        popExitTransition = backExit,
+        // Back navigation (predictive back gesture) - same animation, driven by gesture progress
+        predictivePopEnterTransition = { backEnter.invoke(this) },
+        predictivePopExitTransition = { backExit.invoke(this) }
     ) {
         composable(Screen.SetupPassword.route) {
             SetupPasswordScreen(
