@@ -17,6 +17,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
+import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.feature.transaction.components.OutputWithType
 import com.gorunjinian.metrovault.feature.transaction.components.PSBTScannerView
@@ -65,6 +66,7 @@ fun ScanPSBTScreen(
     // wallet is producing PSBTs without correct BIP32 derivation metadata.
     var addressLookupFallbackUsed by remember { mutableStateOf(false) }
     var addressLookupInputIndices by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var signingRefusals by remember { mutableStateOf<List<InputSigningRefusal>>(emptyList()) }
     
     // Animated QR scanning state
     val animatedScanner = remember { AnimatedQRScanner(PSBTDecoder::decode) }
@@ -155,6 +157,7 @@ fun ScanPSBTScreen(
         alternativePathsUsed = emptyList()
         addressLookupFallbackUsed = false
         addressLookupInputIndices = emptyList()
+        signingRefusals = emptyList()
         animatedScanner.reset()
         scanProgress = 0
         isAnimatedScan = false
@@ -302,6 +305,7 @@ fun ScanPSBTScreen(
                         alternativePathsUsed = alternativePathsUsed,
                         addressLookupFallbackUsed = addressLookupFallbackUsed,
                         addressLookupInputIndices = addressLookupInputIndices,
+                refusals = signingRefusals,
                         canFinalize = canFinalize,
                         isFinalized = isFinalized,
                         onFinalize = {
@@ -450,6 +454,9 @@ fun ScanPSBTScreen(
                                             // on the signed-display screen.
                                             addressLookupFallbackUsed = signingResult.usedAddressLookupFallback
                                             addressLookupInputIndices = signingResult.addressLookupInputIndices
+                                            // Inputs that are ours but were refused: the result is
+                                            // only a partial signature and must say so.
+                                            signingRefusals = signingResult.refusals
 
                                             // Check if this PSBT can be finalized (all required signatures present)
                                             canFinalize = withContext(Dispatchers.Default) {

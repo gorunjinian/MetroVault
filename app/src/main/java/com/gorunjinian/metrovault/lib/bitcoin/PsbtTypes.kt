@@ -42,7 +42,10 @@ data class TaprootBip32DerivationPath(@JvmField val leaves: List<ByteVector32>, 
             val input = ByteArrayInput(bin)
             val numLeaves = BtcSerializer.varint(input).toInt()
             val leaves = (0 until numLeaves).map { BtcSerializer.bytes(input, 32).byteVector32() }
-            val masterKeyFingerprint = Pack.int32BE(input).toLong()
+            // The fingerprint is an unsigned 32-bit value; `toUInt()` before widening keeps
+            // fingerprints with the high bit set from sign-extending into a negative Long, which
+            // would never compare equal to the wallet's own fingerprint.
+            val masterKeyFingerprint = Pack.int32BE(input).toUInt().toLong()
             val childCount = (input.availableBytes / 4)
             val keyPath = KeyPath((0 until childCount).map { _ -> Pack.int32LE(input).toUInt().toLong() })
             return TaprootBip32DerivationPath(leaves, masterKeyFingerprint, keyPath)
@@ -324,6 +327,22 @@ sealed class UpdateFailure {
     data class CannotUpdateInput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotUpdateOutput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotSignInput(val index: Int, val reason: String) : UpdateFailure()
+
+    /** A taproot input declared a sighash type BIP-341 does not allow. */
+    data class UnsupportedSighashType(val index: Int, val sighashType: Int) : UpdateFailure()
+
+    /**
+     * A taproot output commits to a script tree, so the BIP-86 (no-script) key-path signature we
+     * produce cannot satisfy it. [merkleRoot] is non-null when the PSBT declared
+     * `PSBT_IN_TAP_MERKLE_ROOT` and it verifiably matches the output being spent.
+     */
+    data class CannotSignTaprootScriptTree(val index: Int, val merkleRoot: ByteVector32?) : UpdateFailure()
+
+    /**
+     * The PSBT declares our key for taproot *script* paths only (its `PSBT_IN_TAP_BIP32_DERIVATION`
+     * entry carries tapleaf hashes), not for the key path. Signing it needs script-path support.
+     */
+    data class CannotSignTaprootScriptPathKey(val index: Int) : UpdateFailure()
     data class CannotFinalizeInput(val index: Int, val reason: String) : UpdateFailure()
     data class CannotExtractTx(val reason: String) : UpdateFailure()
 }

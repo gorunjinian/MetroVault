@@ -44,6 +44,17 @@ sealed class SpSpendingError {
         override val message = "The silent-payment tweak for input $index does not derive its output key."
     }
 
+    /**
+     * BIP-341 allows only sighash types 0x00–0x03 and 0x81–0x83 for taproot. The value is parsed
+     * from `PSBT_IN_SIGHASH_TYPE` as a signed Int, so a declared 0xFFFFFFFF arrives as -1, slips
+     * past `hashForSigningSchnorr`'s `sighashType <= 0x03` guard, and would otherwise be masked
+     * into SIGHASH_SINGLE | SIGHASH_ANYONECANPAY — semantics the user was never shown.
+     */
+    data class UnsupportedSighashType(val index: Int, val sighashType: Int) : SpSpendingError() {
+        override val message =
+            "Input $index requests sighash type 0x${sighashType.toUInt().toString(16)}, which is not valid for Taproot."
+    }
+
     /** The derived spending key `d = b_spend + tweak` is an invalid scalar (zero or ≥ n). */
     data class InvalidSpendKey(val index: Int) : SpSpendingError() {
         override val message = "The derived spending key for input $index is invalid."

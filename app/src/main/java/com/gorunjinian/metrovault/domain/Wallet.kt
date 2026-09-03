@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.compose.runtime.Stable
 import com.gorunjinian.metrovault.core.logging.AppLog
+import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.data.model.ScriptType
@@ -288,7 +289,7 @@ class   Wallet(context: Context) {
                 if (isSp) {
                     val realSeed = MnemonicCode.toSeed(mnemonic, passphrase)
                     try {
-                        val master = com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.generate(realSeed)
+                        val master = DeterministicWallet.generate(realSeed)
                         val isTestnet = DerivationPaths.isTestnet(fullPath)
                         val keys = silentPaymentManager.deriveKeys(master, accountNumber, isTestnet)
                         spScanPubKeyHex = keys.scanPublicKey.toHex()
@@ -791,6 +792,11 @@ class   Wallet(context: Context) {
             val alternativePathsUsed: List<String> = emptyList(),
             val usedAddressLookupFallback: Boolean = false,
             val addressLookupInputIndices: List<Int> = emptyList(),
+            /**
+             * Inputs belonging to this wallet that MetroVault declined to sign. Non-empty means
+             * the PSBT is only partially signed and the user must be told.
+             */
+            val refusals: List<InputSigningRefusal> = emptyList(),
         ) : PsbtSigningResult()
 
         /**
@@ -800,7 +806,9 @@ class   Wallet(context: Context) {
          */
         data class Failure(
             val error: WalletSigningService.SigningError,
-            val message: String
+            val message: String,
+            /** Per-input refusals, when inputs matched this wallet but signing was declined. */
+            val refusals: List<InputSigningRefusal> = emptyList(),
         ) : PsbtSigningResult()
     }
 
@@ -817,9 +825,10 @@ class   Wallet(context: Context) {
                         alternativePathsUsed = result.alternativePathsUsed,
                         usedAddressLookupFallback = result.usedAddressLookupFallback,
                         addressLookupInputIndices = result.addressLookupInputIndices,
+                        refusals = result.refusals,
                     )
                 is WalletSigningService.SigningResult.Failure ->
-                    PsbtSigningResult.Failure(result.error, result.message)
+                    PsbtSigningResult.Failure(result.error, result.message, result.refusals)
             }
         }
         
@@ -879,9 +888,10 @@ class   Wallet(context: Context) {
                     alternativePathsUsed = result.alternativePathsUsed,
                     usedAddressLookupFallback = result.usedAddressLookupFallback,
                     addressLookupInputIndices = result.addressLookupInputIndices,
+                    refusals = result.refusals,
                 )
             is WalletSigningService.SigningResult.Failure ->
-                PsbtSigningResult.Failure(result.error, result.message)
+                PsbtSigningResult.Failure(result.error, result.message, result.refusals)
         }
     }
 

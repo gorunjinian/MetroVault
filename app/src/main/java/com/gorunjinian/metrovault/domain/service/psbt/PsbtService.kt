@@ -2,9 +2,11 @@ package com.gorunjinian.metrovault.domain.service.psbt
 
 import com.gorunjinian.metrovault.data.model.PsbtDetails
 import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.SigningResult
 import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
 import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
+import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 
 /**
  * Service responsible for PSBT (Partially Signed Bitcoin Transaction) operations.
@@ -31,7 +33,7 @@ class PsbtService {
      * @param accountPrivateKey Account-level private key for fallback address scanning
      * @param scriptType Script type for address generation in fallback
      * @param isTestnet Whether this is a testnet wallet
-     * @return SigningResult with signed PSBT and info about alternative paths used, or null on failure
+     * @return the signed PSBT and diagnostics, or the per-input refusals that prevented signing
      */
     fun signPsbt(
         psbtBase64: String,
@@ -40,7 +42,7 @@ class PsbtService {
         scriptType: ScriptType,
         isTestnet: Boolean = false,
         accountPath: KeyPath,
-    ): SigningResult? = PsbtSigner.signPsbt(
+    ): Either<List<InputSigningRefusal>, SigningResult> = PsbtSigner.signPsbt(
         psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath
     )
 

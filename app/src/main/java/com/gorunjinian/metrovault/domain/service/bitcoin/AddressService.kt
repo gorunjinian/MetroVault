@@ -153,8 +153,11 @@ class AddressService {
                 }
                 ScriptType.P2WPKH -> Script.write(Script.pay2wpkh(publicKey)).byteVector()
                 ScriptType.P2TR -> {
-                    val xOnlyKey = XonlyPublicKey(publicKey)
-                    Script.write(Script.pay2tr(xOnlyKey)).byteVector()
+                    // BIP-86: the scriptPubKey commits to the tweaked *output* key, not to the
+                    // internal key, so the key must go through the no-script TapTweak first.
+                    val internalKey = XonlyPublicKey(publicKey)
+                    val (outputKey, _) = internalKey.outputKey(Crypto.TaprootTweak.NoScriptTweak)
+                    Script.write(Script.pay2tr(outputKey)).byteVector()
                 }
             }
         } catch (_: Exception) {

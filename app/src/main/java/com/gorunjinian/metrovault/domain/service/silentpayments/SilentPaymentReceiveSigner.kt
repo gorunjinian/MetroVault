@@ -66,6 +66,12 @@ object SilentPaymentReceiveSigner {
             }
 
             val sighashType = input.sighashType ?: SigHash.SIGHASH_DEFAULT
+            // Same guard as the BIP-86 key-path signer: `hashForSigningTaprootKeyPath` accepts any
+            // negative value (a declared 0xFFFFFFFF parses to -1) and masks it into
+            // SIGHASH_SINGLE | SIGHASH_ANYONECANPAY, and throws outright for values like 0x41.
+            if (!SigHash.isValidTaproot(sighashType)) {
+                return Either.Left(SpSpendingError.UnsupportedSighashType(index, sighashType))
+            }
             val sighash = result.global.tx.hashForSigningTaprootKeyPath(index, spentOutputs, sighashType)
             // No taproot tweak: sign with d as-is (secp256k1 handles BIP-340 even-Y internally).
             val sig = Crypto.signSchnorr(sighash, d, taprootTweak = null)

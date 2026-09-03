@@ -44,6 +44,7 @@ class SilentPaymentReceiveSignerTest {
         inputTweak: ByteVector32?,
         outputKeyTweak: ByteVector32 = tweak,
         taprootInput: Boolean = true,
+        sighashType: Int? = null,
     ): Psbt {
         val d = keys.spendPrivateKey + PrivateKey(outputKeyTweak)
         val scriptPubKey = if (taprootInput) {
@@ -53,7 +54,7 @@ class SilentPaymentReceiveSignerTest {
         }
         val unknown = inputTweak?.let { listOf(DataEntry(ByteVector("20"), it)) } ?: emptyList()
         val input = Input.WitnessInput.PartiallySignedWitnessInput(
-            TxOut(Satoshi(50_000), scriptPubKey), null, null, emptyMap(), emptyMap(), null, null,
+            TxOut(Satoshi(50_000), scriptPubKey), null, sighashType, emptyMap(), emptyMap(), null, null,
             emptySet(), emptySet(), emptySet(), emptySet(), null, emptyMap(), null, unknown
         )
         val recipientOut = TxOut(Satoshi(40_000), Script.pay2wpkh(keys.spendPublicKey))
@@ -89,6 +90,39 @@ class SilentPaymentReceiveSignerTest {
         val result = SilentPaymentReceiveSigner.signTweakedInputs(psbt, keys.spendPrivateKey)
         assertTrue(result is Either.Left)
         assertTrue((result as Either.Left).value is SpSpendingError.TweakMismatch)
+    }
+
+    /**
+     * PSBT_IN_SIGHASH_TYPE is parsed as a signed Int, so a declared 0xFFFFFFFF arrives as -1. It
+     * slips past `hashForSigningSchnorr`'s `sighashType <= 0x03` guard and would be masked into
+     * SIGHASH_SINGLE | SIGHASH_ANYONECANPAY — a real signature over semantics never shown to the user.
+     */
+    @Test
+    fun rejectsNegativeSighashTypeOnReceiveSpend() {
+        val psbt = spSpendingPsbt(inputTweak = tweak, sighashType = -1)
+        val result = SilentPaymentReceiveSigner.signTweakedInputs(psbt, keys.spendPrivateKey)
+        assertTrue("a negative sighash type must be refused, not masked: $result", result is Either.Left)
+        assertTrue((result as Either.Left).value is SpSpendingError.UnsupportedSighashType)
+    }
+
+    /** 0x41 makes `hashForSigningSchnorr` throw, escaping the Either contract entirely. */
+    @Test
+    fun rejectsOutOfRangeSighashTypeOnReceiveSpend() {
+        val psbt = spSpendingPsbt(inputTweak = tweak, sighashType = 0x41)
+        val result = SilentPaymentReceiveSigner.signTweakedInputs(psbt, keys.spendPrivateKey)
+        assertTrue("0x41 must be refused without throwing: $result", result is Either.Left)
+        assertTrue((result as Either.Left).value is SpSpendingError.UnsupportedSighashType)
+    }
+
+    /** BIP-341's valid non-default types must still sign, with the byte appended. */
+    @Test
+    fun signsReceiveSpendWithSighashAll() {
+        val psbt = spSpendingPsbt(inputTweak = tweak, sighashType = SigHash.SIGHASH_ALL)
+        val result = SilentPaymentReceiveSigner.signTweakedInputs(psbt, keys.spendPrivateKey)
+        assertTrue("expected Right, got $result", result is Either.Right)
+        val sig = (result as Either.Right).value.inputs[0].taprootKeySignature!!
+        assertEquals(65, sig.size())
+        assertEquals(SigHash.SIGHASH_ALL.toByte(), sig[64])
     }
 
     @Test

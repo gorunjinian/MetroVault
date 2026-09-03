@@ -4,6 +4,7 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.lib.bitcoin.*
 import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
 import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.SigningResult
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 
@@ -24,9 +25,9 @@ internal object PsbtSigner {
      * @param accountPrivateKey Account-level private key for fallback address scanning
      * @param scriptType Script type for address generation in fallback
      * @param isTestnet Whether this is a testnet wallet
-     * @return SigningResult with signed PSBT and info about alternative paths used, or null on failure
+     * @return the signed PSBT and diagnostics, or the per-input refusals that prevented signing
+     *   (empty when the PSBT could not be parsed or nothing in it was ours)
      */
-    @Suppress("UNUSED_PARAMETER")
     fun signPsbt(
         psbtBase64: String,
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
@@ -34,7 +35,7 @@ internal object PsbtSigner {
         scriptType: ScriptType,
         isTestnet: Boolean = false,
         accountPath: KeyPath,
-    ): SigningResult? {
+    ): Either<List<InputSigningRefusal>, SigningResult> {
         return try {
             val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
 
@@ -43,92 +44,164 @@ internal object PsbtSigner {
                 is Either.Right -> psbtResult.value
                 is Either.Left -> {
                     // Retry with stripped global xpubs
-                    val strippedBytes = PsbtUtils.stripGlobalXpubs(psbtBytes) ?: return null
+                    val strippedBytes = PsbtUtils.stripGlobalXpubs(psbtBytes)
+                        ?: return Either.Left(emptyList())
                     when (val retryResult = Psbt.read(strippedBytes)) {
                         is Either.Right -> retryResult.value
-                        is Either.Left -> return null
+                        is Either.Left -> return Either.Left(emptyList())
                     }
                 }
             }
 
-            // Compute wallet fingerprint for BIP-174 matching
-            val walletFingerprint = BitcoinUtils.computeFingerprintLong(masterPrivateKey.publicKey)
-
-            // Build address lookup for fallback (lazy - only used if BIP-174 fails)
-            val addressToKeyInfo by lazy {
-                PsbtKeyResolver.buildAddressLookup(accountPrivateKey, scriptType)
-            }
-
-            var signedPsbt = psbt
-            var signedCount = 0
-            val alternativePathsUsed = mutableListOf<String>()  // Track when alternative paths are used (Stage 2)
-            val addressLookupInputIndices = mutableListOf<Int>()  // Track when Stage 3 fallback was used
-
-            AppLog.d(TAG) { "Signing PSBT with ${psbt.inputs.size} inputs" }
-
-            psbt.inputs.forEachIndexed { index, input ->
-                AppLog.d(TAG) { "Processing input $index, derivationPaths: ${input.derivationPaths.size}, taprootPaths: ${input.taprootDerivationPaths.size}" }
-                // Try BIP-174 derivation path first (with path-agnostic fallback)
-                val signResult = trySignWithDerivationPath(
-                    signedPsbt, index, input, masterPrivateKey, walletFingerprint, isTestnet
+            signParsedPsbt(psbt, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath).map { signed ->
+                val signedBytes = Psbt.write(signed.psbt).toByteArray()
+                SigningResult(
+                    signedPsbt = android.util.Base64.encodeToString(signedBytes, android.util.Base64.NO_WRAP),
+                    usedAlternativePath = signed.alternativePathsUsed.isNotEmpty(),
+                    alternativePathsUsed = signed.alternativePathsUsed,
+                    usedAddressLookupFallback = signed.addressLookupInputIndices.isNotEmpty(),
+                    addressLookupInputIndices = signed.addressLookupInputIndices,
+                    // Carried on the success path too: a partially-signed PSBT otherwise looks
+                    // like a clean success while silently omitting an input.
+                    refusals = signed.refusals,
                 )
-                if (signResult != null) {
-                    signedPsbt = signResult.first
-                    signedCount++
-                    if (signResult.second != null) {
-                        AppLog.d(TAG) { "Input $index signed via alternative path" }
-                        alternativePathsUsed.add(signResult.second!!)
-                    } else {
-                        AppLog.d(TAG) { "Input $index signed via BIP-174" }
-                    }
+            }
+        } catch (e: Exception) {
+            // Keep internal exception text out of the UI; the detail is in the debug log.
+            AppLog.e(TAG, e) { "Exception during PSBT signing: ${e.message}" }
+            Either.Left(emptyList())
+        }
+    }
+
+    /** What [signParsedPsbt] produces: the signed psbt plus the diagnostics [SigningResult] surfaces. */
+    internal data class ParsedSigningResult(
+        val psbt: Psbt,
+        val alternativePathsUsed: List<String>,
+        val addressLookupInputIndices: List<Int>,
+        val refusals: List<InputSigningRefusal>,
+    )
+
+    /**
+     * The per-input signing loop over an already-parsed PSBT. Kept separate from [signPsbt] so
+     * it can be exercised directly: `android.util.Base64` is stubbed out under unit tests.
+     *
+     * @return the signed psbt and diagnostics, or — when no input was signed — the refusals
+     *   recorded for inputs that matched this wallet.
+     */
+    internal fun signParsedPsbt(
+        psbt: Psbt,
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        accountPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        scriptType: ScriptType,
+        isTestnet: Boolean,
+        accountPath: KeyPath,
+    ): Either<List<InputSigningRefusal>, ParsedSigningResult> {
+        // Compute wallet fingerprint for BIP-174 matching
+        val walletFingerprint = BitcoinUtils.computeFingerprintLong(masterPrivateKey.publicKey)
+
+        // Build address lookup for fallback (lazy - only used if BIP-174 fails)
+        val addressToKeyInfo by lazy {
+            PsbtKeyResolver.buildAddressLookup(accountPrivateKey, scriptType)
+        }
+
+        var signedPsbt = psbt
+        var signedCount = 0
+        val alternativePathsUsed = mutableListOf<String>()  // Track when alternative paths are used (Stage 2)
+        val addressLookupInputIndices = mutableListOf<Int>()  // Track when Stage 3 fallback was used
+        // Inputs we matched to this wallet but then declined to sign. Recorded only when key
+        // resolution succeeded, so a non-empty list means "yours, but refused" — never "not yours".
+        val refusals = mutableListOf<InputSigningRefusal>()
+
+        AppLog.d(TAG) { "Signing PSBT with ${psbt.inputs.size} inputs" }
+
+        psbt.inputs.forEachIndexed { index, input ->
+            // An already-finalized input carries its final scriptSig/witness and needs nothing from
+            // us. Without this skip, Stage 3 would still match one of ours by scriptPubKey and
+            // `Psbt.sign` would decline it as "already finalized" — which the UI would then report
+            // as a partial signature on a transaction that is in fact complete.
+            if (input.isFinalized) {
+                AppLog.d(TAG) { "Input $index already finalized, skipping" }
+                return@forEachIndexed
+            }
+            AppLog.d(TAG) { "Processing input $index, derivationPaths: ${input.derivationPaths.size}, taprootPaths: ${input.taprootDerivationPaths.size}" }
+            // Try BIP-174 derivation path first (with path-agnostic fallback)
+            val signResult = trySignWithDerivationPath(
+                signedPsbt, index, input, masterPrivateKey, walletFingerprint, isTestnet
+            )
+            if (signResult is SignAttempt.Signed) {
+                signedPsbt = signResult.psbt
+                signedCount++
+                if (signResult.alternativePath != null) {
+                    AppLog.d(TAG) { "Input $index signed via alternative path" }
+                    alternativePathsUsed.add(signResult.alternativePath)
                 } else {
-                    AppLog.d(TAG) { "Input $index BIP-174 failed, trying address lookup" }
-                    // Fallback to address scanning (Stage 3)
-                    val result = signInputWithAddressLookup(
-                        signedPsbt, index, input, accountPrivateKey, addressToKeyInfo,
-                        accountPath, walletFingerprint,
-                    )
-                    if (result != null) {
-                        signedPsbt = result
+                    AppLog.d(TAG) { "Input $index signed via BIP-174" }
+                }
+            } else {
+                // Stage 1 resolves by the PSBT's declared derivation metadata; Stage 3 resolves
+                // by scriptPubKey against our own addresses. Those can land on *different* keys,
+                // so a Stage 1 refusal must still fall through — a PSBT that declares the wrong
+                // path under our fingerprint is exactly what Stage 3 exists to rescue.
+                AppLog.d(TAG) { "Input $index not signed via BIP-174, trying address lookup" }
+                val fallback = signInputWithAddressLookup(
+                    signedPsbt, index, input, accountPrivateKey, addressToKeyInfo,
+                    accountPath, walletFingerprint,
+                )
+                when {
+                    fallback is SignAttempt.Signed -> {
+                        signedPsbt = fallback.psbt
                         signedCount++
                         addressLookupInputIndices.add(index)
                         AppLog.w(TAG) {
                             "Input $index signed via address lookup (Stage 3 fallback) — " +
                                 "PSBT did not declare this input via PSBT_IN_BIP32_DERIVATION with a matching fingerprint"
                         }
-                    } else {
-                        AppLog.d(TAG) { "Input $index: no signature possible" }
+                    }
+                    // Neither stage produced a signature. Report a reason only if some stage
+                    // actually resolved a key and then declined — prefer Stage 3's, which was
+                    // reached via the scriptPubKey and so describes the real output being spent.
+                    else -> {
+                        val failure = (fallback as? SignAttempt.Refused)?.failure
+                            ?: (signResult as? SignAttempt.Refused)?.failure
+                        if (failure != null) {
+                            AppLog.w(TAG) { "Input $index refused: $failure" }
+                            refusals.add(InputSigningRefusal.from(index, failure))
+                        } else {
+                            AppLog.d(TAG) { "Input $index: no signature possible" }
+                        }
                     }
                 }
             }
-
-            AppLog.d(TAG) { "Signed $signedCount of ${psbt.inputs.size} inputs" }
-            if (signedCount == 0) {
-                return null
-            }
-
-            val signedBytes = Psbt.write(signedPsbt).toByteArray()
-            val signedBase64 = android.util.Base64.encodeToString(signedBytes, android.util.Base64.NO_WRAP)
-
-            SigningResult(
-                signedPsbt = signedBase64,
-                usedAlternativePath = alternativePathsUsed.isNotEmpty(),
-                alternativePathsUsed = alternativePathsUsed,
-                usedAddressLookupFallback = addressLookupInputIndices.isNotEmpty(),
-                addressLookupInputIndices = addressLookupInputIndices,
-            )
-        } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Exception during PSBT signing: ${e.message}" }
-            null
         }
+
+        AppLog.d(TAG) { "Signed $signedCount of ${psbt.inputs.size} inputs" }
+        if (signedCount == 0) {
+            return Either.Left(refusals)
+        }
+
+        return Either.Right(
+            ParsedSigningResult(
+                psbt = signedPsbt,
+                alternativePathsUsed = alternativePathsUsed,
+                addressLookupInputIndices = addressLookupInputIndices,
+                refusals = refusals,
+            )
+        )
     }
+
+    /** True for the three finalized [Input] subtypes: nothing further can or should be signed. */
+    private val Input.isFinalized: Boolean
+        get() = this is Input.FinalizedInputWithoutUtxo ||
+            this is Input.WitnessInput.FinalizedWitnessInput ||
+            this is Input.NonWitnessInput.FinalizedNonWitnessInput
 
     /**
      * Attempts to sign an input using BIP-174 derivation path metadata.
      * If fingerprint matches but derived pubkey doesn't match, tries alternative standard paths.
      *
-     * @return Pair of (signed PSBT, alternative path used) or null if signing failed.
-     *         The path string is non-null only when an alternative path was used for signing.
+     * @return [SignAttempt.NotOurs] when no key could be resolved, [SignAttempt.Refused] when a key
+     *         was resolved but signing was declined, otherwise the signed psbt. The alternative path
+     *         is non-null only when one was used.
      */
     private fun trySignWithDerivationPath(
         psbt: Psbt,
@@ -137,15 +210,28 @@ internal object PsbtSigner {
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         walletFingerprint: Long,
         isTestnet: Boolean
-    ): Pair<Psbt, String?>? {
+    ): SignAttempt {
         val resolved = PsbtKeyResolver.resolveFromDerivationPaths(
             input, masterPrivateKey, walletFingerprint, isTestnet
-        ) ?: return null
+        ) ?: return SignAttempt.NotOurs
         if (resolved.alternativePath != null) {
             AppLog.d(TAG) { "  Input $inputIndex resolved via alternative path" }
         }
-        val signed = signInput(psbt, inputIndex, input, resolved.privateKey, resolved.publicKey) ?: return null
-        return Pair(signed, resolved.alternativePath)
+        return when (val signed = psbt.sign(resolved.privateKey, inputIndex)) {
+            is Either.Right -> SignAttempt.Signed(signed.value.psbt, resolved.alternativePath)
+            is Either.Left -> SignAttempt.Refused(signed.value)
+        }
+    }
+
+    /** Outcome of trying to sign one input. */
+    private sealed class SignAttempt {
+        /** No key for this input could be resolved — the input is not ours. */
+        data object NotOurs : SignAttempt()
+
+        /** A key was resolved, but signing was declined. This is what the user needs told. */
+        data class Refused(val failure: UpdateFailure) : SignAttempt()
+
+        data class Signed(val psbt: Psbt, val alternativePath: String? = null) : SignAttempt()
     }
 
     /**
@@ -174,11 +260,11 @@ internal object PsbtSigner {
         addressLookup: Map<ByteVector, AddressKeyInfo>,
         accountPath: KeyPath,
         walletFingerprint: Long,
-    ): Psbt? {
+    ): SignAttempt {
         return try {
             val (resolved, keyInfo) = PsbtKeyResolver.resolveFromAddressLookup(
                 input, accountPrivateKey, addressLookup
-            ) ?: return null
+            ) ?: return SignAttempt.NotOurs
             val signingPrivateKey = resolved.privateKey
 
             // Build the full derivation path for the signed key so we can
@@ -188,12 +274,11 @@ internal object PsbtSigner {
             val fullPath = KeyPath(
                 accountPath.path + listOf(keyInfo.changeIndex, keyInfo.addressIndex)
             )
-            val derivation = KeyPathWithMaster(walletFingerprint, fullPath)
 
             // Splice the derivation entry into the input BEFORE calling
             // Psbt.sign() so that (a) downstream tools can verify signing
             // provenance and (b) Psbt.sign itself sees a well-formed input.
-            val inputWithDerivation = addDerivationToInput(input, keyInfo.publicKey, derivation)
+            val inputWithDerivation = addDerivationToInput(input, keyInfo.publicKey, walletFingerprint, fullPath)
             val psbtWithDerivation = if (inputWithDerivation !== input) {
                 val updatedInputs = psbt.inputs.toMutableList()
                 updatedInputs[inputIndex] = inputWithDerivation
@@ -202,34 +287,66 @@ internal object PsbtSigner {
                 psbt
             }
 
-            signInput(psbtWithDerivation, inputIndex, inputWithDerivation, signingPrivateKey, keyInfo.publicKey)
+            when (val signed = psbtWithDerivation.sign(signingPrivateKey, inputIndex)) {
+                is Either.Right -> SignAttempt.Signed(signed.value.psbt)
+                is Either.Left -> SignAttempt.Refused(signed.value)
+            }
         } catch (e: Exception) {
             AppLog.w(TAG, e) { "signInputWithAddressLookup: exception" }
-            null
+            SignAttempt.NotOurs
         }
     }
 
     /**
-     * Splices a (publicKey → derivation) entry into an input's derivationPaths map.
+     * Splices a derivation entry into an input so the signed PSBT carries provenance.
+     *
+     * P2TR inputs get a BIP-371 `PSBT_IN_TAP_BIP32_DERIVATION` entry keyed by the x-only
+     * internal key; everything else gets the BIP-174 `PSBT_IN_BIP32_DERIVATION` entry keyed by
+     * the compressed pubkey. Writing the plain BIP32 entry on a taproot input would be misleading
+     * — coordinators key taproot provenance off the x-only field.
      *
      * Because [Input] is a sealed hierarchy with three un-finalized subtypes
-     * (each of which stores its own derivationPaths), we need a `when` over
+     * (each of which stores its own derivation maps), we need a `when` over
      * the subclasses to call the correct `.copy()`. Finalized inputs cannot
-     * accept new derivations and are returned unchanged — in practice Stage 3
-     * only fires for un-finalized inputs, so the finalized branch is
-     * effectively unreachable but kept for totality.
-     *
-     * TODO: taproot derivation fields (taprootDerivationPaths) are not yet
-     * repopulated. Stage 3's address lookup currently doesn't derive taproot
-     * xonly keys either, so this only matters if buildAddressLookup is
-     * extended to cover P2TR in the future.
+     * accept new derivations and are returned unchanged — [signParsedPsbt]
+     * skips them before Stage 3 runs, so the finalized branches are
+     * unreachable but kept for totality.
      */
     private fun addDerivationToInput(
         input: Input,
         publicKey: PublicKey,
-        derivation: KeyPathWithMaster,
+        walletFingerprint: Long,
+        fullPath: KeyPath,
     ): Input {
-        val mergedPaths = input.derivationPaths + (publicKey to derivation)
+        val isTaproot = PsbtUtils.getInputScriptPubKey(input)?.let { Script.isPay2tr(it) } == true
+
+        if (isTaproot) {
+            val taprootDerivation = TaprootBip32DerivationPath(
+                leaves = emptyList(),  // key-path spend: no tapleaf commits to this key
+                masterKeyFingerprint = walletFingerprint,
+                keyPath = fullPath,
+            )
+            val internalKey = XonlyPublicKey(publicKey)
+            val mergedTaprootPaths =
+                input.taprootDerivationPaths + (internalKey to taprootDerivation)
+            // Taproot is segwit v1, so a P2TR scriptPubKey always arrives as a witness input; the
+            // other un-finalized subtypes don't even carry a taprootDerivationPaths field.
+            return when (input) {
+                is Input.WitnessInput.PartiallySignedWitnessInput ->
+                    input.copy(
+                        taprootDerivationPaths = mergedTaprootPaths,
+                        // We no longer *require* PSBT_IN_TAP_INTERNAL_KEY to sign, but the signed
+                        // PSBT should still carry it so downstream tools have full provenance.
+                        taprootInternalKey = input.taprootInternalKey ?: internalKey,
+                    )
+                else -> {
+                    AppLog.w(TAG) { "addDerivationToInput: cannot add taproot derivation to ${input::class.simpleName}" }
+                    input
+                }
+            }
+        }
+
+        val mergedPaths = input.derivationPaths + (publicKey to KeyPathWithMaster(walletFingerprint, fullPath))
         return when (input) {
             is Input.WitnessInput.PartiallySignedWitnessInput ->
                 input.copy(derivationPaths = mergedPaths)
@@ -244,22 +361,4 @@ internal object PsbtSigner {
         }
     }
 
-    /**
-     * Core signing logic shared between BIP-174 and address lookup methods.
-     *
-     * P2WPKH is handled directly by `Psbt.sign()` (which builds the BIP-143 script code inline
-     * from the witness program's pubkey hash), so we no longer need to splice a temporary
-     * witnessScript into the input before signing or strip it afterwards.
-     */
-    @Suppress("UNUSED_PARAMETER")
-    private fun signInput(
-        psbt: Psbt,
-        inputIndex: Int,
-        input: Input,
-        signingPrivateKey: PrivateKey,
-        signingPublicKey: PublicKey
-    ): Psbt? = when (val signResult = psbt.sign(signingPrivateKey, inputIndex)) {
-        is Either.Right -> signResult.value.psbt
-        is Either.Left -> null
-    }
 }

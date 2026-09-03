@@ -5,6 +5,7 @@ import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.SpSpendingError
 import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
@@ -57,6 +58,12 @@ class WalletSigningService(
             val alternativePathsUsed: List<String> = emptyList(),
             val usedAddressLookupFallback: Boolean = false,
             val addressLookupInputIndices: List<Int> = emptyList(),
+            /**
+             * Inputs that belong to this wallet but which MetroVault declined to sign. Non-empty
+             * means the PSBT came back only *partially* signed — the UI must say so, because a
+             * partial result is otherwise indistinguishable from a complete one.
+             */
+            val refusals: List<InputSigningRefusal> = emptyList(),
         ) : SigningResult()
 
         /**
@@ -66,7 +73,9 @@ class WalletSigningService(
          */
         data class Failure(
             val error: SigningError,
-            val message: String
+            val message: String,
+            /** Per-input refusals, when inputs matched this wallet but signing was declined. */
+            val refusals: List<InputSigningRefusal> = emptyList(),
         ) : SigningResult()
     }
 
@@ -153,20 +162,41 @@ class WalletSigningService(
         )
 
         return when {
-            signingResult != null -> SigningResult.Success(
-                signedPsbt = signingResult.signedPsbt,
-                alternativePathsUsed = signingResult.alternativePathsUsed,
-                usedAddressLookupFallback = signingResult.usedAddressLookupFallback,
-                addressLookupInputIndices = signingResult.addressLookupInputIndices,
+            signingResult is Either.Right -> SigningResult.Success(
+                signedPsbt = signingResult.value.signedPsbt,
+                alternativePathsUsed = signingResult.value.alternativePathsUsed,
+                usedAddressLookupFallback = signingResult.value.usedAddressLookupFallback,
+                addressLookupInputIndices = signingResult.value.addressLookupInputIndices,
+                refusals = signingResult.value.refusals,
             )
             // A pure silent-payment spend: the SP inputs were signed above and there were no other
             // inputs for the normal signer to handle, so it's still a success.
             spInputsSigned -> SigningResult.Success(signedPsbt = psbtAfterReceive)
-            else -> SigningResult.Failure(
-                SigningError.SIGNING_FAILED,
-                "Failed to sign PSBT. The transaction may not contain inputs for this wallet."
-            )
+            else -> {
+                val refusals = (signingResult as Either.Left).value
+                SigningResult.Failure(
+                    SigningError.SIGNING_FAILED,
+                    describeSigningFailure(refusals),
+                    refusals = refusals,
+                )
+            }
         }
+    }
+
+    /**
+     * Build the user-facing message for a failed signing attempt.
+     *
+     * A refusal is only ever recorded for an input we matched to this wallet, so its presence flips
+     * the meaning of the failure entirely: not "this isn't your transaction" but "this is yours and
+     * MetroVault would not sign it". Saying the former when the latter is true is both false and
+     * unactionable, which is what the generic message used to do.
+     */
+    private fun describeSigningFailure(refusals: List<InputSigningRefusal>): String = when {
+        refusals.isEmpty() ->
+            "Failed to sign PSBT. The transaction may not contain inputs for this wallet."
+        else ->
+            "MetroVault found inputs belonging to this wallet but would not sign them:\n\n" +
+                refusals.joinToString("\n\n") { it.message }
     }
 
     /**
@@ -275,6 +305,9 @@ class WalletSigningService(
         var anyUsedAddressLookupFallback = false
         val allAddressLookupInputIndices = sortedSetOf<Int>()
         val failedKeys = mutableListOf<String>()
+        // Deduplicated across keys: each local key runs over the whole PSBT, so an input this
+        // wallet refuses would otherwise be reported once per key.
+        val allRefusals = LinkedHashMap<String, InputSigningRefusal>()
 
         for (keyId in keyIds) {
             AppLog.d(TAG) { "Processing local key" }
@@ -294,15 +327,25 @@ class WalletSigningService(
                 signWithDirectDerivation(signedPsbt, key, config, getSessionKeySeed(keyId))
             }
 
-            if (result != null) {
-                signedPsbt = result.signedPsbt
-                allAlternativePathsUsed.addAll(result.alternativePathsUsed)
-                if (result.usedAddressLookupFallback) {
-                    anyUsedAddressLookupFallback = true
-                    allAddressLookupInputIndices.addAll(result.addressLookupInputIndices)
+            fun record(refusal: InputSigningRefusal) {
+                allRefusals["${refusal.inputIndex}:${refusal::class.simpleName}"] = refusal
+            }
+            when (result) {
+                is Either.Right -> {
+                    val signed = result.value
+                    signedPsbt = signed.signedPsbt
+                    allAlternativePathsUsed.addAll(signed.alternativePathsUsed)
+                    if (signed.usedAddressLookupFallback) {
+                        anyUsedAddressLookupFallback = true
+                        allAddressLookupInputIndices.addAll(signed.addressLookupInputIndices)
+                    }
+                    signed.refusals.forEach(::record)
+                    signedCount++
+                    AppLog.d(TAG) { "Successfully signed portion of PSBT" }
                 }
-                signedCount++
-                AppLog.d(TAG) { "Successfully signed portion of PSBT" }
+                // This key signed nothing. Keep its refusals: if no key signs anything, they are
+                // the only way the failure message can say *why* rather than "not your inputs".
+                is Either.Left -> result.value.forEach(::record)
             }
         }
 
@@ -313,14 +356,17 @@ class WalletSigningService(
                 alternativePathsUsed = allAlternativePathsUsed,
                 usedAddressLookupFallback = anyUsedAddressLookupFallback,
                 addressLookupInputIndices = allAddressLookupInputIndices.toList(),
+                refusals = allRefusals.values.toList(),
             )
         } else {
-            val errorMsg = if (failedKeys.isNotEmpty()) {
-                "Failed to load ${failedKeys.size} key(s). Ensure the wallet is properly loaded."
-            } else {
-                "No inputs could be signed. The PSBT may not contain inputs for your keys."
+            val refusals = allRefusals.values.toList()
+            val errorMsg = when {
+                failedKeys.isNotEmpty() ->
+                    "Failed to load ${failedKeys.size} key(s). Ensure the wallet is properly loaded."
+                refusals.isNotEmpty() -> describeSigningFailure(refusals)
+                else -> "No inputs could be signed. The PSBT may not contain inputs for your keys."
             }
-            SigningResult.Failure(SigningError.SIGNING_FAILED, errorMsg)
+            SigningResult.Failure(SigningError.SIGNING_FAILED, errorMsg, refusals = refusals)
         }
     }
 
@@ -349,6 +395,7 @@ class WalletSigningService(
         val alternativePathsUsed: List<String>,
         val usedAddressLookupFallback: Boolean,
         val addressLookupInputIndices: List<Int>,
+        val refusals: List<InputSigningRefusal> = emptyList(),
     )
 
     /**
@@ -357,23 +404,24 @@ class WalletSigningService(
     private fun signWithLoadedState(
         psbt: String,
         state: WalletState
-    ): PerKeySignResult? {
-        val masterKey = state.getMasterPrivateKey() ?: return null
-        val accountKey = state.getAccountPrivateKey() ?: return null
+    ): Either<List<InputSigningRefusal>, PerKeySignResult> {
+        val masterKey = state.getMasterPrivateKey() ?: return Either.Left(emptyList())
+        val accountKey = state.getAccountPrivateKey() ?: return Either.Left(emptyList())
         val scriptType = DerivationPaths.getScriptType(state.derivationPath)
         val isTestnet = DerivationPaths.isTestnet(state.derivationPath)
         val accountPath = KeyPath(state.derivationPath)
 
-        val result = bitcoinService.signPsbt(psbt, masterKey, accountKey, scriptType, isTestnet, accountPath)
-        return result?.let {
-            PerKeySignResult(
-                signedPsbt = it.signedPsbt,
-                alternativePathsUsed = it.alternativePathsUsed,
-                usedAddressLookupFallback = it.usedAddressLookupFallback,
-                addressLookupInputIndices = it.addressLookupInputIndices,
-            )
-        }
+        return bitcoinService.signPsbt(psbt, masterKey, accountKey, scriptType, isTestnet, accountPath)
+            .map { it.toPerKeyResult() }
     }
+
+    private fun com.gorunjinian.metrovault.data.model.SigningResult.toPerKeyResult() = PerKeySignResult(
+        signedPsbt = signedPsbt,
+        alternativePathsUsed = alternativePathsUsed,
+        usedAddressLookupFallback = usedAddressLookupFallback,
+        addressLookupInputIndices = addressLookupInputIndices,
+        refusals = refusals,
+    )
 
     /**
      * Sign by deriving keys directly from stored seed.
@@ -384,7 +432,7 @@ class WalletSigningService(
         key: WalletKeys,
         config: MultisigConfig,
         sessionSeed: String?
-    ): PerKeySignResult? {
+    ): Either<List<InputSigningRefusal>, PerKeySignResult> {
         AppLog.d(TAG) { "Direct derivation signing for local key" }
 
         val cosigner = config.cosigners.find {
@@ -393,7 +441,7 @@ class WalletSigningService(
         if (cosigner == null) {
             AppLog.e(TAG) { "No cosigner found matching local key fingerprint" }
             AppLog.d(TAG) { "Available cosigners: ${config.cosigners.size}" }
-            return null
+            return Either.Left(emptyList())
         }
 
         // Ensure m/ prefix on derivation path
@@ -407,28 +455,20 @@ class WalletSigningService(
         val walletResult = bitcoinService.createWalletFromSeed(seedToUse, derivationPath)
         if (walletResult == null) {
             AppLog.e(TAG) { "Failed to derive wallet from local key" }
-            return null
+            return Either.Left(emptyList())
         }
 
         val scriptType = DerivationPaths.getScriptType(derivationPath)
         val isTestnet = DerivationPaths.isTestnet(derivationPath)
         val accountPath = KeyPath(derivationPath)
 
-        val result = bitcoinService.signPsbt(
+        return bitcoinService.signPsbt(
             psbt,
             walletResult.masterPrivateKey,
             walletResult.accountPrivateKey,
             scriptType,
             isTestnet,
             accountPath,
-        )
-        return result?.let {
-            PerKeySignResult(
-                signedPsbt = it.signedPsbt,
-                alternativePathsUsed = it.alternativePathsUsed,
-                usedAddressLookupFallback = it.usedAddressLookupFallback,
-                addressLookupInputIndices = it.addressLookupInputIndices,
-            )
-        }
+        ).map { it.toPerKeyResult() }
     }
 }

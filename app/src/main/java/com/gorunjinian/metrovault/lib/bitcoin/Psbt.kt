@@ -93,6 +93,10 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
     }
 
     private fun signNonWitness(priv: PrivateKey, inputIndex: Int, input: Input.NonWitnessInput.PartiallySignedNonWitnessInput, global: Global): Either<UpdateFailure, Pair<Input.NonWitnessInput.PartiallySignedNonWitnessInput, ByteVector>> {
+        val sighashType = input.sighashType ?: SigHash.SIGHASH_ALL
+        if (!SigHash.isValidEcdsa(sighashType)) {
+            return Either.Left(UpdateFailure.UnsupportedSighashType(inputIndex, sighashType))
+        }
         val txIn = global.tx.txIn[inputIndex]
         val redeemScript = when (input.redeemScript) {
             null -> runCatching {
@@ -110,7 +114,7 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
                 }
             }
         }
-        val sig = ByteVector(Transaction.signInput(global.tx, inputIndex, redeemScript, input.sighashType ?: SigHash.SIGHASH_ALL, input.amount, SigVersion.SIGVERSION_BASE, priv))
+        val sig = ByteVector(Transaction.signInput(global.tx, inputIndex, redeemScript, sighashType, input.amount, SigVersion.SIGVERSION_BASE, priv))
         return Either.Right(Pair(input.copy(partialSigs = input.partialSigs + (priv.publicKey() to sig)), sig))
     }
 
@@ -119,6 +123,14 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
             Script.parse(input.txOut.publicKeyScript)
         }.getOrElse {
             return Either.Left(UpdateFailure.InvalidWitnessUtxo("failed to parse pubkeyScript"))
+        }
+        // Taproot carries its own, different allow-list (0x00 is valid there and invalid here), so
+        // it is checked inside its own branch below.
+        if (!Script.isPay2tr(pubkeyScript)) {
+            val ecdsaSighashType = input.sighashType ?: SigHash.SIGHASH_ALL
+            if (!SigHash.isValidEcdsa(ecdsaSighashType)) {
+                return Either.Left(UpdateFailure.UnsupportedSighashType(inputIndex, ecdsaSighashType))
+            }
         }
         // BIP-143 P2WPKH script code is `OP_DUP OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG`
         // (i.e. pay2pkh of the pubkey hash from the witness program). PSBT does NOT carry a
@@ -141,17 +153,44 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
                     Either.Right(Pair(input.copy(partialSigs = input.partialSigs + (priv.publicKey() to sig)), sig))
                 }
             }
-            Script.isPay2tr(pubkeyScript) -> when (input.taprootInternalKey) {
-                null -> Either.Left(UpdateFailure.InvalidWitnessUtxo("missing taproot internal key"))
-                else -> {
-                    // When spending taproot inputs, we include *all* of the transaction's inputs in the signed hash.
-                    val spentOutputs = this.inputs.mapIndexedNotNull { idx, txIn -> txIn.witnessUtxo ?: txIn.nonWitnessUtxo?.txOut?.get(this.global.tx.txIn[idx].outPoint.index.toInt()) }
-                    if (spentOutputs.size != this.inputs.size) {
-                        Either.Left(UpdateFailure.InvalidInput("missing txOut for one of our inputs"))
-                    } else {
-                        val sig = Transaction.signInputTaprootKeyPath(priv, global.tx, inputIndex, spentOutputs, input.sighashType ?: SigHash.SIGHASH_DEFAULT, null)
-                        val sigAndSighashType = input.sighashType?.let { sig.concat(it.toByte()) } ?: sig
-                        Either.Right(Pair(input.copy(taprootKeySignature = sigAndSighashType), sigAndSighashType))
+            Script.isPay2tr(pubkeyScript) -> {
+                // BIP-86 key-path signing. `signInputTaprootKeyPath` below always applies the
+                // *no-script* TapTweak, so verify that this actually reproduces the output key
+                // committed to by the scriptPubKey before signing, rather than trusting the declared
+                // PSBT_IN_TAP_INTERNAL_KEY. Checking the script is strictly stronger: it also rejects
+                // outputs that commit to a script tree (where the correct tweak is the merkle-root
+                // one), which would otherwise be signed with the wrong tweak and yield a silently
+                // invalid signature.
+                val sighashType = input.sighashType ?: SigHash.SIGHASH_DEFAULT
+                val signingKey = XonlyPublicKey(priv.publicKey())
+                val expectedOutputKey = signingKey.outputKey(Crypto.TaprootTweak.NoScriptTweak).first
+                val actualOutputKey = Script.pay2trOutputKey(pubkeyScript)
+                when {
+                    // Guard before `hashForSigningSchnorr`, whose own `require` accepts any negative
+                    // value (a PSBT declaring 0xFFFFFFFF parses to -1) and would then mask it into
+                    // SIGHASH_SINGLE | SIGHASH_ANYONECANPAY, and which *throws* for values like 0x41
+                    // instead of returning a failure — aborting the whole signing session.
+                    !SigHash.isValidTaproot(sighashType) ->
+                        Either.Left(UpdateFailure.UnsupportedSighashType(inputIndex, sighashType))
+                    actualOutputKey == null ->
+                        Either.Left(UpdateFailure.InvalidWitnessUtxo("could not read the taproot output key"))
+                    actualOutputKey != expectedOutputKey ->
+                        Either.Left(taprootKeyPathRefusal(inputIndex, input, signingKey, actualOutputKey))
+                    else -> {
+                        // When spending taproot inputs, we include *all* of the transaction's inputs in the signed hash.
+                        val spentOutputs = this.inputs.mapIndexedNotNull { idx, txIn -> txIn.witnessUtxo ?: txIn.nonWitnessUtxo?.txOut?.get(this.global.tx.txIn[idx].outPoint.index.toInt()) }
+                        if (spentOutputs.size != this.inputs.size) {
+                            Either.Left(UpdateFailure.InvalidInput("missing txOut for one of our inputs"))
+                        } else {
+                            val sig = Transaction.signInputTaprootKeyPath(priv, global.tx, inputIndex, spentOutputs, sighashType, null)
+                            // BIP-341: a 64-byte signature implies SIGHASH_DEFAULT, and a 65-byte one
+                            // whose trailing byte is 0x00 is *invalid* — that rule exists to stop
+                            // 64-byte signatures being malleated into 65-byte ones. So append the
+                            // byte only for non-default sighash types.
+                            val sigAndSighashType =
+                                if (sighashType != SigHash.SIGHASH_DEFAULT) sig.concat(sighashType.toByte()) else sig
+                            Either.Right(Pair(input.copy(taprootKeySignature = sigAndSighashType), sigAndSighashType))
+                        }
                     }
                 }
             }
@@ -175,6 +214,30 @@ data class Psbt(@JvmField val global: Global, @JvmField val inputs: List<Input>,
                 Either.Right(Pair(input.copy(partialSigs = input.partialSigs + (priv.publicKey() to sig)), sig))
             }
         }
+    }
+
+    /**
+     * Pick the most accurate reason a taproot key-path signature cannot satisfy this input.
+     *
+     * The *decision* was already made by the output-key comparison in [signWitness]; this only
+     * explains it, so nothing here is trusted to permit a signature. Both signals are advisory:
+     * the tapleaf hashes attached to our own `PSBT_IN_TAP_BIP32_DERIVATION` entry, and a declared
+     * `PSBT_IN_TAP_MERKLE_ROOT` that verifiably reproduces the output key being spent.
+     */
+    private fun taprootKeyPathRefusal(
+        inputIndex: Int,
+        input: Input,
+        signingKey: XonlyPublicKey,
+        actualOutputKey: XonlyPublicKey,
+    ): UpdateFailure {
+        // The PSBT declares our key with tapleaf hashes: it signs via a script path, not the key path.
+        if (input.taprootDerivationPaths[signingKey]?.leaves?.isNotEmpty() == true) {
+            return UpdateFailure.CannotSignTaprootScriptPathKey(inputIndex)
+        }
+        // A declared merkle root that reproduces the output key proves this is a script tree.
+        val merkleRoot = input.taprootMerkleRoot
+        val provenRoot = merkleRoot?.takeIf { signingKey.outputKey(it).first == actualOutputKey }
+        return UpdateFailure.CannotSignTaprootScriptTree(inputIndex, provenRoot)
     }
 
     /**

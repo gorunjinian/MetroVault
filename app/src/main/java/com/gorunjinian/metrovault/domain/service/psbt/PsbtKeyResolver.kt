@@ -85,12 +85,14 @@ internal object PsbtKeyResolver {
                         return ResolvedKey(signingPrivateKey, signingPrivateKey.publicKey(), null)
                     }
 
-                    val altResult = tryAlternativePaths(masterPrivateKey, signingPrivateKey.publicKey(), taprootPath.keyPath, isTestnet)
+                    // Match on the x-only key: a taproot input only tells us the x coordinate, so
+                    // there is no full public key to sweep for.
+                    val altResult = tryAlternativePathsMatching(masterPrivateKey, taprootPath.keyPath, isTestnet) {
+                        XonlyPublicKey(it) == xOnlyPublicKey
+                    }
                     if (altResult != null) {
                         val (altSigningKey, altPath) = altResult
-                        if (XonlyPublicKey(altSigningKey.publicKey()) == xOnlyPublicKey) {
-                            return ResolvedKey(altSigningKey, altSigningKey.publicKey(), altPath)
-                        }
+                        return ResolvedKey(altSigningKey, altSigningKey.publicKey(), altPath)
                     }
                 }
             }
@@ -167,6 +169,18 @@ internal object PsbtKeyResolver {
         expectedPublicKey: PublicKey,
         originalPath: KeyPath,
         isTestnet: Boolean,
+    ): Pair<PrivateKey, String>? =
+        tryAlternativePathsMatching(masterPrivateKey, originalPath, isTestnet) { it == expectedPublicKey }
+
+    /**
+     * As [tryAlternativePaths], but matching with a caller-supplied predicate on the derived public
+     * key. Taproot inputs only declare an x-only key, so they cannot compare full public keys.
+     */
+    private fun tryAlternativePathsMatching(
+        masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
+        originalPath: KeyPath,
+        isTestnet: Boolean,
+        matches: (PublicKey) -> Boolean,
     ): Pair<PrivateKey, String>? {
         val pathList = originalPath.path
         if (pathList.size < 3) return null  // Need at least purpose/coin/account
@@ -203,7 +217,7 @@ internal object PsbtKeyResolver {
                         ) + childPath
                     )
                     val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
-                    if (derivedKey.publicKey == expectedPublicKey) {
+                    if (matches(derivedKey.publicKey)) {
                         return Pair(derivedKey.privateKey, altPath.toString())
                     }
                 } catch (_: Exception) {
@@ -225,7 +239,7 @@ internal object PsbtKeyResolver {
                         ) + childPath
                     )
                     val derivedKey = masterPrivateKey.derivePrivateKey(altPath)
-                    if (derivedKey.publicKey == expectedPublicKey) {
+                    if (matches(derivedKey.publicKey)) {
                         return Pair(derivedKey.privateKey, altPath.toString())
                     }
                 } catch (_: Exception) {

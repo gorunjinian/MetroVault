@@ -20,6 +20,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
+import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.core.qr.AnimatedQRResult
 import com.gorunjinian.metrovault.core.qr.OutputFormat
 
@@ -46,6 +47,7 @@ fun SignedPSBTDisplay(
     alternativePathsUsed: List<String> = emptyList(),
     addressLookupFallbackUsed: Boolean = false,
     addressLookupInputIndices: List<Int> = emptyList(),
+    refusals: List<InputSigningRefusal> = emptyList(),
     canFinalize: Boolean = false,
     isFinalized: Boolean = false,
     onFinalize: () -> Unit = {},
@@ -219,6 +221,53 @@ fun SignedPSBTDisplay(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
+                }
+            }
+        }
+
+        // Some inputs belong to this wallet but were refused, so what is on screen is only a
+        // PARTIAL signature. Without this the user would export it believing it complete, and only
+        // find out when their coordinator refuses to broadcast.
+        if (refusals.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_warning),
+                        contentDescription = "Warning",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (refusals.size == 1) "1 Input Not Signed" else "${refusals.size} Inputs Not Signed",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "This transaction is only partially signed and cannot be broadcast as-is.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    refusals.forEach { refusal ->
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = refusal.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
                 }
             }
         }
