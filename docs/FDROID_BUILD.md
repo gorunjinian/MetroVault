@@ -135,7 +135,7 @@ Binaries: https://github.com/gorunjinian/MetroVault/releases/download/v%v/MetroV
 Builds:
   - versionName: 3.9.5
     versionCode: 8
-    commit: <full hash of the v3.9.5 tag commit>
+    commit: 78d66b5f70039d608349e451699e92ffedd7fab7
     subdir: app
     sudo:
       - apt-get update
