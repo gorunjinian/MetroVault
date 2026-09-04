@@ -17,8 +17,8 @@ android {
         applicationId = "com.gorunjinian.metrovault"
         minSdk = minSdkValue
         targetSdk = targetSdkValue
-        versionCode = 7
-        versionName = "3.9.0"
+        versionCode = 8
+        versionName = "3.9.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

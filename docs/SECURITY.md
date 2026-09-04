@@ -767,6 +767,18 @@ Behavior:
 | Key Encryption (ESP) | AES-256-SIV | RFC 5297 |
 | Random Generation | SecureRandom | FIPS 140-2 |
 
+### Bitcoin Cryptography (secp256k1)
+
+All elliptic-curve operations (signing, verification, ECDH) use
+[bitcoin-core/secp256k1](https://github.com/bitcoin-core/secp256k1) — the reference
+implementation used by Bitcoin Core — via ACINQ's
+[secp256k1-kmp](https://github.com/ACINQ/secp256k1-kmp) JNI bindings. Release APKs build the
+native library **from source** (see [FDROID_BUILD.md](FDROID_BUILD.md)) with compact
+precomputed multiplication tables (`ECMULT_WINDOW_SIZE=4`, `ECMULT_GEN_KB=2`) — a supported,
+upstream-CI-tested build configuration that trades a small constant-factor slowdown for ~4 MB
+of APK size. Table size affects only speed: signatures are byte-identical (deterministic
+nonces per RFC 6979 / BIP-340) and signing remains constant-time in every configuration.
+
 ### OWASP Compliance
 
 | Requirement | MetroVault Implementation | Status |

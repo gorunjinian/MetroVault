@@ -32,18 +32,32 @@ resolved from Maven Central. Only `secp256k1-kmp-jni-android` carries a `.so` th
 
 ## 2. The secp256k1 dependency (pinned & verified)
 
-- MetroVault depends on `fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.23.0`
-  (`gradle/libs.versions.toml` → `secp256k1 = "0.23.0"`).
+- MetroVault depends on `fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.24.0`
+  (`gradle/libs.versions.toml` → `secp256k1 = "0.24.0"`).
 - Upstream: https://github.com/ACINQ/secp256k1-kmp — **Apache-2.0**.
-- Release tag **`v0.23.0`** → commit `a8117f92cb02bb07f7b8051d19bfddce74532b48`
-  (latest release; the tag's `build.gradle.kts` declares `version = "0.23.0"`, so building
-  the tag reproduces the exact `0.23.0` artifact MetroVault already uses).
+- Release tag **`v0.24.0`** → commit `e9d5c95f85bd326f3f6a5d4fd075ec11510de472`
+  (latest release; the tag's `build.gradle.kts` declares `version = "0.24.0"`, so building
+  the tag reproduces the exact `0.24.0` artifact MetroVault already uses).
 - Bundled C library: **bitcoin-core/secp256k1** (**MIT**), included as a git submodule at
-  `native/secp256k1`, pinned at tag `v0.23.0` to commit
-  `57315a69853c9bd4765fccf20b541d47f1b45ca9`.
+  `native/secp256k1`, pinned at tag `v0.24.0` to commit
+  `6e2c8bc4ecdc6e71dbe7a368f360d8d453ce435d` (= upstream release **v0.8.0**).
 - Toolchain pinned by the upstream build files:
   - **Android NDK 28.2.13676358** (= release **r28c**)
   - **CMake 3.31.5**
+
+### Compact precomputed tables
+
+Unlike the stock Maven Central artifact, MetroVault's from-source build passes
+`-DSECP256K1_ECMULT_WINDOW_SIZE=4 -DSECP256K1_ECMULT_GEN_KB=2` to the libsecp256k1 CMake
+build (sed-injected into `native/build.gradle.kts`'s `CMAKE_DEFAULT_OPTS`). This shrinks the
+precomputed generator-multiplication tables from ~1,136 KB to ~2.5 KB of `.rodata` per ABI —
+about **4.2 MB off the APK** across the four ABIs (the tables are high-entropy EC points and
+barely compress). Both values are supported, upstream-CI-tested configurations: the
+pre-generated table sources cover every window size 2..15 and all three gen-table sizes
+(2/22/86 KiB), so no table regeneration is involved. Signatures are byte-identical
+(deterministic nonces) and signing stays constant-time; the only cost is a small
+constant-factor slowdown of one-shot operations — the window-15 default is tuned for
+sustained block validation (Bitcoin Core), not a signing device.
 
 ---
 
@@ -68,19 +82,23 @@ The native build is fully driven by ACINQ's Gradle setup — no manual shell ste
 ```bash
 git clone --recursive https://github.com/ACINQ/secp256k1-kmp.git
 cd secp256k1-kmp
-git checkout v0.23.0
-git submodule update --init --recursive    # bitcoin-core/secp256k1 @ 57315a6
+git checkout v0.24.0
+git submodule update --init --recursive    # bitcoin-core/secp256k1 @ 6e2c8bc (v0.8.0)
 
 # For a byte-reproducible .so, drop the path-derived GNU build-id (see §5):
 echo 'target_link_options( secp256k1-jni PRIVATE -Wl,--build-id=none )' \
   >> jni/android/src/main/CMakeLists.txt
 
+# APK size: compact precomputed ecmult tables (see §2):
+sed -i 's/-DBUILD_SHARED_LIBS=OFF/-DBUILD_SHARED_LIBS=OFF -DSECP256K1_ECMULT_WINDOW_SIZE=4 -DSECP256K1_ECMULT_GEN_KB=2/' \
+  native/build.gradle.kts
+
 # Requires: JDK 17, Android SDK, NDK r28c (28.2.13676358), CMake 3.31.5, bash
 ./gradlew :jni:android:publishToMavenLocal
-# -> installs fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.23.0 into ~/.m2
+# -> installs fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.24.0 into ~/.m2
 ```
 
-MetroVault then resolves the locally-built artifact (identical coordinates `…:0.23.0`) instead
+MetroVault then resolves the locally-built artifact (identical coordinates `…:0.24.0`) instead
 of the Maven Central one, by prepending `mavenLocal()` to the repositories.
 
 ---
@@ -115,9 +133,9 @@ Repo: https://github.com/gorunjinian/MetroVault.git
 Binaries: https://github.com/gorunjinian/MetroVault/releases/download/v%v/MetroVault-%v-release.apk
 
 Builds:
-  - versionName: 3.8.6
-    versionCode: 5
-    commit: f967a8fa37fd357832b1ba353cca66e9b8d09cb4
+  - versionName: 3.9.5
+    versionCode: 8
+    commit: <full hash of the v3.9.5 tag commit>
     subdir: app
     sudo:
       - apt-get update
@@ -125,10 +143,11 @@ Builds:
     gradle:
       - yes
     srclibs:
-      - Secp256k1Kmp@v0.23.0
+      - Secp256k1Kmp@v0.24.0
     prebuild:
       - sed -i -e '/foojay/d' ../settings.gradle.kts
       - echo 'target_link_options( secp256k1-jni PRIVATE -Wl,--build-id=none )' >> $$Secp256k1Kmp$$/jni/android/src/main/CMakeLists.txt
+      - sed -i 's/-DBUILD_SHARED_LIBS=OFF/-DBUILD_SHARED_LIBS=OFF -DSECP256K1_ECMULT_WINDOW_SIZE=4 -DSECP256K1_ECMULT_GEN_KB=2/' $$Secp256k1Kmp$$/native/build.gradle.kts
       - sed -i 's/mavenCentral()/mavenLocal(); mavenCentral()/' ../settings.gradle.kts
     build:
       - sdkmanager "cmake;3.31.5"
@@ -141,14 +160,20 @@ AllowedAPKSigningKeys: 1245554ceb17cea21e9912af7bf60d38d716f5884d4b3664e5338462c
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9.]+$
-CurrentVersion: 3.8.6
-CurrentVersionCode: 5
+CurrentVersion: 3.9.5
+CurrentVersionCode: 8
 ```
 
+> The live fdroiddata file keeps the earlier `Builds` entries (versionCodes 5–7, on
+> `Secp256k1Kmp@v0.23.0` without the table sed) above this one — historical blocks are never
+> rewritten. Only the sample block for the current release is shown here.
+
 > Shown unwrapped for readability. The committed file is **`rewritemeta`-canonical**: the long
-> `Binaries` URL and the `echo` line are folded onto continuation lines, and `Binaries:` carries
-> a **mandatory trailing space** (`rewritemeta` re-adds it if removed). The line breaks are
-> cosmetic — YAML folds them back to single commands.
+> `Binaries` URL, the `echo` line and the table-size `sed` line are folded onto continuation
+> lines (ruamel breaks a plain scalar at the first space after column 80, continuing at the
+> item's content indent), and `Binaries:` carries a **mandatory trailing space** (`rewritemeta`
+> re-adds it if removed). The line breaks are cosmetic — YAML folds them back to single
+> commands.
 
 Notes:
 - The recipe splits into **`prebuild` (source patches)** and **`build` (build commands)** — the
@@ -168,6 +193,10 @@ Notes:
     build path. Dropping it makes the stripped `.so` byte-identical regardless of where it is
     built. The app's release CI (`.github/reproducible-build.sh`) appends the **identical** line;
     both sides must match or the published APK won't reproduce.
+  - the `ECMULT_WINDOW_SIZE=4` / `ECMULT_GEN_KB=2` sed shrinks libsecp256k1's precomputed
+    multiplication tables (~1.1 MB → ~2.5 KB of `.rodata` per ABI; ~4.2 MB off the APK) — see
+    §2 "Compact precomputed tables". The app's release CI applies the **identical** sed; both
+    sides must match or the published APK won't reproduce.
   - the `mavenLocal(); mavenCentral()` sed makes the app's gradle build resolve the from-source
     artifact ahead of Maven Central. One line — a literal `\n` in the YAML breaks it. Not
     committed to this repo.
@@ -196,7 +225,12 @@ Notes:
   with that release's `versionCode`.
 - With `AutoUpdateMode: Version`, fdroidbot copies this `Builds` entry forward for each new tag,
   bumping only `versionName`/`versionCode`/`commit`. Edit it by hand only when a build input
-  changes — the `Secp256k1Kmp@v0.23.0` pin, the NDK (`r28c`), or the prebuild/build steps.
+  changes — the `Secp256k1Kmp@v0.24.0` pin, the NDK (`r28c`), or the prebuild/build steps.
+  The v3.9.5 release is exactly such a case: the srclib moved to `@v0.24.0` and the
+  table-size sed joined `prebuild`, so its build block had to be added by hand (an MR), not
+  left to fdroidbot's copy-forward. If fdroidbot has already opened its copy-forward MR for
+  the tag, the hand-written MR supersedes it — the copied block (old srclib pin, no table sed)
+  would build but fail the `Binaries` reproducibility comparison.
 
 ---
 

@@ -42,13 +42,13 @@ fun LibUsedScreen(
         Library("Compose Material 3", "UI & Design", "Material Design 3 components for Compose", "1.4.0"),
         Library("Jetpack Compose", "UI & Design", "Modern declarative UI toolkit", "BOM 2026.08.00"),
         Library("Compose Material Icons", "UI & Design", "Extended Material Design icons"),
-        Library("Navigation Compose", "UI & Design", "Navigation for Compose apps", "2.9.8"),
+        Library("Navigation Compose", "UI & Design", "Navigation for Compose apps", "2.10.0"),
         Library("Reorderable", "UI & Design", "Drag-and-drop reordering for Compose lists", "3.1.0"),
 
         // Security & Crypto
         Library("AndroidX Security Crypto", "Security", "Encrypted SharedPreferences", "1.1.0"),
         Library("AndroidX Biometric", "Security", "Fingerprint & face authentication", "1.4.0-α07"),
-        Library("Secp256k1 KMP", "Cryptography", "Bitcoin elliptic curve cryptography", "0.23.0"),
+        Library("Secp256k1 KMP", "Cryptography", "Bitcoin elliptic curve cryptography", "0.24.0"),
 
         // QR Code
         Library("ZXing Core", "QR Code", "Barcode/QR code processing library", "3.5.4"),

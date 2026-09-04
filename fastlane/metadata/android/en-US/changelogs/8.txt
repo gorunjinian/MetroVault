@@ -1,0 +1,6 @@
+- Taproot signing fixes: key matching for some master fingerprints, BIP-86 output-key check, sighash validation
+- Clear per-input warnings when a PSBT can only be partially signed
+- Coordinator export for Nunchuk and Coldcard/Sparrow JSON, multi-account, animated QR
+- Show/hide toggle on password fields; sensitive clipboard copies auto-clear after 20 s
+- ~4 MB smaller APK: secp256k1 built with compact tables (identical signatures); secp256k1-kmp 0.24.0
+- Fixed predictive back gesture animation

@@ -18,8 +18,8 @@ set -o pipefail
 export PATH="$ANDROID_HOME/cmake/3.31.5/bin:$PATH"
 git config --global --add safe.directory '*'
 
-# Build secp256k1-kmp v0.23.0 from source -> mavenLocal.
-git clone --recursive --branch v0.23.0 --depth 1 \
+# Build secp256k1-kmp v0.24.0 from source -> mavenLocal.
+git clone --recursive --branch v0.24.0 --depth 1 \
   https://github.com/ACINQ/secp256k1-kmp.git /tmp/secp256k1-kmp
 # Reproducibility: drop the GNU build-id from the JNI .so. The linker derives it
 # from the (path-bearing) debug info, so without this the stripped lib differs by
@@ -27,6 +27,17 @@ git clone --recursive --branch v0.23.0 --depth 1 \
 # matching F-Droid. The fdroiddata recipe MUST apply this same line.
 echo 'target_link_options( secp256k1-jni PRIVATE -Wl,--build-id=none )' \
   >> /tmp/secp256k1-kmp/jni/android/src/main/CMakeLists.txt
+# APK size: build libsecp256k1 with small precomputed ecmult tables (~1.1 MB ->
+# ~2.5 KB of .rodata per ABI). Supported upstream configurations (window sizes
+# 2..15 and gen tables 2/22/86 KiB ship pre-generated in the source); identical
+# signatures and constant-time signing, only a speed/size trade — the window-15
+# default is tuned for sustained block validation, not a one-shot signer.
+# The fdroiddata recipe MUST apply this same sed.
+sed -i 's/-DBUILD_SHARED_LIBS=OFF/-DBUILD_SHARED_LIBS=OFF -DSECP256K1_ECMULT_WINDOW_SIZE=4 -DSECP256K1_ECMULT_GEN_KB=2/' \
+  /tmp/secp256k1-kmp/native/build.gradle.kts
+# Fail loudly if upstream ever changes the string the sed keys on: a silent
+# no-op would quietly ship the full-size tables again.
+grep -q 'SECP256K1_ECMULT_GEN_KB=2' /tmp/secp256k1-kmp/native/build.gradle.kts
 ( cd /tmp/secp256k1-kmp && gradle :jni:android:publishToMavenLocal )
 
 # Resolve the from-source artifact ahead of Maven Central.
@@ -36,3 +47,7 @@ sed -i 's/mavenCentral()/mavenLocal(); mavenCentral()/' settings.gradle.kts
 echo "$KEYSTORE_BASE64" | base64 -d > /tmp/release.keystore
 chmod +x ./gradlew  # gradlew is stored mode 644 in git; checkout lacks the exec bit
 KEYSTORE_PATH=/tmp/release.keystore ./gradlew assembleRelease
+
+# Log the native lib sizes as a sanity check: compact-table builds are a few
+# hundred KB per ABI, the stock Maven Central .so is 1.3-1.5 MB. Informational.
+unzip -l app/build/outputs/apk/release/*.apk | grep 'libsecp256k1-jni.so' || true
