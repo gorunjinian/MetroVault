@@ -1,9 +1,9 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.lib.bitcoin.*
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.*
+import com.gorunjinian.vaultovich.utils.Either
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.SigningResult
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils

@@ -1,12 +1,12 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
 import com.gorunjinian.metrovault.data.model.PsbtDetails
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.SigningResult
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.utils.Either
 
 /**
  * Service responsible for PSBT (Partially Signed Bitcoin Transaction) operations.

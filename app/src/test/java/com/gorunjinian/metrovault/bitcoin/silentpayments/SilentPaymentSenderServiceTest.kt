@@ -1,35 +1,35 @@
 package com.gorunjinian.metrovault.bitcoin.silentpayments
 
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.data.model.SilentPaymentError
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentSender
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
-import com.gorunjinian.metrovault.lib.bitcoin.ByteVector
-import com.gorunjinian.metrovault.lib.bitcoin.ByteVector32
-import com.gorunjinian.metrovault.lib.bitcoin.DataEntry
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.Global
-import com.gorunjinian.metrovault.lib.bitcoin.Input
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPathWithMaster
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
-import com.gorunjinian.metrovault.lib.bitcoin.OutPoint
-import com.gorunjinian.metrovault.lib.bitcoin.Output
-import com.gorunjinian.metrovault.lib.bitcoin.Psbt
-import com.gorunjinian.metrovault.lib.bitcoin.PublicKey
-import com.gorunjinian.metrovault.lib.bitcoin.Satoshi
-import com.gorunjinian.metrovault.lib.bitcoin.Script
-import com.gorunjinian.metrovault.lib.bitcoin.SigHash
-import com.gorunjinian.metrovault.lib.bitcoin.Transaction
-import com.gorunjinian.metrovault.lib.bitcoin.TxId
-import com.gorunjinian.metrovault.lib.bitcoin.TxIn
-import com.gorunjinian.metrovault.lib.bitcoin.TxOut
-import com.gorunjinian.metrovault.lib.bitcoin.byteVector
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentAddress
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments.EligibleInputKey
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments.RecipientKeys
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.ByteVector
+import com.gorunjinian.vaultovich.ByteVector32
+import com.gorunjinian.vaultovich.DataEntry
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.Global
+import com.gorunjinian.vaultovich.Input
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.KeyPathWithMaster
+import com.gorunjinian.vaultovich.MnemonicCode
+import com.gorunjinian.vaultovich.OutPoint
+import com.gorunjinian.vaultovich.Output
+import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.PublicKey
+import com.gorunjinian.vaultovich.Satoshi
+import com.gorunjinian.vaultovich.Script
+import com.gorunjinian.vaultovich.SigHash
+import com.gorunjinian.vaultovich.Transaction
+import com.gorunjinian.vaultovich.TxId
+import com.gorunjinian.vaultovich.TxIn
+import com.gorunjinian.vaultovich.TxOut
+import com.gorunjinian.vaultovich.byteVector
+import com.gorunjinian.vaultovich.silentpayments.SilentPaymentAddress
+import com.gorunjinian.vaultovich.silentpayments.SilentPayments
+import com.gorunjinian.vaultovich.silentpayments.SilentPayments.EligibleInputKey
+import com.gorunjinian.vaultovich.silentpayments.SilentPayments.RecipientKeys
+import com.gorunjinian.vaultovich.utils.Either
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -161,7 +161,7 @@ class SilentPaymentSenderServiceTest {
     @Test
     fun rejectsWhenInputKeyCannotBeResolved() {
         // Eligible P2WPKH input but with a foreign pubkey + wrong fingerprint: not ours to sign.
-        val foreignPub = com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
+        val foreignPub = com.gorunjinian.vaultovich.PrivateKey
             .fromHex("eadc78165ff1f8ea94ad7cfdc54990738a4c53f6e0507b42154201b8e5dff3b1").publicKey()
         val input = witnessInput(
             Script.write(Script.pay2wpkh(foreignPub)).byteVector(),

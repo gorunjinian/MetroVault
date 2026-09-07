@@ -220,5 +220,5 @@ object BSMS {
      * outside the BIP-380 input charset.
      */
     fun descriptorChecksum(descriptor: String): String =
-        com.gorunjinian.metrovault.lib.bitcoin.Descriptor.checksum(removeChecksum(descriptor))
+        com.gorunjinian.vaultovich.Descriptor.checksum(removeChecksum(descriptor))
 }

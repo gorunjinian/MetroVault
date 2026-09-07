@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.core.util
 
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.vaultovich.DeterministicWallet
 
 /**
  * Centralized network (mainnet/testnet) detection utilities.

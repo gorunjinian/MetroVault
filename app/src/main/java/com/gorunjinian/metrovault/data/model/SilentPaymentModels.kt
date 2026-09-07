@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.data.model
 
-import com.gorunjinian.metrovault.lib.bitcoin.PublicKey
+import com.gorunjinian.vaultovich.PublicKey
 
 /**
  * A silent-payment recipient declared in a PSBT output (`PSBT_OUT_SP_V0_INFO`).

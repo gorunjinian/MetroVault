@@ -8,9 +8,9 @@ import com.gorunjinian.metrovault.data.model.SilentPaymentRecipient
 import com.gorunjinian.metrovault.data.model.SilentPaymentResolution
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentSender
-import com.gorunjinian.metrovault.lib.bitcoin.*
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentInfo
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.*
+import com.gorunjinian.vaultovich.silentpayments.silentPaymentInfo
+import com.gorunjinian.vaultovich.utils.Either
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 
 /**

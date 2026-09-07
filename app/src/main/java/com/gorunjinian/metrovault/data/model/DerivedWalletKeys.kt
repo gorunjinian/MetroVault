@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.data.model
 
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.vaultovich.DeterministicWallet
 
 /**
  * Result of wallet key derivation operations.

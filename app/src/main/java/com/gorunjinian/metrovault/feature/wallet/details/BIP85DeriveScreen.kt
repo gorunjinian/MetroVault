@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.MnemonicCode
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.core.ui.components.SettingsInfoCard
 import com.gorunjinian.metrovault.core.util.SecurityUtils
@@ -267,10 +267,10 @@ fun BIP85DeriveScreen(
                             }
 
                             val path = listOf(
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968), // bip85
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(707764),   // pwd
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(passwordLength.toLong()),
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(83696968), // bip85
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(707764),   // pwd
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(passwordLength.toLong()),
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(index.toLong())
                             )
 
                             val derivedKey = masterPrivateKey.derivePrivateKey(path)
@@ -334,11 +334,11 @@ fun BIP85DeriveScreen(
                             }
 
                             val path = listOf(
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968),
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(39),
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(0),
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(wordCount.toLong()),
-                                com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(83696968),
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(39),
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(0),
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(wordCount.toLong()),
+                                com.gorunjinian.vaultovich.DeterministicWallet.hardened(index.toLong())
                             )
 
                             val derivedKey = masterPrivateKey.derivePrivateKey(path)
@@ -690,11 +690,11 @@ private fun deriveSeed(wallet: Wallet, index: Int, wordCount: Int): List<String>
         val masterPrivateKey = walletState.getMasterPrivateKey() ?: return null
 
         val path = listOf(
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968),
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(39),
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(0),
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(wordCount.toLong()),
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(83696968),
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(39),
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(0),
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(wordCount.toLong()),
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(index.toLong())
         )
 
         val derivedKey = masterPrivateKey.derivePrivateKey(path)
@@ -734,10 +734,10 @@ private fun derivePassword(wallet: Wallet, index: Int, length: Int): String? {
         val masterPrivateKey = walletState.getMasterPrivateKey() ?: return null
 
         val path = listOf(
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(83696968), // bip85
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(707764),   // pwd
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(length.toLong()),
-            com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet.hardened(index.toLong())
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(83696968), // bip85
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(707764),   // pwd
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(length.toLong()),
+            com.gorunjinian.vaultovich.DeterministicWallet.hardened(index.toLong())
         )
 
         val derivedKey = masterPrivateKey.derivePrivateKey(path)

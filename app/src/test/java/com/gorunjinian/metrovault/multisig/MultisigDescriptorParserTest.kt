@@ -3,9 +3,9 @@ package com.gorunjinian.metrovault.multisig
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.MnemonicCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

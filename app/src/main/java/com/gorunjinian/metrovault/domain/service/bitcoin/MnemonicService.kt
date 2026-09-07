@@ -1,10 +1,10 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.lib.bitcoin.Crypto
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
-import com.gorunjinian.metrovault.lib.bitcoin.byteVector
+import com.gorunjinian.vaultovich.Crypto
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.MnemonicCode
+import com.gorunjinian.vaultovich.byteVector
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import java.security.SecureRandom
 

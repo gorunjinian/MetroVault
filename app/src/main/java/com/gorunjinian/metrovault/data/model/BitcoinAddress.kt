@@ -1,5 +1,7 @@
 package com.gorunjinian.metrovault.data.model
 
+import com.gorunjinian.vaultovich.ScriptType
+
 /**
  * Bitcoin address with metadata.
  * 

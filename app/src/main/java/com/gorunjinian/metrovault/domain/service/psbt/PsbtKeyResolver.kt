@@ -1,16 +1,16 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.util.WalletConstants
-import com.gorunjinian.metrovault.lib.bitcoin.ByteVector
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.Input
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
-import com.gorunjinian.metrovault.lib.bitcoin.PublicKey
-import com.gorunjinian.metrovault.lib.bitcoin.XonlyPublicKey
+import com.gorunjinian.vaultovich.ByteVector
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.Input
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.PrivateKey
+import com.gorunjinian.vaultovich.PublicKey
+import com.gorunjinian.vaultovich.XonlyPublicKey
 
 /**
  * Resolves the signing private key for a PSBT input, independent of the act of signing.

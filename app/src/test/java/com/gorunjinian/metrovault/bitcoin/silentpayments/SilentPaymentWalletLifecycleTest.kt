@@ -4,8 +4,8 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.domain.manager.SilentPaymentManager
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.MnemonicCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull

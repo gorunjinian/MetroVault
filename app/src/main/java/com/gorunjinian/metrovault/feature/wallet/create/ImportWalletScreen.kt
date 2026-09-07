@@ -22,7 +22,7 @@ import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.InfoCard
 import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.MnemonicCode
 import com.gorunjinian.metrovault.core.qr.SeedQRUtils
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
 import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
@@ -267,7 +267,7 @@ private fun Step2SeedPhrase(
                                             val rawBytes = result.rawBytes
 
                                             // Try to decode as SeedQR (passing raw bytes for CompactSeedQR)
-                                            val decodedWords = SeedQRUtils.decodeSeedQR(scannedText, rawBytes, ctx)
+                                            val decodedWords = SeedQRUtils.decodeSeedQR(scannedText, rawBytes)
 
                                             if (decodedWords != null) {
                                                 // Check word count matches expected

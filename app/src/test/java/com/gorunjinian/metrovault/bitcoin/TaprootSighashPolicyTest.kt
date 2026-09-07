@@ -1,9 +1,9 @@
 package com.gorunjinian.metrovault.bitcoin
 
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
-import com.gorunjinian.metrovault.lib.bitcoin.ByteVector32
-import com.gorunjinian.metrovault.lib.bitcoin.SigHash
-import com.gorunjinian.metrovault.lib.bitcoin.UpdateFailure
+import com.gorunjinian.vaultovich.ByteVector32
+import com.gorunjinian.vaultovich.SigHash
+import com.gorunjinian.vaultovich.UpdateFailure
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

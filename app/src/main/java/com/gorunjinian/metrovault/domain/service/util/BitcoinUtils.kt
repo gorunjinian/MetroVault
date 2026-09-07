@@ -1,10 +1,10 @@
 package com.gorunjinian.metrovault.domain.service.util
 
-import com.gorunjinian.metrovault.lib.bitcoin.Block
-import com.gorunjinian.metrovault.lib.bitcoin.BlockHash
-import com.gorunjinian.metrovault.lib.bitcoin.Crypto
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.PublicKey
+import com.gorunjinian.vaultovich.Block
+import com.gorunjinian.vaultovich.BlockHash
+import com.gorunjinian.vaultovich.Crypto
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.PublicKey
 
 // ==================== Bitcoin Utilities ====================
 
