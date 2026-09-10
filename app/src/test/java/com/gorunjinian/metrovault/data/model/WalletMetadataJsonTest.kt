@@ -66,7 +66,8 @@ class WalletMetadataJsonTest {
         multisigVerifiedDescriptorChecksum = "abcd1234",
         isSilentPayment = true,
         silentPaymentScanPubKey = "02" + "11".repeat(32),
-        silentPaymentSpendPubKey = "03" + "22".repeat(32)
+        silentPaymentSpendPubKey = "03" + "22".repeat(32),
+        addressStartIndices = mapOf("0/0" to 40, "5/1" to 120)
     )
 
     private fun roundTrip(m: WalletMetadata) = WalletMetadata.fromJson(m.toJson())
@@ -128,6 +129,25 @@ class WalletMetadataJsonTest {
         val m = fullyPopulated().copy(keyIds = emptyList())
         assertFalse(JSONObject(m.toJson()).has("keyIds"))
         assertEquals(emptyList<String>(), roundTrip(m).keyIds)
+    }
+
+    @Test
+    fun `empty addressStartIndices is omitted from the JSON and reads back empty`() {
+        val m = fullyPopulated().copy(addressStartIndices = emptyMap())
+        assertFalse(JSONObject(m.toJson()).has("addressStartIndices"))
+        assertEquals(emptyMap<String, Int>(), roundTrip(m).addressStartIndices)
+    }
+
+    @Test
+    fun `address start index lookup is keyed by account and chain`() {
+        val m = fullyPopulated()
+        assertEquals("0/0", WalletMetadata.addressStartKey(0, isChange = false))
+        assertEquals("5/1", WalletMetadata.addressStartKey(5, isChange = true))
+        assertEquals(40, m.getAddressStartIndex(0, isChange = false))
+        assertEquals(0, m.getAddressStartIndex(0, isChange = true))
+        assertEquals(120, m.getAddressStartIndex(5, isChange = true))
+        // An account with nothing configured starts from the beginning.
+        assertEquals(0, m.getAddressStartIndex(1, isChange = false))
     }
 
     @Test
@@ -220,6 +240,7 @@ class WalletMetadataJsonTest {
         assertFalse(parsed.isMultisig)
         assertNull(parsed.multisigConfig)
         assertFalse(parsed.isSilentPayment)
+        assertEquals(emptyMap<String, Int>(), parsed.addressStartIndices)
     }
 
     @Test

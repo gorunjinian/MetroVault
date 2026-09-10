@@ -49,8 +49,16 @@ data class WalletMetadata(
     // The private scan/spend keys are never stored — they're derived from the seed at sign/export time.
     val isSilentPayment: Boolean = false,
     val silentPaymentScanPubKey: String = "",   // hex of B_scan (compressed)
-    val silentPaymentSpendPubKey: String = ""    // hex of B_spend (compressed)
+    val silentPaymentSpendPubKey: String = "",   // hex of B_spend (compressed)
+    // Display preference for the Addresses screen: the index each chain's list opens at, keyed by
+    // "<account>/<chain>" (chain 0 = receive, 1 = change) via [addressStartKey]. An absent key
+    // means "start from 0". Stored as the user's normalised input; the screen snaps it to a batch.
+    val addressStartIndices: Map<String, Int> = emptyMap()
 ) {
+    /** The configured start index for [accountNumber]'s receive or change list, 0 when unset. */
+    fun getAddressStartIndex(accountNumber: Int, isChange: Boolean): Int =
+        addressStartIndices[addressStartKey(accountNumber, isChange)] ?: 0
+
     /**
      * Get the display name for an account.
      * Returns custom name if set, otherwise default "Account N" format.
@@ -123,10 +131,20 @@ data class WalletMetadata(
                 put("silentPaymentScanPubKey", silentPaymentScanPubKey)
                 put("silentPaymentSpendPubKey", silentPaymentSpendPubKey)
             }
+            // Serialize address-list start indices (only when any chain is configured)
+            if (addressStartIndices.isNotEmpty()) {
+                put("addressStartIndices", org.json.JSONObject().apply {
+                    addressStartIndices.forEach { (k, v) -> put(k, v) }
+                })
+            }
         }.toString()
     }
 
     companion object {
+        /** Map key for [addressStartIndices]: `"<account>/<chain>"`, chain 0 = receive, 1 = change. */
+        fun addressStartKey(accountNumber: Int, isChange: Boolean): String =
+            "$accountNumber/${if (isChange) 1 else 0}"
+
         /**
          * Deserializes WalletMetadata from JSON with automatic migration.
          * 
@@ -188,7 +206,15 @@ data class WalletMetadata(
             } else {
                 emptyList()
             }
-            
+
+            // MIGRATION: Parse addressStartIndices map, default to empty for existing wallets
+            val addressStartIndices = if (obj.has("addressStartIndices")) {
+                val startObj = obj.getJSONObject("addressStartIndices")
+                startObj.keys().asSequence().associateWith { key -> startObj.getInt(key) }
+            } else {
+                emptyMap()
+            }
+
             return WalletMetadata(
                 id = obj.getString("id"),
                 name = obj.getString("name"),
@@ -207,7 +233,8 @@ data class WalletMetadata(
                 multisigVerifiedDescriptorChecksum = obj.optString("multisigVerifiedDescriptorChecksum", ""),
                 isSilentPayment = obj.optBoolean("isSilentPayment", false),
                 silentPaymentScanPubKey = obj.optString("silentPaymentScanPubKey", ""),
-                silentPaymentSpendPubKey = obj.optString("silentPaymentSpendPubKey", "")
+                silentPaymentSpendPubKey = obj.optString("silentPaymentSpendPubKey", ""),
+                addressStartIndices = addressStartIndices
             )
         }
     }

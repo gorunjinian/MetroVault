@@ -683,6 +683,29 @@ class   Wallet(context: Context) {
             _walletMetadataList, walletListLock, _wallets
         )
 
+    /**
+     * Addresses-screen start indices (receive, change) for the active wallet's active account.
+     * Stateless wallets have no metadata to read from and always start at 0.
+     */
+    fun getAddressStartIndices(): Pair<Int, Int> {
+        if (statelessWalletManager.get() != null) return 0 to 0
+        return accountManager.getAddressStartIndices(activeWalletId, _walletMetadataList, walletListLock)
+    }
+
+    /**
+     * Persist Addresses-screen start indices for the active wallet's active account.
+     * Returns false for stateless wallets, which have nowhere to store the preference;
+     * the screen then keeps the values for the current visit only.
+     */
+    suspend fun setAddressStartIndices(receiveStart: Int, changeStart: Int): Boolean {
+        if (statelessWalletManager.get() != null) return false
+        val walletId = activeWalletId ?: return false
+        return accountManager.setAddressStartIndices(
+            walletId, getActiveAccountNumber(), receiveStart, changeStart, isDecoyMode,
+            _walletMetadataList, walletListLock, _wallets
+        )
+    }
+
     // ==================== Memory Management ====================
 
     fun unloadWallet(walletId: String) {
