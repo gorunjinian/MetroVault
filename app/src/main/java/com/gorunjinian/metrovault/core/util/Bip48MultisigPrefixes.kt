@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.core.util
 
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.vaultovich.DeterministicWallet
 
 /**
  * BIP48 SLIP-0132 Multisig Extended Key Prefixes.

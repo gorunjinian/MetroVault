@@ -14,13 +14,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.gorunjinian.metrovault.lib.bitcoin.BIP39Wordlist
+import com.gorunjinian.vaultovich.BIP39Wordlist
 
 /**
  * A secure in-app QWERTY keyboard for mnemonic seed entry.
@@ -46,14 +45,13 @@ fun SecureMnemonicKeyboard(
     onWordSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val view = LocalView.current
     
     // Get word suggestions based on current input
     val suggestions by remember(currentWord) {
         derivedStateOf {
             if (currentWord.isNotEmpty()) {
-                BIP39Wordlist.getWordsWithPrefix(context, currentWord).take(8)
+                BIP39Wordlist.getWordsWithPrefix(currentWord).take(8)
             } else {
                 emptyList()
             }

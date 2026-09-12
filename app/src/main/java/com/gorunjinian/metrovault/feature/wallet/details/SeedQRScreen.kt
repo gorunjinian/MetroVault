@@ -11,7 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.ui.components.InfoCard
@@ -70,7 +69,6 @@ fun SeedQRContent(
     onBack: () -> Unit,
     footer: @Composable ColumnScope.() -> Unit
 ) {
-    val context = LocalContext.current
 
     // Format state: 0 = Standard SeedQR (default), 1 = Compact, 2 = Generic
     var selectedFormat by remember { mutableIntStateOf(0) }
@@ -104,14 +102,14 @@ fun SeedQRContent(
         withContext(Dispatchers.IO) {
             when (selectedFormat) {
                 1 -> { // Compact SeedQR: binary module data
-                    val bytes = SeedQRUtils.mnemonicToCompactSeedQR(mnemonic, context)
+                    val bytes = SeedQRUtils.mnemonicToCompactSeedQR(mnemonic)
                     moduleData = bytes?.let { QRCodeUtils.extractBinaryModuleData(it) }
                 }
                 2 -> { // Generic: plain space-separated words (bitmap only)
                     qrBitmap = QRCodeUtils.generateQRCode(mnemonic.joinToString(" "), size = 512)
                 }
                 else -> { // Standard SeedQR: digit string module data
-                    val digitString = SeedQRUtils.mnemonicToStandardSeedQR(mnemonic, context)
+                    val digitString = SeedQRUtils.mnemonicToStandardSeedQR(mnemonic)
                     moduleData = digitString?.let { QRCodeUtils.extractModuleData(it) }
                 }
             }

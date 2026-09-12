@@ -2,14 +2,14 @@ package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.lib.bitcoin.Bip322
-import com.gorunjinian.metrovault.lib.bitcoin.Block
-import com.gorunjinian.metrovault.lib.bitcoin.BlockHash
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.MessageSigning
-import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
-import com.gorunjinian.metrovault.lib.bitcoin.Psbt
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.Bip322
+import com.gorunjinian.vaultovich.Block
+import com.gorunjinian.vaultovich.BlockHash
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.MessageSigning
+import com.gorunjinian.vaultovich.PrivateKey
+import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.utils.Either
 
 /**
  * Wallet-level message signing and verification — the orchestration behind the Sign/Verify

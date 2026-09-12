@@ -1,9 +1,8 @@
 package com.gorunjinian.metrovault.core.qr
 
-import android.content.Context
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.lib.bitcoin.BIP39Wordlist
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.BIP39Wordlist
+import com.gorunjinian.vaultovich.MnemonicCode
 import java.security.MessageDigest
 
 /**
@@ -33,13 +32,12 @@ object SeedQRUtils {
      * Example: "vacuum" (index 1924) -> "1924", "bridge" (index 222) -> "0222"
      *
      * @param words List of mnemonic words (12 or 24 words)
-     * @param context Android context for loading wordlist
      * @return Digit string (48 or 96 characters) or null on error
      */
-    fun mnemonicToStandardSeedQR(words: List<String>, context: Context): String? {
+    fun mnemonicToStandardSeedQR(words: List<String>): String? {
         if (words.size != 12 && words.size != 24) return null
 
-        val wordlist = BIP39Wordlist.getEnglishWordlist(context)
+        val wordlist = BIP39Wordlist.getEnglishWordlist()
         if (wordlist.isEmpty()) return null
 
         return try {
@@ -61,15 +59,14 @@ object SeedQRUtils {
      * Validates the resulting mnemonic using BIP39 checksum.
      *
      * @param digitString The digit string from scanning a Standard SeedQR (48 or 96 digits)
-     * @param context Android context for loading wordlist
      * @return List of mnemonic words or null on error/invalid checksum
      */
-    fun standardSeedQRToMnemonic(digitString: String, context: Context): List<String>? {
+    fun standardSeedQRToMnemonic(digitString: String): List<String>? {
         // Validate length: 48 digits = 12 words, 96 digits = 24 words
         if (digitString.length != 48 && digitString.length != 96) return null
         if (!digitString.all { it.isDigit() }) return null
 
-        val wordlist = BIP39Wordlist.getEnglishWordlist(context)
+        val wordlist = BIP39Wordlist.getEnglishWordlist()
         if (wordlist.isEmpty()) return null
 
         return try {
@@ -97,13 +94,12 @@ object SeedQRUtils {
      * are stripped to produce 128 bits (16 bytes) for 12 words or 256 bits (32 bytes) for 24 words.
      *
      * @param words List of mnemonic words (12 or 24 words)
-     * @param context Android context for loading wordlist
      * @return Byte array (16 or 32 bytes) or null on error
      */
-    fun mnemonicToCompactSeedQR(words: List<String>, context: Context): ByteArray? {
+    fun mnemonicToCompactSeedQR(words: List<String>): ByteArray? {
         if (words.size != 12 && words.size != 24) return null
 
-        val wordlist = BIP39Wordlist.getEnglishWordlist(context)
+        val wordlist = BIP39Wordlist.getEnglishWordlist()
         if (wordlist.isEmpty()) return null
 
         return try {
@@ -145,14 +141,13 @@ object SeedQRUtils {
      * 4. Looks up words and validates the result
      *
      * @param bytes The byte array from scanning a CompactSeedQR (16 or 32 bytes)
-     * @param context Android context for loading wordlist
      * @return List of mnemonic words or null on error
      */
-    fun compactSeedQRToMnemonic(bytes: ByteArray, context: Context): List<String>? {
+    fun compactSeedQRToMnemonic(bytes: ByteArray): List<String>? {
         // Validate length: 16 bytes = 12 words, 32 bytes = 24 words
         if (bytes.size != 16 && bytes.size != 32) return null
 
-        val wordlist = BIP39Wordlist.getEnglishWordlist(context)
+        val wordlist = BIP39Wordlist.getEnglishWordlist()
         if (wordlist.isEmpty()) return null
 
         return try {
@@ -209,17 +204,16 @@ object SeedQRUtils {
      *
      * @param content The text content from QR scan
      * @param rawBytes Optional raw bytes from QR scan (for binary CompactSeedQR)
-     * @param context Android context for loading wordlist
      * @return List of mnemonic words or null if not a valid SeedQR
      */
-    fun decodeSeedQR(content: String, rawBytes: ByteArray?, context: Context): List<String>? {
+    fun decodeSeedQR(content: String, rawBytes: ByteArray?): List<String>? {
         // Try Generic seed format first (space-separated words)
-        val genericResult = parseGenericSeedQR(content, context)
+        val genericResult = parseGenericSeedQR(content)
         if (genericResult != null) return genericResult
 
         // Try Standard SeedQR (digit string)
         if (content.all { it.isDigit() } && (content.length == 48 || content.length == 96)) {
-            val result = standardSeedQRToMnemonic(content, context)
+            val result = standardSeedQRToMnemonic(content)
             if (result != null) return result
         }
 
@@ -227,14 +221,14 @@ object SeedQRUtils {
         if (rawBytes != null && rawBytes.isNotEmpty()) {
             // First try direct extraction if size is exactly right
             if (rawBytes.size == 16 || rawBytes.size == 32) {
-                val result = compactSeedQRToMnemonic(rawBytes, context)
+                val result = compactSeedQRToMnemonic(rawBytes)
                 if (result != null) return result
             }
 
             // Try parsing ZXing raw bytes format which includes QR metadata header
             val extractedBytes = extractBinaryDataFromZXingRawBytes(rawBytes)
             if (extractedBytes != null && (extractedBytes.size == 16 || extractedBytes.size == 32)) {
-                val result = compactSeedQRToMnemonic(extractedBytes, context)
+                val result = compactSeedQRToMnemonic(extractedBytes)
                 if (result != null) return result
             }
         }
@@ -247,7 +241,7 @@ object SeedQRUtils {
         }
 
         if (bytes != null && (bytes.size == 16 || bytes.size == 32)) {
-            val result = compactSeedQRToMnemonic(bytes, context)
+            val result = compactSeedQRToMnemonic(bytes)
             if (result != null) return result
         }
 
@@ -261,10 +255,9 @@ object SeedQRUtils {
      * format contains the actual seed words separated by spaces.
      *
      * @param content Text content from QR (e.g., "abandon ability able about...")
-     * @param context Android context for loading wordlist
      * @return List of mnemonic words or null if not a valid seed phrase
      */
-    fun parseGenericSeedQR(content: String, context: Context): List<String>? {
+    fun parseGenericSeedQR(content: String): List<String>? {
         // Split by whitespace (handles multiple spaces, newlines, etc.)
         val words = content.trim().lowercase().split("\\s+".toRegex())
 
@@ -272,7 +265,7 @@ object SeedQRUtils {
         if (words.size != 12 && words.size != 24) return null
 
         // Validate all words exist in BIP39 English wordlist
-        val wordlist = BIP39Wordlist.getEnglishWordlist(context)
+        val wordlist = BIP39Wordlist.getEnglishWordlist()
         if (wordlist.isEmpty()) return null
         if (!words.all { it in wordlist }) return null
 

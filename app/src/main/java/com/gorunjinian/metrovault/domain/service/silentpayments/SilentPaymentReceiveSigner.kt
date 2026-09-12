@@ -3,18 +3,18 @@ package com.gorunjinian.metrovault.domain.service.silentpayments
 import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.SpSpendingError
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
-import com.gorunjinian.metrovault.lib.bitcoin.ByteVector
-import com.gorunjinian.metrovault.lib.bitcoin.Crypto
-import com.gorunjinian.metrovault.lib.bitcoin.Input
-import com.gorunjinian.metrovault.lib.bitcoin.Psbt
-import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
-import com.gorunjinian.metrovault.lib.bitcoin.Script
-import com.gorunjinian.metrovault.lib.bitcoin.SigHash
-import com.gorunjinian.metrovault.lib.bitcoin.TxOut
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentSpending
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentTweak
-import com.gorunjinian.metrovault.lib.bitcoin.updated
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.ByteVector
+import com.gorunjinian.vaultovich.Crypto
+import com.gorunjinian.vaultovich.Input
+import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.PrivateKey
+import com.gorunjinian.vaultovich.Script
+import com.gorunjinian.vaultovich.SigHash
+import com.gorunjinian.vaultovich.TxOut
+import com.gorunjinian.vaultovich.silentpayments.SilentPaymentSpending
+import com.gorunjinian.vaultovich.silentpayments.silentPaymentTweak
+import com.gorunjinian.vaultovich.updated
+import com.gorunjinian.vaultovich.utils.Either
 
 /**
  * Story B receive-side signer: signs PSBT inputs that spend a silent-payment output we received.

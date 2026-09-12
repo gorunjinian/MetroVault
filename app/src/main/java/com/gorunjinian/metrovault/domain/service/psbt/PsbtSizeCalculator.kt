@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
-import com.gorunjinian.metrovault.lib.bitcoin.*
+import com.gorunjinian.vaultovich.*
 
 /**
  * Handles transaction size calculations for PSBT fee estimation.

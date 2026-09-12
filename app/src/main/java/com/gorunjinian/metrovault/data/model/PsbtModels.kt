@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.data.model
 
-import com.gorunjinian.metrovault.lib.bitcoin.UpdateFailure
+import com.gorunjinian.vaultovich.UpdateFailure
 
 /**
  * Details extracted from a PSBT for display purposes.

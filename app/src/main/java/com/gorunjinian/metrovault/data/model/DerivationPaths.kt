@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.data.model
 
 import com.gorunjinian.metrovault.core.util.NetworkUtils
+import com.gorunjinian.vaultovich.ScriptType
 
 /**
  * Derivation path constants following BIP43/44/49/84/86

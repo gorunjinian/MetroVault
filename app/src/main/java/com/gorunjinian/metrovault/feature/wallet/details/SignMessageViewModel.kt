@@ -14,7 +14,7 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletMessageSigner
 import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
-import com.gorunjinian.metrovault.lib.bitcoin.MessageSigning
+import com.gorunjinian.vaultovich.MessageSigning
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

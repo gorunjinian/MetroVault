@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.data.model.DerivationPaths
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
 

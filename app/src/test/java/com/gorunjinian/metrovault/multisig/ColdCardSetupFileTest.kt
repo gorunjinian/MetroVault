@@ -4,11 +4,11 @@ import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.service.multisig.ColdCardSetupFile
-import com.gorunjinian.metrovault.lib.bitcoin.Base58Check
-import com.gorunjinian.metrovault.lib.bitcoin.Descriptor
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.Base58Check
+import com.gorunjinian.vaultovich.Descriptor
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.MnemonicCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

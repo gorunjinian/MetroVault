@@ -1,11 +1,11 @@
 package com.gorunjinian.metrovault.bitcoin.silentpayments
 
 import com.gorunjinian.metrovault.data.model.DerivationPaths
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.ScanAddressCodec
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentAddress
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.MnemonicCode
+import com.gorunjinian.vaultovich.silentpayments.ScanAddressCodec
+import com.gorunjinian.vaultovich.silentpayments.SilentPaymentAddress
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

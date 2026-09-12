@@ -492,13 +492,13 @@ fun WalletDetailsScreen(
             if (!isMultisig && !isStatelessWallet && !isSilentPayment) {
                 val currentScriptType = DerivationPaths.getScriptType(derivationPath)
                 val currentSubtitle = when (currentScriptType) {
-                    com.gorunjinian.metrovault.data.model.ScriptType.P2TR ->
+                    com.gorunjinian.vaultovich.ScriptType.P2TR ->
                         if (isTestnet) "Currently: Taproot (tb1p…)" else "Currently: Taproot (bc1p…)"
-                    com.gorunjinian.metrovault.data.model.ScriptType.P2WPKH ->
+                    com.gorunjinian.vaultovich.ScriptType.P2WPKH ->
                         if (isTestnet) "Currently: Native SegWit (tb1q…)" else "Currently: Native SegWit (bc1q…)"
-                    com.gorunjinian.metrovault.data.model.ScriptType.P2SH_P2WPKH ->
+                    com.gorunjinian.vaultovich.ScriptType.P2SH_P2WPKH ->
                         if (isTestnet) "Currently: Nested SegWit (2…)" else "Currently: Nested SegWit (3…)"
-                    com.gorunjinian.metrovault.data.model.ScriptType.P2PKH ->
+                    com.gorunjinian.vaultovich.ScriptType.P2PKH ->
                         if (isTestnet) "Currently: Legacy (m/n…)" else "Currently: Legacy (1…)"
                 }
                 ActionCard(

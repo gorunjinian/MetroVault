@@ -1,8 +1,8 @@
 package com.gorunjinian.metrovault.domain.service.psbt
 
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.lib.bitcoin.*
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.*
+import com.gorunjinian.vaultovich.utils.Either
 import fr.acinq.secp256k1.Hex
 
 /**
@@ -48,6 +48,10 @@ internal object PsbtFinalizer {
                         val scriptPubKey = runCatching { Script.parse(input.txOut.publicKeyScript) }.getOrNull()
                             ?: return FinalizePsbtResult.Failure("Failed to parse scriptPubKey for input $inputIndex")
 
+                        // Read into a local: Input now comes from the vaultovich module, and
+                        // Kotlin will not smart-cast a public property across a module boundary.
+                        val witnessScript = input.witnessScript
+
                         val witness: ScriptWitness = when {
                             // P2TR (Taproot)
                             Script.isPay2tr(scriptPubKey) -> {
@@ -56,8 +60,7 @@ internal object PsbtFinalizer {
                                 ScriptWitness(listOf(sig))
                             }
                             // P2WSH (Native SegWit multisig) - has witnessScript
-                            Script.isPay2wsh(scriptPubKey) && input.witnessScript != null -> {
-                                val witnessScript = input.witnessScript
+                            Script.isPay2wsh(scriptPubKey) && witnessScript != null -> {
                                 val (isMultisig, m, _) = PsbtAnalyzer.parseMultisigScript(witnessScript)
 
                                 if (isMultisig) {
@@ -92,8 +95,7 @@ internal object PsbtFinalizer {
                                 }
                             }
                             // P2SH-P2WSH (Nested SegWit multisig) - has redeemScript pointing to P2WSH and witnessScript
-                            Script.isPay2sh(scriptPubKey) && input.witnessScript != null -> {
-                                val witnessScript = input.witnessScript
+                            Script.isPay2sh(scriptPubKey) && witnessScript != null -> {
                                 val (isMultisig, m, _) = PsbtAnalyzer.parseMultisigScript(witnessScript)
 
                                 if (isMultisig) {

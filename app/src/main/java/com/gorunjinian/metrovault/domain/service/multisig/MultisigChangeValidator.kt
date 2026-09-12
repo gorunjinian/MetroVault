@@ -4,8 +4,8 @@ import android.util.Base64
 import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
-import com.gorunjinian.metrovault.lib.bitcoin.Psbt
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.utils.Either
 
 /**
  * Validates that a multisig PSBT contains no deceptive "change" outputs before signing.

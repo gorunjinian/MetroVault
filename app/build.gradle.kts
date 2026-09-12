@@ -196,6 +196,10 @@ dependencies {
     implementation(libs.lifecycle.process)
 
     // Bitcoin
+    // The bitcoin library, now extracted out of this app into its own repo. It brings
+    // secp256k1-kmp along as an `api` dependency; the JNI binding below is what
+    // supplies the native code that library links against.
+    implementation(libs.vaultovich)
     implementation(kotlin("stdlib"))
     implementation(libs.secp256k1.android)
 

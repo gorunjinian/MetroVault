@@ -6,15 +6,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
-import com.gorunjinian.metrovault.lib.bitcoin.BIP39Wordlist
+import com.gorunjinian.vaultovich.MnemonicCode
+import com.gorunjinian.vaultovich.BIP39Wordlist
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
 import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
@@ -24,7 +23,6 @@ import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 fun CompleteMnemonicScreen(
     onBack: () -> Unit
 ) {
-    val context = LocalContext.current
     
     // Mnemonic input state
     var mnemonicWords by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -163,7 +161,7 @@ fun CompleteMnemonicScreen(
 
                             scope.launch {
                                 val validWords = withContext(Dispatchers.Default) {
-                                    calculatePossibleLastWords(context, mnemonicWords)
+                                    calculatePossibleLastWords(mnemonicWords)
                                 }
 
                                 isCalculating = false
@@ -249,16 +247,15 @@ fun CompleteMnemonicScreen(
  *   With 23 words given (253 bits), last word has 11 bits (3 entropy + 8 checksum)
  *   Result: ~8-256 valid last words
  *
- * @param context Android context for loading wordlist from assets
  * @param incompleteWords List of 11 or 23 words
  * @return List of valid last words that complete the mnemonic with a valid checksum
  */
-private fun calculatePossibleLastWords(context: android.content.Context, incompleteWords: List<String>): List<String> {
+private fun calculatePossibleLastWords(incompleteWords: List<String>): List<String> {
     val validLastWords = mutableListOf<String>()
 
     try {
         // Load the BIP39 English wordlist (2048 words, indices 0-2047)
-        val bip39Words = BIP39Wordlist.getEnglishWordlist(context)
+        val bip39Words = BIP39Wordlist.getEnglishWordlist()
 
         if (bip39Words.isEmpty()) {
             AppLog.e("CompleteMnemonic") { "Failed to load BIP39 wordlist" }

@@ -1,11 +1,11 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.lib.bitcoin.Descriptor
-import com.gorunjinian.metrovault.lib.bitcoin.DescriptorExtensions
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.vaultovich.Descriptor
+import com.gorunjinian.vaultovich.DescriptorExtensions
+import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.metrovault.data.model.DerivationPaths
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 

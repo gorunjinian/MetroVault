@@ -7,7 +7,7 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.Result
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.data.model.WalletCreationError
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
 import com.gorunjinian.metrovault.data.model.WalletKeys
@@ -38,8 +38,8 @@ import com.gorunjinian.metrovault.domain.manager.SilentPaymentManager
 import com.gorunjinian.metrovault.domain.manager.StatelessWalletManager
 import com.gorunjinian.metrovault.domain.manager.WalletAccountManager
 import com.gorunjinian.metrovault.domain.manager.WalletSessionManager
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.MnemonicCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

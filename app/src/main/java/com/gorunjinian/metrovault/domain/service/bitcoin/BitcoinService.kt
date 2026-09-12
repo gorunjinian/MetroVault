@@ -1,18 +1,18 @@
 package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.lib.bitcoin.*
+import com.gorunjinian.vaultovich.*
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.DerivedWalletKeys
 import com.gorunjinian.metrovault.data.model.PsbtDetails
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.SigningResult
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.metrovault.core.util.hexToByteArray
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.utils.Either
 
 /**
  * Facade service for all Bitcoin-related operations.
