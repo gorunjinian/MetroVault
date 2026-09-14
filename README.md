@@ -37,7 +37,7 @@
 
 ---
 
-**MetroVault** is a secure, offline Android signing device application designed to turn your Android phone into a cold storage hardware wallet. Built with modern Android technologies and a custom Kotlin Bitcoin library, it prioritizes security, simplicity, and user experience. Supports both single-sig and multi-sig (collaborative custody) wallets.
+**MetroVault** is a secure, offline Android signing device application designed to turn your Android phone into a cold storage hardware wallet. Built with modern Android technologies on top of [vaultovich](https://github.com/gorunjinian/vaultovich), MV's own auditable Kotlin Bitcoin library, it prioritizes security and simplicity. Supports both single-sig and multi-sig wallets.
 
 ## Why MetroVault?
 
@@ -118,11 +118,19 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 |----------|------------|
 | **UI Framework** | Jetpack Compose (Material 3) |
 | **Architecture** | MVVM with Clean Architecture |
-| **Cryptography** | Custom Kotlin Bitcoin Library (Secp256k1, BIP-32, BIP-39, BIP-48, BIP-174, BIP-352, BIP-370, BIP-374) |
+| **Cryptography** | [vaultovich](https://github.com/gorunjinian/vaultovich) — Kotlin Bitcoin library (BIP-32, BIP-39, BIP-48, BIP-174, BIP-340/341/342, BIP-352, BIP-370, BIP-371, BIP-374) + secp256k1-kmp JNI binding |
 | **Storage** | EncryptedSharedPreferences (Android Keystore) |
-| **QR Codes** | ZXing + bcur-kotlin & bbqr (Kotlin ports for BC-UR and BBQr animated multi-frame QR) |
+| **QR Codes** | ZXing + [bcur-kotlin](https://github.com/gorunjinian/bcur-kotlin) & [bbqr-kotlin](https://github.com/gorunjinian/bbqr-kotlin) (Kotlin ports for BC-UR and BBQr animated multi-frame QR) |
 | **Biometrics** | AndroidX Biometric Library (BIOMETRIC_STRONG) |
 | **Min SDK** | Android 8.0 (API 26) |
+
+### 🔑 Bitcoin Library: vaultovich
+
+All Bitcoin primitives — key derivation, address generation, transaction and PSBT parsing, signing (ECDSA and Schnorr), descriptors, MuSig2 and silent payments — live in **[vaultovich](https://github.com/gorunjinian/vaultovich)**, a fork of [ACINQ's bitcoin-kmp](https://github.com/ACINQ/bitcoin-kmp) that I maintain. It started life inside this repository and was extracted into its own project so it can be audited, tested and versioned independently. MetroVault consumes it from Maven Central as `com.gorunjinian:vaultovich`.
+
+The library is pure Kotlin/JVM with no networking, no persistence and no Android dependencies. It parses, derives, signs and serialises — nothing else. The only native code involved is the `secp256k1-kmp` JNI binding that MetroVault supplies for Android.
+
+MetroVault itself contains the app layer: encrypted storage, session management, QR transport, multisig and silent-payment services, and the UI.
 
 ## 🚀 Installation
 
@@ -185,7 +193,7 @@ For maximum security, use a dedicated device:
 
 **📱 New to this?** Follow the **[Device Setup Guide](./docs/DEVICE_SETUP.md)** — a full step-by-step tutorial covering every step above, from factory reset to your first wallet, including how to verify and sideload the APK onto a device that never goes online.
 
-**Optional — debloat first:** before sideloading MetroVault, consider running [android-debloater](https://github.com/gorunjinian/android-debloater), a companion bash script that uses `adb` to uninstall bloatware and pre-installed network-reaching apps on a fresh device. The fewer packages that can phone home, the smaller the attack surface left on your air-gapped signer. After debloating, disable USB debugging.
+**Optional (recommended) — debloat first:** before sideloading MetroVault, consider running [android-debloater](https://github.com/gorunjinian/android-debloater), a companion bash script that uses `adb` to uninstall bloatware and pre-installed network-reaching apps on a fresh device. After debloating, disable USB debugging.
 
 ## 📖 Documentation
 
@@ -211,12 +219,13 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 
 MetroVault is free software, licensed under the **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`). You are free to use, study, share, and modify it; any distributed derivative must remain free software under the same license. See [LICENSE.txt](./LICENSE.txt) for the full text.
 
-The bundled QR libraries [bbqr-kotlin](https://github.com/gorunjinian/bbqr-kotlin) and [bcur-kotlin](https://github.com/gorunjinian/bcur-kotlin) are separate works under the MIT License.
+The companion libraries are separate works under their own licenses: the Bitcoin library [vaultovich](https://github.com/gorunjinian/vaultovich) is Apache License 2.0 (as is the upstream bitcoin-kmp it forks), and the QR libraries [bbqr-kotlin](https://github.com/gorunjinian/bbqr-kotlin) and [bcur-kotlin](https://github.com/gorunjinian/bcur-kotlin) are MIT License.
 
 ## 🙏 Acknowledgments
 
 - [Bitcoin](https://bitcoin.org) - The protocol that makes this all possible
-- [ACINQ](https://github.com/ACINQ/bitcoin-kmp) - Custom Bitcoin library from ACINQ's implementation
+- [vaultovich](https://github.com/gorunjinian/vaultovich) - Our Bitcoin library, forked from [ACINQ's bitcoin-kmp](https://github.com/ACINQ/bitcoin-kmp)
+- [ACINQ](https://github.com/ACINQ) - For bitcoin-kmp and the secp256k1-kmp bindings that vaultovich builds on
 - [Jetpack Compose](https://developer.android.com/jetpack/compose) - Modern Android UI toolkit
 - [ZXing](https://github.com/zxing/zxing) - QR code generation and scanning
 - The open-source Bitcoin community for BIP standards
