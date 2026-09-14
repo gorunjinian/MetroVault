@@ -51,7 +51,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.VerifyMultisigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.CoordinatorExportScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SPAddressScreen
-import com.gorunjinian.metrovault.feature.wallet.details.ScriptTypeScreen
+import com.gorunjinian.metrovault.feature.wallet.details.AddressTypeScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SilentPaymentExportScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SeedPhraseScreen
 import com.gorunjinian.metrovault.feature.wallet.details.RootKeyScreen
@@ -139,7 +139,7 @@ sealed class Screen(val route: String) {
     object SettingsSecurity : Screen("settings_security")
     object SettingsAdvanced : Screen("settings_advanced")
     object DifferentAccounts : Screen("different_accounts")
-    object ScriptType : Screen("script_type")
+    object AddressType : Screen("address_type")
     object AccountKeys : Screen("account_keys")
     object Descriptors : Screen("descriptors")
     object SeedPhrase : Screen("seed_phrase")
@@ -378,7 +378,7 @@ fun AppNavigation(
                 onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
                 onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },
                 onDifferentAccounts = { navController.navigate(Screen.DifferentAccounts.route) },
-                onChangeScriptType = { navController.navigate(Screen.ScriptType.route) },
+                onChangeAddressType = { navController.navigate(Screen.AddressType.route) },
                 onLock = {
                     navController.navigate(Screen.Unlock.route) {
                         popUpTo(0) { inclusive = true }
@@ -594,8 +594,8 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.ScriptType.route) {
-            ScriptTypeScreen(
+        composable(Screen.AddressType.route) {
+            AddressTypeScreen(
                 wallet = wallet,
                 onBack = { navController.navigateBackOr(Screen.Home) }
             )

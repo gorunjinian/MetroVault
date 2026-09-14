@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.compose.runtime.Stable
 import com.gorunjinian.metrovault.core.logging.AppLog
+import com.gorunjinian.metrovault.data.model.AddressFormat
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.Result
@@ -596,38 +597,63 @@ class   Wallet(context: Context) {
         )
 
     /**
-     * Switch a single-sig wallet's BIP purpose (script type) to a new one. The wallet's master key,
-     * fingerprint, seed, accounts list and custom account names are all preserved — only the
-     * `derivationPath` is rewritten under the new purpose at the current active account. The
-     * wallet is then unloaded and reloaded so `WalletState` rebuilds against the new path.
+     * Move a persisted single-seed wallet to [format] (any of the four single-sig BIP purposes or
+     * BIP-352 Silent Payments) on the given network, without re-importing the seed. Pass the
+     * current format to change only the network, or the current network to change only the
+     * format. The master key, fingerprint, seed, accounts list and custom account names are all
+     * preserved; only `derivationPath` (rewritten under the new purpose and coin type at the
+     * current active account) and the silent-payment flag change. The wallet is then unloaded
+     * and reloaded so `WalletState` rebuilds against the new path.
      *
-     * Rejects multisig (BIP-48 has cosigner-fixed script type), silent-payment (a different wallet
-     * kind, not a script type), and missing-metadata calls. A no-op switch to the current type
+     * The cached silent-payment scan/spend pubkeys depend on both purpose and coin type, so they
+     * are cleared here and re-derived by [persistAndReload] when the target is Silent Payments —
+     * from the master key in memory, which for a passphrase wallet is the with-passphrase one,
+     * the same identity creation uses. Rejects multisig (BIP-48 has a cosigner-fixed script type
+     * and network-bound cosigner xpubs) and missing-metadata calls. A call that changes nothing
      * returns `true` without touching storage.
      */
-    suspend fun changeScriptType(walletId: String, newScriptType: ScriptType): Boolean =
+    suspend fun changeDerivation(walletId: String, format: AddressFormat, testnet: Boolean): Boolean =
         withContext(Dispatchers.IO) {
             val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode)
                 ?: return@withContext false
-            if (metadata.isMultisig || metadata.isSilentPayment) return@withContext false
-            val isTestnet = DerivationPaths.isTestnet(metadata.derivationPath)
-            val activeAccount = metadata.activeAccountNumber
-            val newBase = DerivationPaths.baseForScriptType(newScriptType, isTestnet)
-            val currentScriptType = DerivationPaths.getScriptType(metadata.derivationPath)
-            if (currentScriptType == newScriptType) return@withContext true
-            val newPath = DerivationPaths.withAccountNumber(newBase, activeAccount)
-            val updated = metadata.copy(derivationPath = newPath)
-            if (!secureStorage.updateWalletMetadata(updated, isDecoyMode)) return@withContext false
-            synchronized(walletListLock) {
-                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    _walletMetadataList[idx] = updated
-                    _wallets.value = _walletMetadataList.toList()
-                }
-            }
-            unloadWallet(walletId)
-            openWallet(walletId)
+            if (metadata.isMultisig) return@withContext false
+            val newPath = DerivationPaths.withAccountNumber(
+                DerivationPaths.baseForFormat(format, testnet),
+                metadata.activeAccountNumber
+            )
+            if (newPath == metadata.getActiveDerivationPath() &&
+                metadata.isSilentPayment == format.isSilentPayment
+            ) return@withContext true
+            persistAndReload(
+                metadata.copy(
+                    derivationPath = newPath,
+                    isSilentPayment = format.isSilentPayment,
+                    silentPaymentScanPubKey = "",
+                    silentPaymentSpendPubKey = ""
+                )
+            )
         }
+
+    /**
+     * Persist [updated] metadata (whose `derivationPath` has been rewritten), publish the new list,
+     * reload the wallet so its `WalletState` is rebuilt against the new path, and refresh the
+     * cached silent-payment pubkeys if the wallet is SP-flagged. Returns the reload result;
+     * `false` if the metadata write failed.
+     */
+    private suspend fun persistAndReload(updated: WalletMetadata): Boolean {
+        if (!secureStorage.updateWalletMetadata(updated, isDecoyMode)) return false
+        synchronized(walletListLock) {
+            val idx = _walletMetadataList.indexOfFirst { it.id == updated.id }
+            if (idx >= 0) {
+                _walletMetadataList[idx] = updated
+                _wallets.value = _walletMetadataList.toList()
+            }
+        }
+        unloadWallet(updated.id)
+        val reloaded = openWallet(updated.id)
+        if (reloaded) refreshSilentPaymentPubkeysIfSp(updated.id)
+        return reloaded
+    }
 
     /** Switch active account. Reloads wallet with new derivation path. */
     suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean {

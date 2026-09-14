@@ -20,6 +20,7 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
+import com.gorunjinian.metrovault.data.model.AddressFormat
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.WalletMetadata
@@ -40,7 +41,7 @@ fun WalletDetailsScreen(
     onSignMessage: () -> Unit,
     onCheckAddress: () -> Unit,
     onDifferentAccounts: () -> Unit,
-    onChangeScriptType: () -> Unit,
+    onChangeAddressType: () -> Unit,
     onLock: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -487,25 +488,15 @@ fun WalletDetailsScreen(
                 )
             }
 
-            // Change Script Type (single-sig only; hidden for multisig, stateless, and SP).
-            // The same seed backs every script type — only the BIP purpose / address tree changes.
-            if (!isMultisig && !isStatelessWallet && !isSilentPayment) {
-                val currentScriptType = DerivationPaths.getScriptType(derivationPath)
-                val currentSubtitle = when (currentScriptType) {
-                    com.gorunjinian.metrovault.data.model.ScriptType.P2TR ->
-                        if (isTestnet) "Currently: Taproot (tb1p…)" else "Currently: Taproot (bc1p…)"
-                    com.gorunjinian.metrovault.data.model.ScriptType.P2WPKH ->
-                        if (isTestnet) "Currently: Native SegWit (tb1q…)" else "Currently: Native SegWit (bc1q…)"
-                    com.gorunjinian.metrovault.data.model.ScriptType.P2SH_P2WPKH ->
-                        if (isTestnet) "Currently: Nested SegWit (2…)" else "Currently: Nested SegWit (3…)"
-                    com.gorunjinian.metrovault.data.model.ScriptType.P2PKH ->
-                        if (isTestnet) "Currently: Legacy (m/n…)" else "Currently: Legacy (1…)"
-                }
+            // Address Type & Network (hidden for multisig and stateless). Any persisted single-seed
+            // wallet can move between the five address formats (incl. Silent Payments) and between
+            // mainnet and testnet. The same seed backs every choice — only the address tree changes.
+            if (!isMultisig && !isStatelessWallet) {
                 ActionCard(
                     icon = R.drawable.ic_tune,
-                    title = "Change Script Type",
-                    description = currentSubtitle,
-                    onClick = onChangeScriptType
+                    title = "Address Type & Network",
+                    description = "Currently: ${AddressFormat.fromPath(derivationPath).label(isTestnet)}",
+                    onClick = onChangeAddressType
                 )
             }
 
