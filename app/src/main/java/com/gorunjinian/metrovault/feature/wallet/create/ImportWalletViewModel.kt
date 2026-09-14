@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,18 +60,7 @@ class ImportWalletViewModel(application: Application) : AndroidViewModel(applica
     ) {
         // Derived properties
         val isMnemonicComplete: Boolean get() = mnemonicWords.size == expectedWordCount
-        val isMnemonicValid: Boolean get() = isMnemonicComplete && validateMnemonic(mnemonicWords)
-
-        companion object {
-            private fun validateMnemonic(words: List<String>): Boolean {
-                return try {
-                    MnemonicCode.validate(words)
-                    true
-                } catch (_: Exception) {
-                    false
-                }
-            }
-        }
+        val isMnemonicValid: Boolean get() = isMnemonicComplete && isValidBip39Mnemonic(mnemonicWords)
     }
 
     private val _uiState = MutableStateFlow(UiState())
@@ -165,6 +153,16 @@ class ImportWalletViewModel(application: Application) : AndroidViewModel(applica
 
     fun clearMnemonic() {
         _uiState.update { it.copy(mnemonicWords = emptyList(), currentWord = "") }
+    }
+
+    /**
+     * Replaces the mnemonic with a scanned SeedQR. Either supported length is accepted,
+     * and the expected word count follows the scan so the step 1 choice never blocks it.
+     */
+    fun onSeedQrScanned(words: List<String>) {
+        _uiState.update {
+            it.copy(expectedWordCount = words.size, mnemonicWords = words, currentWord = "")
+        }
     }
 
     fun setKeyboardVisible(visible: Boolean) {

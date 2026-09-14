@@ -455,10 +455,10 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Sign/Verify Message (not for multisig or stateless wallets). SP wallets use the
-            // BIP-322 protocol: verification works on-device, and signing goes through
-            // message-signing PSBT QR .
-            if (!isMultisig && !isStatelessWallet) {
+            // Sign/Verify Message (not for multisig). Stateless wallets get it exactly like
+            // persisted ones. SP wallets use the BIP-322 protocol: verification works
+            // on-device, and signing goes through message-signing PSBT QR.
+            if (!isMultisig) {
                 ActionCard(
                     icon = R.drawable.ic_signature,
                     title = "Sign/Verify Message",

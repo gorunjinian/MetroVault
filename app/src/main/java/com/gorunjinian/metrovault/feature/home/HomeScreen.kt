@@ -315,7 +315,6 @@ fun HomeScreen(
                                 autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
                                 quickShortcuts = filteredShortcuts,
                                 onWalletClick = onWalletClickCallback,
-                                onStatelessWalletClick = { navController.navigate(Screen.WalletDetails.route) },
                                 onViewAddresses = onViewAddressesCallback,
                                 onScanPSBT = onScanPSBTCallback,
                                 onCheckAddress = onCheckAddressCallback,

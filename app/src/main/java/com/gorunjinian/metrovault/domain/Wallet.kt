@@ -511,6 +511,10 @@ class   Wallet(context: Context) {
      * Delegates to WalletRepository for loading logic.
      */
     suspend fun openWallet(walletId: String, showLoading: Boolean = true): Boolean {
+        // Exactly one wallet is ever active: opening a persisted wallet disposes any stateless one,
+        // so signing/address generation can never fall through to the wrong keys.
+        statelessWalletManager.wipe()
+
         // Already loaded and active
         if (walletStates.containsKey(walletId) && activeWalletId == walletId) {
             return true
@@ -537,6 +541,8 @@ class   Wallet(context: Context) {
 
     fun setActiveWallet(walletId: String): Boolean {
         return if (walletStates.containsKey(walletId)) {
+            // Exactly one wallet is ever active: a persisted wallet displaces any stateless one
+            statelessWalletManager.wipe()
             activeWalletId = walletId
             AppLog.d(TAG) { "Active wallet set" }
             true
@@ -716,10 +722,12 @@ class   Wallet(context: Context) {
     /**
      * Wipe all wallet keys from memory but keep metadata list.
      * Use when navigating away from wallet screens (security).
-     * Resets RAM to same state as fresh app launch.
+     * Resets RAM to same state as fresh app launch, which includes disposing
+     * the in-memory stateless wallet: returning Home is "done with the wallet".
      * Delegates to WalletRepository.
      */
     fun unloadAllWalletKeys() {
+        statelessWalletManager.wipe()
         walletRepository.unloadAllWalletKeys()
         activeWalletId = null
     }
@@ -730,6 +738,7 @@ class   Wallet(context: Context) {
      * Delegates to WalletRepository.
      */
     fun unloadAllWallets() {
+        statelessWalletManager.wipe()
         walletRepository.unloadAllWallets()
         activeWalletId = null
     }
@@ -743,12 +752,18 @@ class   Wallet(context: Context) {
         derivationPath: String
     ): String? = statelessWalletManager.computeFingerprintOnly(mnemonic, passphrase, derivationPath)
     
-    /** Creates a stateless wallet from mnemonic and passphrase (memory-only). */
+    /**
+     * Creates a stateless wallet from mnemonic and passphrase (memory-only).
+     * Any loaded persisted wallet is unloaded first so exactly one wallet is ever active.
+     */
     fun createStatelessWallet(
         mnemonic: List<String>,
         passphrase: String = "",
         derivationPath: String
-    ): WalletState? = statelessWalletManager.create(mnemonic, passphrase, derivationPath)
+    ): WalletState? {
+        unloadAllWalletKeys()
+        return statelessWalletManager.create(mnemonic, passphrase, derivationPath)
+    }
     
     /** Gets the current stateless wallet state, if one exists. */
     fun getStatelessWalletState(): WalletState? = statelessWalletManager.get()

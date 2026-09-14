@@ -10,8 +10,10 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
  * Manager for stateless (memory-only) wallets.
  * 
  * Stateless wallets exist only in RAM and are never persisted to storage.
- * They are created via SeedQR import and wiped when the session locks or
- * when the user navigates away.
+ * They are created from a typed seed phrase or a SeedQR and wiped as soon as
+ * the user is done with the wallet: returning Home, opening a persisted
+ * wallet, locking, session expiry, or backgrounding the app all dispose it
+ * (see Wallet.unloadAllWalletKeys / openWallet / emergencyWipe).
  * 
  * This manager encapsulates all stateless wallet state and operations,
  * keeping the main Wallet class focused on persistent wallet management.
@@ -113,7 +115,8 @@ class StatelessWalletManager(
     
     /**
      * Wipes the stateless wallet from memory.
-     * Called automatically when exiting the stateless wallet screen or on session lock.
+     * Called whenever the user leaves the wallet (return to Home), a persisted wallet
+     * becomes active, or the session locks.
      */
     fun wipe() {
         state?.let { walletState ->

@@ -19,8 +19,9 @@ import kotlinx.coroutines.withContext
 
 /**
  * ViewModel for the stateless (memory-only) wallet import wizard.
- * Manages the 3-step flow: Configuration -> SeedQR Scan -> Passphrase.
- * Nothing is persisted — the wallet lives only in memory until lock/exit.
+ * Manages the 3-step flow: Configuration -> Seed Phrase Input (typed or SeedQR) -> Passphrase.
+ * Mirrors [ImportWalletViewModel]; the difference is that nothing is persisted —
+ * the wallet lives only in memory until lock/exit.
  */
 class ImportStatelessViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -33,17 +34,19 @@ class ImportStatelessViewModel(application: Application) : AndroidViewModel(appl
     // ========== UI State ==========
 
     data class UiState(
-        // Current step: 1 = Configuration, 2 = Scan, 3 = Passphrase
+        // Current step: 1 = Configuration, 2 = Seed Phrase, 3 = Passphrase
         val currentStep: Int = 1,
 
         // Step 1: Configuration
+        val expectedWordCount: Int = 12,
         val selectedDerivationPath: String = DerivationPaths.NATIVE_SEGWIT,
         val accountNumber: Int = 0,
         val isTestnet: Boolean = false,
 
-        // Step 2: Scan
-        val scannedMnemonic: List<String>? = null,
-        val scanError: String = "",
+        // Step 2: Mnemonic input
+        val mnemonicWords: List<String> = emptyList(),
+        val currentWord: String = "",
+        val isKeyboardVisible: Boolean = true,
 
         // Step 3: Passphrase
         val usePassphrase: Boolean = false,
@@ -58,6 +61,10 @@ class ImportStatelessViewModel(application: Application) : AndroidViewModel(appl
         // Full derivation path with the account number applied
         val fullDerivationPath: String
             get() = DerivationPaths.withAccountNumber(selectedDerivationPath, accountNumber)
+
+        // Derived properties
+        val isMnemonicComplete: Boolean get() = mnemonicWords.size == expectedWordCount
+        val isMnemonicValid: Boolean get() = isMnemonicComplete && isValidBip39Mnemonic(mnemonicWords)
     }
 
     private val _uiState = MutableStateFlow(UiState())
@@ -80,34 +87,37 @@ class ImportStatelessViewModel(application: Application) : AndroidViewModel(appl
     }
 
     /**
-     * Steps back through the wizard, wiping the sensitive data each step no longer owns.
+     * Steps back through the wizard. The mnemonic is cleared when leaving step 2 for
+     * step 1 (but kept when returning from step 3, so a typed phrase isn't lost).
      * From step 1, wipes everything and emits [ImportStatelessEvent.NavigateBack].
      */
     fun goToPreviousStep() {
-        when (_uiState.value.currentStep) {
-            1 -> {
-                clearSensitiveData()
-                viewModelScope.launch {
-                    _events.emit(ImportStatelessEvent.NavigateBack)
+        val currentStep = _uiState.value.currentStep
+        if (currentStep > 1) {
+            _uiState.update { state ->
+                if (currentStep == 2) {
+                    state.copy(
+                        currentStep = 1,
+                        mnemonicWords = emptyList(),
+                        currentWord = ""
+                    )
+                } else {
+                    state.copy(currentStep = currentStep - 1, errorMessage = "")
                 }
             }
-            2 -> _uiState.update {
-                it.copy(currentStep = 1, scanError = "", scannedMnemonic = null)
-            }
-            3 -> _uiState.update {
-                it.copy(
-                    currentStep = 2,
-                    scannedMnemonic = null,
-                    passphrase = "",
-                    confirmPassphrase = "",
-                    usePassphrase = false,
-                    errorMessage = ""
-                )
+        } else {
+            clearSensitiveData()
+            viewModelScope.launch {
+                _events.emit(ImportStatelessEvent.NavigateBack)
             }
         }
     }
 
     // ========== Step 1: Configuration ==========
+
+    fun setWordCount(count: Int) {
+        _uiState.update { it.copy(expectedWordCount = count) }
+    }
 
     fun setDerivationPath(path: String) {
         _uiState.update { it.copy(selectedDerivationPath = path) }
@@ -130,14 +140,41 @@ class ImportStatelessViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    // ========== Step 2: Scan ==========
+    // ========== Step 2: Mnemonic Input ==========
 
-    fun onMnemonicScanned(mnemonic: List<String>) {
-        _uiState.update { it.copy(scannedMnemonic = mnemonic, currentStep = 3) }
+    fun setCurrentWord(word: String) {
+        _uiState.update { it.copy(currentWord = word) }
     }
 
-    fun setScanError(message: String) {
-        _uiState.update { it.copy(scanError = message) }
+    fun addWord(word: String) {
+        _uiState.update { state ->
+            if (state.mnemonicWords.size < state.expectedWordCount) {
+                state.copy(
+                    mnemonicWords = state.mnemonicWords + word.lowercase().trim(),
+                    currentWord = ""
+                )
+            } else {
+                state
+            }
+        }
+    }
+
+    fun clearMnemonic() {
+        _uiState.update { it.copy(mnemonicWords = emptyList(), currentWord = "") }
+    }
+
+    /**
+     * Replaces the mnemonic with a scanned SeedQR. Either supported length is accepted,
+     * and the expected word count follows the scan so the step 1 choice never blocks it.
+     */
+    fun onSeedQrScanned(words: List<String>) {
+        _uiState.update {
+            it.copy(expectedWordCount = words.size, mnemonicWords = words, currentWord = "")
+        }
+    }
+
+    fun setKeyboardVisible(visible: Boolean) {
+        _uiState.update { it.copy(isKeyboardVisible = visible) }
     }
 
     // ========== Step 3: Passphrase ==========
@@ -155,18 +192,21 @@ class ImportStatelessViewModel(application: Application) : AndroidViewModel(appl
     }
 
     /**
-     * Updates the real-time fingerprint preview from the scanned mnemonic and passphrase.
+     * Updates the real-time fingerprint preview from the mnemonic and passphrase.
      * Uses computeFingerprintOnly to avoid race conditions with createStatelessWallet.
      */
     fun updateRealtimeFingerprint() {
         viewModelScope.launch {
             val state = _uiState.value
-            val mnemonic = state.scannedMnemonic ?: return@launch
-            val passphrase = if (state.usePassphrase) state.passphrase else ""
+            if (!state.isMnemonicValid) {
+                _uiState.update { it.copy(realtimeFingerprint = "") }
+                return@launch
+            }
 
+            val passphrase = if (state.usePassphrase) state.passphrase else ""
             val fingerprint = withContext(Dispatchers.IO) {
                 try {
-                    wallet.computeFingerprintOnly(mnemonic, passphrase, state.fullDerivationPath)
+                    wallet.computeFingerprintOnly(state.mnemonicWords, passphrase, state.fullDerivationPath)
                 } catch (_: Exception) {
                     null
                 }
@@ -177,7 +217,12 @@ class ImportStatelessViewModel(application: Application) : AndroidViewModel(appl
 
     fun createWallet() {
         val state = _uiState.value
-        val mnemonic = state.scannedMnemonic ?: return
+
+        // Validate mnemonic
+        if (!state.isMnemonicValid) {
+            _uiState.update { it.copy(errorMessage = "Invalid mnemonic phrase") }
+            return
+        }
 
         val passphraseError = validateBip39Passphrase(
             state.usePassphrase, state.passphrase, state.confirmPassphrase
@@ -193,7 +238,7 @@ class ImportStatelessViewModel(application: Application) : AndroidViewModel(appl
 
         viewModelScope.launch {
             val walletState = withContext(Dispatchers.IO) {
-                wallet.createStatelessWallet(mnemonic, finalPassphrase, state.fullDerivationPath)
+                wallet.createStatelessWallet(state.mnemonicWords, finalPassphrase, state.fullDerivationPath)
             }
             if (walletState != null) {
                 clearSensitiveData()
@@ -209,7 +254,8 @@ class ImportStatelessViewModel(application: Application) : AndroidViewModel(appl
     private fun clearSensitiveData() {
         _uiState.update {
             it.copy(
-                scannedMnemonic = null,
+                mnemonicWords = emptyList(),
+                currentWord = "",
                 passphrase = "",
                 confirmPassphrase = "",
                 realtimeFingerprint = ""
