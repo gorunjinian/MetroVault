@@ -65,7 +65,7 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 - **Multi-Type Support**: Native SegWit (`bc1q...`), Taproot (`bc1p...`), Nested SegWit (`3...`), Legacy (`1...`), Silent Payments (`sp1q...`)
 - **Multi-Sig Support**: Import and sign for collaborative custody wallets (2-of-3, 3-of-5, etc.)
 - **Silent Payments (BIP-352)**: Create dedicated SP wallets, send to `sp1q…` recipients from any wallet, and sign spends of received SP outputs — all air-gapped. The spend key never leaves the device; only the scan key is exported (`spscan…` / descriptor) to the watching wallet.
-- **Change Script Type**: Switch a single-sig wallet between Taproot / Native SegWit / Nested SegWit / Legacy without re-importing the seed
+- **Address Type & Network**: Switch any single-seed wallet between Taproot / Native SegWit / Nested SegWit / Legacy / Silent Payments, and between mainnet and testnet, without re-importing the seed
 - **Passphrase Support**: Optional BIP-39 passphrase with choice to save locally or keep in session memory only
 - **Testnet4 Support**: Import or create Testnet wallet for testing and development
 - **Custom Entropy**: Add your own randomness via dice rolls or coin flips
