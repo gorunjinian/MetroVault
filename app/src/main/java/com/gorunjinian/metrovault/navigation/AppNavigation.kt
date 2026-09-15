@@ -167,6 +167,8 @@ fun AppNavigation(
     // Determine start destination based on password state only - computed ONCE at startup
     // Using rememberSaveable to ensure it survives recomposition and configuration changes
     // All subsequent navigation is handled imperatively
+    // The startup safety net (SettingsViewModel's bootstrap) has already wiped
+    // any unprovisioned residue by the time this composes.
     val startDestination = rememberSaveable {
         when {
             !secureStorage.hasMainPassword() -> Screen.SetupPassword.route
@@ -198,6 +200,14 @@ fun AppNavigation(
                 }
                 AppSessionViewModel.NavigationEvent.ToUnlock -> {
                     navController.navigate(Screen.Unlock.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                AppSessionViewModel.NavigationEvent.ToSetup -> {
+                    // The store was just wiped; this instance feeds the theme
+                    // and every settings screen, so its cached values go too
+                    userPreferencesRepository.reload()
+                    navController.navigate(Screen.SetupPassword.route) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
@@ -267,6 +277,7 @@ fun AppNavigation(
                 onUnlockSuccess = sessionViewModel::onUnlockSuccess,
                 onDataWiped = {
                     // Data was wiped due to failed login attempts - navigate to setup
+                    userPreferencesRepository.reload()
                     navController.navigate(Screen.SetupPassword.route) {
                         popUpTo(0) { inclusive = true }
                     }

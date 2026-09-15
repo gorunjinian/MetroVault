@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import androidx.core.content.edit
+import com.gorunjinian.metrovault.core.crypto.BiometricPasswordManager
 import com.gorunjinian.metrovault.data.model.QuickShortcut
 
 /**
@@ -35,45 +36,55 @@ class UserPreferencesRepository(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
     )
 
-    private val _themeMode = MutableStateFlow(prefs.getString(KEY_THEME_MODE, THEME_SYSTEM) ?: THEME_SYSTEM)
+    // Every preference flow registers its re-reader here so [reload] can
+    // refresh all of them without the class having to list its defaults twice.
+    private val readers = mutableListOf<() -> Unit>()
+
+    private fun <T> preference(read: SharedPreferences.() -> T): MutableStateFlow<T> {
+        val flow = MutableStateFlow(prefs.read())
+        readers += { flow.value = prefs.read() }
+        return flow
+    }
+
+    private val _themeMode = preference { getString(KEY_THEME_MODE, THEME_SYSTEM) ?: THEME_SYSTEM }
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
 
-    private val _biometricsEnabled = MutableStateFlow(prefs.getBoolean(KEY_BIOMETRICS_ENABLED, false))
+    private val _biometricsEnabled = preference { getBoolean(KEY_BIOMETRICS_ENABLED, false) }
     val biometricsEnabled: StateFlow<Boolean> = _biometricsEnabled.asStateFlow()
 
-    private val _autoOpenSingleWalletMain = MutableStateFlow(prefs.getBoolean(KEY_AUTO_OPEN_SINGLE_WALLET_MAIN, false))
+    private val _autoOpenSingleWalletMain = preference { getBoolean(KEY_AUTO_OPEN_SINGLE_WALLET_MAIN, false) }
     val autoOpenSingleWalletMain: StateFlow<Boolean> = _autoOpenSingleWalletMain.asStateFlow()
 
-    private val _autoOpenSingleWalletDecoy = MutableStateFlow(prefs.getBoolean(KEY_AUTO_OPEN_SINGLE_WALLET_DECOY, false))
+    private val _autoOpenSingleWalletDecoy = preference { getBoolean(KEY_AUTO_OPEN_SINGLE_WALLET_DECOY, false) }
     val autoOpenSingleWalletDecoy: StateFlow<Boolean> = _autoOpenSingleWalletDecoy.asStateFlow()
 
-    private val _biometricTarget = MutableStateFlow(prefs.getString(KEY_BIOMETRIC_TARGET, BIOMETRIC_TARGET_NONE) ?: BIOMETRIC_TARGET_NONE)
+    private val _biometricTarget = preference { getString(KEY_BIOMETRIC_TARGET, BIOMETRIC_TARGET_NONE) ?: BIOMETRIC_TARGET_NONE }
     val biometricTarget: StateFlow<String> = _biometricTarget.asStateFlow()
 
-    private val _wipeOnFailedAttempts = MutableStateFlow(prefs.getBoolean(KEY_WIPE_ON_FAILED_ATTEMPTS, false))
+    private val _wipeOnFailedAttempts = preference { getBoolean(KEY_WIPE_ON_FAILED_ATTEMPTS, false) }
     val wipeOnFailedAttempts: StateFlow<Boolean> = _wipeOnFailedAttempts.asStateFlow()
 
-    private val _autoExpandSingleWallet = MutableStateFlow(prefs.getBoolean(KEY_AUTO_EXPAND_SINGLE_WALLET, false))
+    private val _autoExpandSingleWallet = preference { getBoolean(KEY_AUTO_EXPAND_SINGLE_WALLET, false) }
     val autoExpandSingleWallet: StateFlow<Boolean> = _autoExpandSingleWallet.asStateFlow()
 
-    private val _quickShortcuts = MutableStateFlow(
-        QuickShortcut.fromStorageString(prefs.getString(KEY_QUICK_SHORTCUTS, null))
-    )
+    private val _quickShortcuts = preference {
+        QuickShortcut.fromStorageString(getString(KEY_QUICK_SHORTCUTS, null))
+    }
     val quickShortcuts: StateFlow<List<QuickShortcut>> = _quickShortcuts.asStateFlow()
 
-    private val _differentAccountsEnabled = MutableStateFlow(prefs.getBoolean(KEY_DIFFERENT_ACCOUNTS_ENABLED, true))
+    private val _differentAccountsEnabled = preference { getBoolean(KEY_DIFFERENT_ACCOUNTS_ENABLED, true) }
     val differentAccountsEnabled: StateFlow<Boolean> = _differentAccountsEnabled.asStateFlow()
 
-    private val _bip85Enabled = MutableStateFlow(prefs.getBoolean(KEY_BIP85_ENABLED, true))
+    private val _bip85Enabled = preference { getBoolean(KEY_BIP85_ENABLED, true) }
     val bip85Enabled: StateFlow<Boolean> = _bip85Enabled.asStateFlow()
 
-    private val _customUnlockTitle = MutableStateFlow(prefs.getBoolean(KEY_CUSTOM_UNLOCK_TITLE, false))
+    private val _customUnlockTitle = preference { getBoolean(KEY_CUSTOM_UNLOCK_TITLE, false) }
     val customUnlockTitle: StateFlow<Boolean> = _customUnlockTitle.asStateFlow()
 
-    private val _blackThemeEnabled = MutableStateFlow(prefs.getBoolean(KEY_BLACK_THEME_ENABLED, false))
+    private val _blackThemeEnabled = preference { getBoolean(KEY_BLACK_THEME_ENABLED, false) }
     val blackThemeEnabled: StateFlow<Boolean> = _blackThemeEnabled.asStateFlow()
 
-    private val _tapToCopyEnabled = MutableStateFlow(prefs.getBoolean(KEY_TAP_TO_COPY_ENABLED, false))
+    private val _tapToCopyEnabled = preference { getBoolean(KEY_TAP_TO_COPY_ENABLED, false) }
     val tapToCopyEnabled: StateFlow<Boolean> = _tapToCopyEnabled.asStateFlow()
 
     /**
@@ -83,7 +94,7 @@ class UserPreferencesRepository(context: Context) {
      * disabled the feature. Dedicated SP-flagged wallets ignore this flag and always show their SP
      * features — the toggle only gates the discovery surface for regular wallets.
      */
-    private val _silentPaymentsEnabled = MutableStateFlow(prefs.getBoolean(KEY_SILENT_PAYMENTS_ENABLED, false))
+    private val _silentPaymentsEnabled = preference { getBoolean(KEY_SILENT_PAYMENTS_ENABLED, false) }
     val silentPaymentsEnabled: StateFlow<Boolean> = _silentPaymentsEnabled.asStateFlow()
 
     /**
@@ -91,8 +102,20 @@ class UserPreferencesRepository(context: Context) {
      * surface a single dialog to users whose previously-imported multisig wallets became unverified
      * after the registration feature shipped.
      */
-    private val _multisigVerificationExplainerShown = MutableStateFlow(prefs.getBoolean(KEY_MULTISIG_VERIFICATION_EXPLAINER_SHOWN, false))
+    private val _multisigVerificationExplainerShown = preference { getBoolean(KEY_MULTISIG_VERIFICATION_EXPLAINER_SHOWN, false) }
     val multisigVerificationExplainerShown: StateFlow<Boolean> = _multisigVerificationExplainerShown.asStateFlow()
+
+    /**
+     * Re-reads every preference from storage, discarding in-memory state.
+     *
+     * Called after a security wipe: the backing file has been cleared through
+     * the shared SharedPreferences instance, but the StateFlows above still
+     * hold the pre-wipe values (biometrics enabled, wipe-on-failed-login, ...)
+     * and must not outlive the data they described.
+     */
+    fun reload() {
+        readers.forEach { it() }
+    }
 
     fun setThemeMode(mode: String) {
         if (mode in listOf(THEME_LIGHT, THEME_DARK, THEME_SYSTEM)) {
@@ -107,7 +130,7 @@ class UserPreferencesRepository(context: Context) {
     }
 
     fun setBiometricTarget(target: String) {
-        if (target in listOf(BIOMETRIC_TARGET_MAIN, BIOMETRIC_TARGET_DECOY, BIOMETRIC_TARGET_NONE)) {
+        if (target in listOf(BIOMETRIC_TARGET_MAIN, BIOMETRIC_TARGET_DECOY, BIOMETRIC_TARGET_DURESS, BIOMETRIC_TARGET_NONE)) {
             prefs.edit { putString(KEY_BIOMETRIC_TARGET, target) }
             _biometricTarget.value = target
         }
@@ -200,7 +223,8 @@ class UserPreferencesRepository(context: Context) {
     }
 
     companion object {
-        private const val PREFS_NAME = "metrovault_settings"
+        /** EncryptedSharedPreferences file name; the security wipe clears it by name. */
+        internal const val PREFS_NAME = "metrovault_settings"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_BIOMETRICS_ENABLED = "biometrics_enabled"
         private const val KEY_BIOMETRIC_TARGET = "biometric_target"
@@ -219,8 +243,11 @@ class UserPreferencesRepository(context: Context) {
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
         const val THEME_SYSTEM = "system"
-        const val BIOMETRIC_TARGET_MAIN = "main"
-        const val BIOMETRIC_TARGET_DECOY = "decoy"
-        const val BIOMETRIC_TARGET_NONE = "none"
+        // What a successful fingerprint does on the unlock screen: open a vault,
+        // or (duress) destroy everything and open the fake session.
+        const val BIOMETRIC_TARGET_MAIN = BiometricPasswordManager.TARGET_MAIN
+        const val BIOMETRIC_TARGET_DECOY = BiometricPasswordManager.TARGET_DECOY
+        const val BIOMETRIC_TARGET_DURESS = BiometricPasswordManager.TARGET_DURESS
+        const val BIOMETRIC_TARGET_NONE = BiometricPasswordManager.TARGET_NONE
     }
 }

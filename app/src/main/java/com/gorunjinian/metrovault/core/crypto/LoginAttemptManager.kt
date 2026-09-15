@@ -23,12 +23,13 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 class LoginAttemptManager(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(
-        "login_attempts",
+        PREFS_NAME,
         Context.MODE_PRIVATE
     )
 
     companion object {
         private const val TAG = "LoginAttemptManager"
+        internal const val PREFS_NAME = "login_attempts"
         private const val KEY_FAILED_ATTEMPTS = "failed_attempts"
         private const val KEY_LOCKOUT_UNTIL = "lockout_until"
         private const val KEY_LAST_ATTEMPT = "last_attempt"
@@ -122,10 +123,13 @@ class LoginAttemptManager(context: Context) {
     }
 
     /**
-     * Resets all attempt tracking (call on successful login)
+     * Resets all attempt tracking (call on successful login).
+     *
+     * Committed synchronously: the security wipe deletes this file right after
+     * calling this, and an async apply landing afterwards would resurrect it.
      */
     fun resetAttempts() {
-        prefs.edit { clear() }
+        prefs.edit(commit = true) { clear() }
         AppLog.d(TAG) { "Login attempts reset after successful authentication" }
     }
 
