@@ -1,15 +1,18 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -181,6 +184,7 @@ fun WalletDetailsScreen(
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                     }
+                    // Circular container mirrors the home screen's lock button
                     IconButton(
                         onClick = {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -188,11 +192,20 @@ fun WalletDetailsScreen(
                             onLock()
                         }
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_lock),
-                            contentDescription = "Lock",
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_lock),
+                                contentDescription = "Lock",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
                     }
                 }
             )
