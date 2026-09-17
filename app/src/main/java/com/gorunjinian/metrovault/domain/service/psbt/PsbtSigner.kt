@@ -25,6 +25,8 @@ internal object PsbtSigner {
      * @param accountPrivateKey Account-level private key for fallback address scanning
      * @param scriptType Script type for address generation in fallback
      * @param isTestnet Whether this is a testnet wallet
+     * @param trustWitnessUtxo Sign segwit v0 inputs that carry only PSBT_IN_WITNESS_UTXO even when
+     *   the transaction has several inputs. Off by default; see [signParsedPsbt].
      * @return the signed PSBT and diagnostics, or the per-input refusals that prevented signing
      *   (empty when the PSBT could not be parsed or nothing in it was ours)
      */
@@ -35,6 +37,7 @@ internal object PsbtSigner {
         scriptType: ScriptType,
         isTestnet: Boolean = false,
         accountPath: KeyPath,
+        trustWitnessUtxo: Boolean = false,
     ): Either<List<InputSigningRefusal>, SigningResult> {
         return try {
             val psbtBytes = android.util.Base64.decode(psbtBase64, android.util.Base64.NO_WRAP)
@@ -53,7 +56,7 @@ internal object PsbtSigner {
                 }
             }
 
-            signParsedPsbt(psbt, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath).map { signed ->
+            signParsedPsbt(psbt, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath, trustWitnessUtxo).map { signed ->
                 val signedBytes = Psbt.write(signed.psbt).toByteArray()
                 SigningResult(
                     signedPsbt = android.util.Base64.encodeToString(signedBytes, android.util.Base64.NO_WRAP),
@@ -85,8 +88,11 @@ internal object PsbtSigner {
      * The per-input signing loop over an already-parsed PSBT. Kept separate from [signPsbt] so
      * it can be exercised directly: `android.util.Base64` is stubbed out under unit tests.
      *
-     * @return the signed psbt and diagnostics, or — when no input was signed — the refusals
-     *   recorded for inputs that matched this wallet.
+     * @param trustWitnessUtxo the user's explicit override for a multi-input transaction whose
+     *   segwit v0 inputs omit their previous transactions; see the policy note in the body.
+     * @return the signed psbt and diagnostics, or the refusals recorded for inputs that matched
+     *   this wallet — when no input was signed, or when a refusal is one the user may override, in
+     *   which case any signatures already produced are withheld as well.
      */
     internal fun signParsedPsbt(
         psbt: Psbt,
@@ -95,9 +101,20 @@ internal object PsbtSigner {
         scriptType: ScriptType,
         isTestnet: Boolean,
         accountPath: KeyPath,
+        trustWitnessUtxo: Boolean = false,
     ): Either<List<InputSigningRefusal>, ParsedSigningResult> {
         // Compute wallet fingerprint for BIP-174 matching
         val walletFingerprint = BitcoinUtils.computeFingerprintLong(masterPrivateKey.publicKey)
+
+        // vaultovich's default policy refuses a segwit v0 input that lacks PSBT_IN_NON_WITNESS_UTXO:
+        // without the previous transaction the *other* inputs' amounts, and so the fee, cannot be
+        // verified (the BIP-143 fee attack, CVE-2020-14199). That attack needs two or more inputs
+        // and two signing rounds; with a single input the one signature commits to the only amount
+        // there is. Sparrow omits previous transactions for segwit wallets over QR, so demanding
+        // them for single-input spends would refuse every ordinary transaction for no gain. Multi-
+        // input spends need the caller's explicit [trustWitnessUtxo], which the UI grants only
+        // after telling the user what it gives up.
+        val policy = SignPolicy(trustWitnessUtxo = trustWitnessUtxo || psbt.inputs.size == 1)
 
         // Build address lookup for fallback (lazy - only used if BIP-174 fails)
         val addressToKeyInfo by lazy {
@@ -126,7 +143,7 @@ internal object PsbtSigner {
             AppLog.d(TAG) { "Processing input $index, derivationPaths: ${input.derivationPaths.size}, taprootPaths: ${input.taprootDerivationPaths.size}" }
             // Try BIP-174 derivation path first (with path-agnostic fallback)
             val signResult = trySignWithDerivationPath(
-                signedPsbt, index, input, masterPrivateKey, walletFingerprint, isTestnet
+                signedPsbt, index, input, masterPrivateKey, walletFingerprint, isTestnet, policy
             )
             if (signResult is SignAttempt.Signed) {
                 signedPsbt = signResult.psbt
@@ -145,7 +162,7 @@ internal object PsbtSigner {
                 AppLog.d(TAG) { "Input $index not signed via BIP-174, trying address lookup" }
                 val fallback = signInputWithAddressLookup(
                     signedPsbt, index, input, accountPrivateKey, addressToKeyInfo,
-                    accountPath, walletFingerprint,
+                    accountPath, walletFingerprint, policy,
                 )
                 when {
                     fallback is SignAttempt.Signed -> {
@@ -175,7 +192,15 @@ internal object PsbtSigner {
         }
 
         AppLog.d(TAG) { "Signed $signedCount of ${psbt.inputs.size} inputs" }
-        if (signedCount == 0) {
+        // A missing previous transaction is the one refusal the user may override. Until they do,
+        // no signature may leave the device: a PSBT with some inputs signed is exactly the first
+        // half of the two-round fee attack, so the attempt is reported as refused rather than as a
+        // partial success. The override re-runs the whole attempt under the relaxed policy.
+        val heldBack = refusals.any { it is InputSigningRefusal.MissingPreviousTransaction }
+        if (signedCount == 0 || heldBack) {
+            if (heldBack && signedCount > 0) {
+                AppLog.w(TAG) { "Withholding $signedCount signature(s): previous transactions missing" }
+            }
             return Either.Left(refusals)
         }
 
@@ -209,7 +234,8 @@ internal object PsbtSigner {
         input: Input,
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         walletFingerprint: Long,
-        isTestnet: Boolean
+        isTestnet: Boolean,
+        policy: SignPolicy,
     ): SignAttempt {
         val resolved = PsbtKeyResolver.resolveFromDerivationPaths(
             input, masterPrivateKey, walletFingerprint, isTestnet
@@ -217,7 +243,7 @@ internal object PsbtSigner {
         if (resolved.alternativePath != null) {
             AppLog.d(TAG) { "  Input $inputIndex resolved via alternative path" }
         }
-        return when (val signed = psbt.sign(resolved.privateKey, inputIndex)) {
+        return when (val signed = psbt.sign(resolved.privateKey, inputIndex, policy)) {
             is Either.Right -> SignAttempt.Signed(signed.value.psbt, resolved.alternativePath)
             is Either.Left -> SignAttempt.Refused(signed.value)
         }
@@ -251,6 +277,7 @@ internal object PsbtSigner {
      *   (e.g. m/84'/0'/0'), used to build the full per-input path.
      * @param walletFingerprint The wallet's computed master fingerprint,
      *   used in the written-back KeyPathWithMaster entry.
+     * @param policy The signing policy in force for this attempt.
      */
     private fun signInputWithAddressLookup(
         psbt: Psbt,
@@ -260,6 +287,7 @@ internal object PsbtSigner {
         addressLookup: Map<ByteVector, AddressKeyInfo>,
         accountPath: KeyPath,
         walletFingerprint: Long,
+        policy: SignPolicy,
     ): SignAttempt {
         return try {
             val (resolved, keyInfo) = PsbtKeyResolver.resolveFromAddressLookup(
@@ -287,7 +315,7 @@ internal object PsbtSigner {
                 psbt
             }
 
-            when (val signed = psbtWithDerivation.sign(signingPrivateKey, inputIndex)) {
+            when (val signed = psbtWithDerivation.sign(signingPrivateKey, inputIndex, policy)) {
                 is Either.Right -> SignAttempt.Signed(signed.value.psbt)
                 is Either.Left -> SignAttempt.Refused(signed.value)
             }

@@ -37,6 +37,14 @@ import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
+ * Appended to a refusal the user may waive with "Sign Anyway": what the override gives up, and the
+ * one habit that turns the missing data into an exploitable attack.
+ */
+private const val SIGN_ANYWAY_NOTE =
+    "Sign anyway only if you have not signed this transaction before. Signing the same inputs " +
+        "twice enables a fee attack."
+
+/**
  * PSBT Scanning and Signing Screen with animated QR support.
  * 
  * Supports:
@@ -67,7 +75,10 @@ fun ScanPSBTScreen(
     var addressLookupFallbackUsed by remember { mutableStateOf(false) }
     var addressLookupInputIndices by remember { mutableStateOf<List<Int>>(emptyList()) }
     var signingRefusals by remember { mutableStateOf<List<InputSigningRefusal>>(emptyList()) }
-    
+    // Set when the last attempt was refused for missing previous transactions — the one refusal
+    // the user may waive. Offers "Sign Anyway" on the confirmation screen for exactly that attempt.
+    var signAnywayAvailable by remember { mutableStateOf(false) }
+
     // Animated QR scanning state
     val animatedScanner = remember { AnimatedQRScanner(PSBTDecoder::decode) }
     var scanProgress by remember { mutableIntStateOf(0) }
@@ -158,6 +169,7 @@ fun ScanPSBTScreen(
         addressLookupFallbackUsed = false
         addressLookupInputIndices = emptyList()
         signingRefusals = emptyList()
+        signAnywayAvailable = false
         animatedScanner.reset()
         scanProgress = 0
         isAnimatedScan = false
@@ -166,6 +178,76 @@ fun ScanPSBTScreen(
         isFinalized = false
         finalizedTxHex = null
         barcodeView?.resume()
+    }
+
+    // ==================== Signing ====================
+    // The first attempt always runs strict. `trustWitnessUtxo` is the user's explicit "Sign Anyway"
+    // for a multi-input segwit v0 PSBT that omits its previous transactions (see PsbtSigner).
+    fun signScannedPsbt(trustWitnessUtxo: Boolean) {
+        val psbtToSign = scannedPSBT ?: return
+        scope.launch {
+            isProcessing = true
+            errorMessage = ""
+            signAnywayAvailable = false
+
+            try {
+                val signingResult = withContext(Dispatchers.Default) {
+                    wallet.signPsbt(psbtToSign, trustWitnessUtxo = trustWitnessUtxo)
+                }
+
+                when (signingResult) {
+                    is Wallet.PsbtSigningResult.Success -> {
+                        val signed = signingResult.signedPsbt
+
+                        // Track alternative paths used (Stage 2)
+                        alternativePathsUsed = signingResult.alternativePathsUsed
+                        // Track Stage 3 fallback — surfaces a warning banner
+                        // on the signed-display screen.
+                        addressLookupFallbackUsed = signingResult.usedAddressLookupFallback
+                        addressLookupInputIndices = signingResult.addressLookupInputIndices
+                        // Inputs that are ours but were refused: the result is
+                        // only a partial signature and must say so.
+                        signingRefusals = signingResult.refusals
+
+                        // Check if this PSBT can be finalized (all required signatures present)
+                        canFinalize = withContext(Dispatchers.Default) {
+                            wallet.canFinalize(signed)
+                        }
+
+                        // Use smart QR generation for animated support
+                        val qrResult = withContext(Dispatchers.Default) {
+                            QRCodeUtils.generateSmartPSBTQR(
+                                signed,
+                                density = selectedDensity
+                            )
+                        }
+
+                        signedPSBT = signed
+                        signedQRResult = qrResult
+                        currentDisplayFrame = 0
+
+                        if (qrResult == null) {
+                            errorMessage = "Failed to generate QR code"
+                        }
+                    }
+                    is Wallet.PsbtSigningResult.Failure -> {
+                        val missingPreviousTx = signingResult.refusals.any {
+                            it is InputSigningRefusal.MissingPreviousTransaction
+                        }
+                        errorMessage = if (missingPreviousTx) {
+                            "${signingResult.message}\n\n$SIGN_ANYWAY_NOTE"
+                        } else {
+                            signingResult.message
+                        }
+                        signAnywayAvailable = missingPreviousTx
+                    }
+                }
+            } catch (e: Exception) {
+                errorMessage = "Signing error: ${e.message}"
+            } finally {
+                isProcessing = false
+            }
+        }
     }
 
     // State for density dropdown menu in TopAppBar
@@ -434,61 +516,11 @@ fun ScanPSBTScreen(
                         outputsWithType = outputsWithType!!,
                         isProcessing = isProcessing,
                         errorMessage = errorMessage,
-                        onSign = {
-                            scope.launch {
-                                isProcessing = true
-                                errorMessage = ""
-
-                                try {
-                                    val signingResult = withContext(Dispatchers.Default) {
-                                        wallet.signPsbt(scannedPSBT!!)
-                                    }
-
-                                    when (signingResult) {
-                                        is Wallet.PsbtSigningResult.Success -> {
-                                            val signed = signingResult.signedPsbt
-
-                                            // Track alternative paths used (Stage 2)
-                                            alternativePathsUsed = signingResult.alternativePathsUsed
-                                            // Track Stage 3 fallback — surfaces a warning banner
-                                            // on the signed-display screen.
-                                            addressLookupFallbackUsed = signingResult.usedAddressLookupFallback
-                                            addressLookupInputIndices = signingResult.addressLookupInputIndices
-                                            // Inputs that are ours but were refused: the result is
-                                            // only a partial signature and must say so.
-                                            signingRefusals = signingResult.refusals
-
-                                            // Check if this PSBT can be finalized (all required signatures present)
-                                            canFinalize = withContext(Dispatchers.Default) {
-                                                wallet.canFinalize(signed)
-                                            }
-
-                                            // Use smart QR generation for animated support
-                                            val qrResult = withContext(Dispatchers.Default) {
-                                                QRCodeUtils.generateSmartPSBTQR(
-                                                    signed,
-                                                    density = selectedDensity
-                                                )
-                                            }
-
-                                            signedPSBT = signed
-                                            signedQRResult = qrResult
-                                            currentDisplayFrame = 0
-
-                                            if (qrResult == null) {
-                                                errorMessage = "Failed to generate QR code"
-                                            }
-                                        }
-                                        is Wallet.PsbtSigningResult.Failure -> {
-                                            errorMessage = signingResult.message
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    errorMessage = "Signing error: ${e.message}"
-                                } finally {
-                                    isProcessing = false
-                                }
-                            }
+                        onSign = { signScannedPsbt(trustWitnessUtxo = false) },
+                        onSignAnyway = if (signAnywayAvailable) {
+                            { signScannedPsbt(trustWitnessUtxo = true) }
+                        } else {
+                            null
                         },
                         onCancel = { resetScanner() },
                         signBlockedReason = signBlockedReason

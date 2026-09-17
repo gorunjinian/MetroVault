@@ -876,12 +876,21 @@ class   Wallet(context: Context) {
         ) : PsbtSigningResult()
     }
 
-    fun signPsbt(psbtString: String): PsbtSigningResult {
+    /**
+     * Signs [psbtString] with the active wallet.
+     *
+     * @param trustWitnessUtxo The user's explicit "Sign Anyway" for a multi-input segwit v0 PSBT
+     *   that omits its previous transactions. The first attempt must always pass `false`; the
+     *   signer then refuses with [InputSigningRefusal.MissingPreviousTransaction] and withholds
+     *   every signature until the user waives the check knowingly. Single-input transactions never
+     *   need it. See `PsbtSigner.signParsedPsbt` for the reasoning.
+     */
+    fun signPsbt(psbtString: String, trustWitnessUtxo: Boolean = false): PsbtSigningResult {
         // Check for stateless wallet first (no activeWalletId needed)
         val statelessState = statelessWalletManager.get()
         if (statelessState != null) {
             val isTestnet = DerivationPaths.isTestnet(statelessState.derivationPath)
-            val result = signingService.signSingleSig(psbtString, statelessState, isTestnet)
+            val result = signingService.signSingleSig(psbtString, statelessState, isTestnet, trustWitnessUtxo)
             return when (result) {
                 is WalletSigningService.SigningResult.Success ->
                     PsbtSigningResult.Success(
@@ -932,7 +941,8 @@ class   Wallet(context: Context) {
                 activeMetadata,
                 isDecoyMode,
                 walletStates.toMap(),
-                getSessionKeySeed = { keyId -> passphraseManager.getSessionKeySeed(keyId) }
+                getSessionKeySeed = { keyId -> passphraseManager.getSessionKeySeed(keyId) },
+                trustWitnessUtxo = trustWitnessUtxo,
             )
         } else {
             // Single-sig: delegate to signing service
@@ -941,7 +951,7 @@ class   Wallet(context: Context) {
                     WalletSigningService.SigningError.WALLET_NOT_LOADED,
                     "Wallet is not loaded. Please open the wallet first."
                 )
-            signingService.signSingleSig(psbtString, state, isActiveWalletTestnet())
+            signingService.signSingleSig(psbtString, state, isActiveWalletTestnet(), trustWitnessUtxo)
         }
 
         // Map signing service result to public API result

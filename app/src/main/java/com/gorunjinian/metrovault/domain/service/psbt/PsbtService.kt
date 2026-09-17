@@ -33,6 +33,8 @@ class PsbtService {
      * @param accountPrivateKey Account-level private key for fallback address scanning
      * @param scriptType Script type for address generation in fallback
      * @param isTestnet Whether this is a testnet wallet
+     * @param trustWitnessUtxo The user's override for multi-input segwit v0 spends that omit their
+     *   previous transactions; see [PsbtSigner.signParsedPsbt]
      * @return the signed PSBT and diagnostics, or the per-input refusals that prevented signing
      */
     fun signPsbt(
@@ -42,8 +44,9 @@ class PsbtService {
         scriptType: ScriptType,
         isTestnet: Boolean = false,
         accountPath: KeyPath,
+        trustWitnessUtxo: Boolean = false,
     ): Either<List<InputSigningRefusal>, SigningResult> = PsbtSigner.signPsbt(
-        psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath
+        psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath, trustWitnessUtxo
     )
 
     /**

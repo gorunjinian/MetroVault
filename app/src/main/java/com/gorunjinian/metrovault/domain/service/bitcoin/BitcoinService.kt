@@ -209,8 +209,9 @@ class BitcoinService {
         scriptType: ScriptType,
         isTestnet: Boolean = false,
         accountPath: KeyPath,
+        trustWitnessUtxo: Boolean = false,
     ): Either<List<InputSigningRefusal>, SigningResult> = psbtService.signPsbt(
-        psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath
+        psbtBase64, masterPrivateKey, accountPrivateKey, scriptType, isTestnet, accountPath, trustWitnessUtxo
     )
 
     @Suppress("unused") // Public API for future use/testing

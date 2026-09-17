@@ -107,11 +107,15 @@ class WalletSigningService(
 
     /**
      * Signs a PSBT for a single-sig wallet.
+     *
+     * @param trustWitnessUtxo The user's explicit override for a multi-input segwit v0 PSBT that
+     *   omits its previous transactions; see [com.gorunjinian.metrovault.domain.service.psbt.PsbtSigner].
      */
     fun signSingleSig(
         psbtString: String,
         walletState: WalletState,
-        isTestnet: Boolean
+        isTestnet: Boolean,
+        trustWitnessUtxo: Boolean = false,
     ): SigningResult {
         val masterPrivateKey = walletState.getMasterPrivateKey()
         val accountPrivateKey = walletState.getAccountPrivateKey()
@@ -159,6 +163,7 @@ class WalletSigningService(
             scriptType,
             isTestnet,
             accountPath,
+            trustWitnessUtxo = trustWitnessUtxo,
         )
 
         return when {
@@ -188,15 +193,13 @@ class WalletSigningService(
      *
      * A refusal is only ever recorded for an input we matched to this wallet, so its presence flips
      * the meaning of the failure entirely: not "this isn't your transaction" but "this is yours and
-     * MetroVault would not sign it". Saying the former when the latter is true is both false and
-     * unactionable, which is what the generic message used to do.
+     * MetroVault would not sign it". The refusal text says which inputs and why, and carries that
+     * meaning on its own; a preamble restating it only pushed the reason further down the card.
      */
     private fun describeSigningFailure(refusals: List<InputSigningRefusal>): String = when {
         refusals.isEmpty() ->
             "Failed to sign PSBT. The transaction may not contain inputs for this wallet."
-        else ->
-            "MetroVault found inputs belonging to this wallet but would not sign them:\n\n" +
-                refusals.joinToString("\n\n") { it.message }
+        else -> InputSigningRefusal.describe(refusals)
     }
 
     /**
@@ -271,13 +274,16 @@ class WalletSigningService(
      * @param isDecoyMode Whether we're in decoy mode
      * @param walletStates Map of loaded wallet states (for faster signing if available)
      * @param getSessionKeySeed Function to get session seed for a key (for passphrase wallets)
+     * @param trustWitnessUtxo The user's explicit override for a multi-input segwit v0 PSBT that
+     *   omits its previous transactions; see [com.gorunjinian.metrovault.domain.service.psbt.PsbtSigner]
      */
     fun signMultiSig(
         psbtString: String,
         metadata: WalletMetadata,
         isDecoyMode: Boolean,
         walletStates: Map<String, WalletState>,
-        getSessionKeySeed: (String) -> String?
+        getSessionKeySeed: (String) -> String?,
+        trustWitnessUtxo: Boolean = false,
     ): SigningResult {
         val keyIds = metadata.keyIds
         AppLog.d(TAG) { "Multisig signing: ${keyIds.size} local key(s)" }
@@ -322,9 +328,9 @@ class WalletSigningService(
             val matchingState = findMatchingWalletState(keyId, walletStates, isDecoyMode)
 
             val result = if (matchingState != null) {
-                signWithLoadedState(signedPsbt, matchingState)
+                signWithLoadedState(signedPsbt, matchingState, trustWitnessUtxo)
             } else {
-                signWithDirectDerivation(signedPsbt, key, config, getSessionKeySeed(keyId))
+                signWithDirectDerivation(signedPsbt, key, config, getSessionKeySeed(keyId), trustWitnessUtxo)
             }
 
             fun record(refusal: InputSigningRefusal) {
@@ -403,7 +409,8 @@ class WalletSigningService(
      */
     private fun signWithLoadedState(
         psbt: String,
-        state: WalletState
+        state: WalletState,
+        trustWitnessUtxo: Boolean,
     ): Either<List<InputSigningRefusal>, PerKeySignResult> {
         val masterKey = state.getMasterPrivateKey() ?: return Either.Left(emptyList())
         val accountKey = state.getAccountPrivateKey() ?: return Either.Left(emptyList())
@@ -411,7 +418,7 @@ class WalletSigningService(
         val isTestnet = DerivationPaths.isTestnet(state.derivationPath)
         val accountPath = KeyPath(state.derivationPath)
 
-        return bitcoinService.signPsbt(psbt, masterKey, accountKey, scriptType, isTestnet, accountPath)
+        return bitcoinService.signPsbt(psbt, masterKey, accountKey, scriptType, isTestnet, accountPath, trustWitnessUtxo)
             .map { it.toPerKeyResult() }
     }
 
@@ -431,7 +438,8 @@ class WalletSigningService(
         psbt: String,
         key: WalletKeys,
         config: MultisigConfig,
-        sessionSeed: String?
+        sessionSeed: String?,
+        trustWitnessUtxo: Boolean,
     ): Either<List<InputSigningRefusal>, PerKeySignResult> {
         AppLog.d(TAG) { "Direct derivation signing for local key" }
 
@@ -469,6 +477,7 @@ class WalletSigningService(
             scriptType,
             isTestnet,
             accountPath,
+            trustWitnessUtxo,
         ).map { it.toPerKeyResult() }
     }
 }

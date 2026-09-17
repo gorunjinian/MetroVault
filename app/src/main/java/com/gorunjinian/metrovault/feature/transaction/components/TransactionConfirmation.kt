@@ -16,9 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.gorunjinian.metrovault.core.ui.components.InfoCard
-import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.data.model.PsbtDetails
 
 /**
@@ -31,6 +30,8 @@ import com.gorunjinian.metrovault.data.model.PsbtDetails
  * - Network fee
  * - Total amount — excludes any output returning to this wallet (change AND receive self-spends)
  * - Sign and Cancel buttons
+ * - Notices pinned above the scrolling content: a signing block, or the refusal from the last
+ *   attempt, with a "Sign Anyway" action when that refusal is one the user may waive
  */
 @Composable
 fun TransactionConfirmation(
@@ -41,365 +42,279 @@ fun TransactionConfirmation(
     onSign: () -> Unit,
     onCancel: () -> Unit,
     /** When non-null, signing is blocked and this message is shown (unverified multisig wallet). */
-    signBlockedReason: String? = null
+    signBlockedReason: String? = null,
+    /**
+     * When non-null, [errorMessage] describes a refusal the user may waive, and this signs again
+     * with the check relaxed. Null for every other error, so no button is offered.
+     */
+    onSignAnyway: (() -> Unit)? = null
 ) {
     // Unit toggle state: true = sats, false = BTC
     var showInSats by remember { mutableStateOf(true) }
-    
+
     // Input format toggle: true = addresses, false = UTXO (tx hash:index)
     var showAddresses by remember { mutableStateOf(true) }
-    
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Centered title
-        Text(
-            text = "Transaction Details",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // ==================== MULTISIG INFO CARD ====================
-        if (psbtDetails.isMultisig) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (psbtDetails.isReadyToBroadcast) 
-                        MaterialTheme.colorScheme.tertiaryContainer
-                    else 
-                        MaterialTheme.colorScheme.secondaryContainer
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Multisig Transaction",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (psbtDetails.isReadyToBroadcast)
-                            MaterialTheme.colorScheme.onTertiaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Signature progress
-                    Text(
-                        text = "${psbtDetails.currentSignatures} of ${psbtDetails.requiredSignatures} signatures",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (psbtDetails.isReadyToBroadcast)
-                            MaterialTheme.colorScheme.onTertiaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    // Progress bar
-                    LinearProgressIndicator(
-                        progress = { 
-                            psbtDetails.currentSignatures.toFloat() / psbtDetails.requiredSignatures.toFloat() 
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                        color = if (psbtDetails.isReadyToBroadcast)
-                            MaterialTheme.colorScheme.tertiary
-                        else
-                            MaterialTheme.colorScheme.secondary,
-                        trackColor = if (psbtDetails.isReadyToBroadcast)
-                            MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f)
-                        else
-                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f)
-                    )
-                    
-                    if (psbtDetails.isReadyToBroadcast) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "✓ Ready to broadcast",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${psbtDetails.requiredSignatures - psbtDetails.currentSignatures} more signature${if (psbtDetails.requiredSignatures - psbtDetails.currentSignatures != 1) "s" else ""} needed",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // ==================== PINNED NOTICES ====================
+        // Anything that stops or questions signing sits above the scrolling content, so it is in
+        // view the moment it appears. The Sign button is at the end of a long list; a card placed
+        // after it was routinely off-screen exactly when it mattered.
+        val blocked = signBlockedReason
+        val error = errorMessage.takeIf { it.isNotEmpty() }
+        BoxWithConstraints {
+            // A notice may never crowd out the transaction it refers to: past this height its
+            // text scrolls inside the card and the button stays put.
+            val noticeMaxHeight = maxHeight * 0.45f
+            val noticeModifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp)
+            when {
+                // Unverified multisig wallet (the authoritative check is in Wallet.signPsbt)
+                blocked != null -> SigningNoticeCard(text = blocked, maxHeight = noticeMaxHeight, modifier = noticeModifier)
+                error != null -> SigningNoticeCard(
+                    text = error,
+                    maxHeight = noticeMaxHeight,
+                    modifier = noticeModifier,
+                    action = onSignAnyway?.let { signAnyway ->
+                        { SignAnywayButton(enabled = !isProcessing, onClick = signAnyway) }
                     }
-                }
+                )
             }
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Centered title
+            Text(
+                text = "Transaction Details",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
             
             Spacer(modifier = Modifier.height(16.dp))
-        }
-        
-        // Toggles row - both side by side with equal width
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Address/UTXO toggle
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Address option
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (showAddresses) MaterialTheme.colorScheme.primary
-                            else Color.Transparent
-                        )
-                        .clickable { showAddresses = true }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Addr",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (showAddresses) MaterialTheme.colorScheme.onPrimary
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // UTXO option
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (!showAddresses) MaterialTheme.colorScheme.primary
-                            else Color.Transparent
-                        )
-                        .clickable { showAddresses = false }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "UTXO",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (!showAddresses) MaterialTheme.colorScheme.onPrimary
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
             
-            // Sats/BTC toggle
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(8.dp)
+            // ==================== MULTISIG INFO CARD ====================
+            if (psbtDetails.isMultisig) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (psbtDetails.isReadyToBroadcast) 
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        else 
+                            MaterialTheme.colorScheme.secondaryContainer
                     )
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Sats option
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (showInSats) MaterialTheme.colorScheme.primary
-                            else Color.Transparent
-                        )
-                        .clickable { showInSats = true }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "sats",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (showInSats) MaterialTheme.colorScheme.onPrimary
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                // BTC option
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (!showInSats) MaterialTheme.colorScheme.primary
-                            else Color.Transparent
-                        )
-                        .clickable { showInSats = false }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "BTC",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (!showInSats) MaterialTheme.colorScheme.onPrimary
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // ==================== INPUTS SECTION ====================
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Inputs (${psbtDetails.inputs.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                psbtDetails.inputs.forEachIndexed { index, input ->
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            // Show input address or UTXO based on toggle - horizontally scrollable for consistency with outputs
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (showAddresses) input.address 
-                                           else "${input.prevTxHash.take(8)}...${input.prevTxHash.takeLast(8)}:${input.prevTxIndex}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = formatAmount(input.value, showInSats),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
+                            text = "Multisig Transaction",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (psbtDetails.isReadyToBroadcast)
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            else
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Signature progress
+                        Text(
+                            text = "${psbtDetails.currentSignatures} of ${psbtDetails.requiredSignatures} signatures",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (psbtDetails.isReadyToBroadcast)
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            else
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        // Progress bar
+                        LinearProgressIndicator(
+                            progress = { 
+                                psbtDetails.currentSignatures.toFloat() / psbtDetails.requiredSignatures.toFloat() 
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = if (psbtDetails.isReadyToBroadcast)
+                                MaterialTheme.colorScheme.tertiary
+                            else
+                                MaterialTheme.colorScheme.secondary,
+                            trackColor = if (psbtDetails.isReadyToBroadcast)
+                                MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f)
+                            else
+                                MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f)
+                        )
+                        
+                        if (psbtDetails.isReadyToBroadcast) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "✓ Ready to broadcast",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "${psbtDetails.requiredSignatures - psbtDetails.currentSignatures} more signature${if (psbtDetails.requiredSignatures - psbtDetails.currentSignatures != 1) "s" else ""} needed",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            // Toggles row - both side by side with equal width
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Address/UTXO toggle
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Address option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (showAddresses) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { showAddresses = true }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Addr",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (showAddresses) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (index < psbtDetails.inputs.size - 1) {
-                        HorizontalDivider()
+                    
+                    // UTXO option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (!showAddresses) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { showAddresses = false }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "UTXO",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (!showAddresses) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                
+                // Sats/BTC toggle
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Sats option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (showInSats) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { showInSats = true }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "sats",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (showInSats) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    // BTC option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (!showInSats) MaterialTheme.colorScheme.primary
+                                else Color.Transparent
+                            )
+                            .clickable { showInSats = false }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "BTC",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (!showInSats) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-        // ==================== OUTPUTS SECTION ====================
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
+            // ==================== INPUTS SECTION ====================
+            Card(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "Outputs (${psbtDetails.outputs.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "Inputs (${psbtDetails.inputs.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                outputsWithType.forEachIndexed { index, outputWithType ->
-                    val silentPaymentNominal = outputWithType.output.silentPaymentNominal
-                    if (silentPaymentNominal != null) {
-                        // Silent-payment output: a header line (badge + amount), then aligned
-                        // "Paying" (sp1q…) and "On-chain" (bc1p…) rows. Both stay visible because
-                        // once signed the on-chain output can't be audited back to the sp1q…, so the
-                        // user must be able to consent to the derived address before signing.
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "SILENT PAYMENT",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier
-                                        .background(
-                                            MaterialTheme.colorScheme.primaryContainer,
-                                            RoundedCornerShape(4.dp)
-                                        )
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                                Text(
-                                    text = formatAmount(outputWithType.output.value, showInSats),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            SilentPaymentAddressRow(
-                                label = "Paying",
-                                address = silentPaymentNominal,
-                                dimmed = false
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            SilentPaymentAddressRow(
-                                label = "On-chain",
-                                address = outputWithType.output.address,
-                                dimmed = outputWithType.isOurAddress
-                            ) {
-                                when {
-                                    outputWithType.isChangeAddress == true -> OutputBadge(
-                                        text = "CHANGE",
-                                        textColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        background = MaterialTheme.colorScheme.secondaryContainer
-                                    )
-                                    outputWithType.isOurAddress -> OutputBadge(
-                                        text = "RECEIVE",
-                                        textColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                        background = MaterialTheme.colorScheme.tertiaryContainer
-                                    )
-                                }
-                            }
-                        }
-                    } else {
+                    psbtDetails.inputs.forEachIndexed { index, input ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -408,291 +323,442 @@ fun TransactionConfirmation(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
+                                // Show input address or UTXO based on toggle - horizontally scrollable for consistency with outputs
                                 Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Horizontally scrollable address container
-                                    Row(
-                                        modifier = Modifier
-                                            .weight(1f, fill = false)
-                                            .horizontalScroll(rememberScrollState()),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = outputWithType.output.address,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = if (outputWithType.isOurAddress)
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                                else MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            softWrap = false
-                                        )
-                                    }
-                                    when {
-                                        outputWithType.isChangeAddress == true -> {
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = "CHANGE",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                                modifier = Modifier
-                                                    .background(
-                                                        MaterialTheme.colorScheme.secondaryContainer,
-                                                        RoundedCornerShape(4.dp)
-                                                    )
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                        outputWithType.isOurAddress -> {
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = "RECEIVE",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                                modifier = Modifier
-                                                    .background(
-                                                        MaterialTheme.colorScheme.tertiaryContainer,
-                                                        RoundedCornerShape(4.dp)
-                                                    )
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
+                                    Text(
+                                        text = if (showAddresses) input.address 
+                                               else "${input.prevTxHash.take(8)}...${input.prevTxHash.takeLast(8)}:${input.prevTxIndex}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = formatAmount(outputWithType.output.value, showInSats),
+                                text = formatAmount(input.value, showInSats),
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (outputWithType.isOurAddress)
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                    else MaterialTheme.colorScheme.onSurface
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                    }
-                    if (index < outputsWithType.size - 1) {
-                        HorizontalDivider()
+                        if (index < psbtDetails.inputs.size - 1) {
+                            HorizontalDivider()
+                        }
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // ==================== TRANSACTION SUMMARY ====================
-        // Sum of outputs leaving this wallet (excludes both change and receive self-spends).
-        val netSent = outputsWithType.filter { !it.isOurAddress }.sumOf { it.output.value }
-        val feeRate = if (psbtDetails.fee != null && psbtDetails.virtualSize > 0) {
-            psbtDetails.fee.toDouble() / psbtDetails.virtualSize
-        } else null
-        
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ==================== OUTPUTS SECTION ====================
+            Card(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "Transaction Summary",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "Outputs (${psbtDetails.outputs.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    outputsWithType.forEachIndexed { index, outputWithType ->
+                        val silentPaymentNominal = outputWithType.output.silentPaymentNominal
+                        if (silentPaymentNominal != null) {
+                            // Silent-payment output: a header line (badge + amount), then aligned
+                            // "Paying" (sp1q…) and "On-chain" (bc1p…) rows. Both stay visible because
+                            // once signed the on-chain output can't be audited back to the sp1q…, so the
+                            // user must be able to consent to the derived address before signing.
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "SILENT PAYMENT",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier
+                                            .background(
+                                                MaterialTheme.colorScheme.primaryContainer,
+                                                RoundedCornerShape(4.dp)
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                    Text(
+                                        text = formatAmount(outputWithType.output.value, showInSats),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                SilentPaymentAddressRow(
+                                    label = "Paying",
+                                    address = silentPaymentNominal,
+                                    dimmed = false
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                SilentPaymentAddressRow(
+                                    label = "On-chain",
+                                    address = outputWithType.output.address,
+                                    dimmed = outputWithType.isOurAddress
+                                ) {
+                                    when {
+                                        outputWithType.isChangeAddress == true -> OutputBadge(
+                                            text = "CHANGE",
+                                            textColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            background = MaterialTheme.colorScheme.secondaryContainer
+                                        )
+                                        outputWithType.isOurAddress -> OutputBadge(
+                                            text = "RECEIVE",
+                                            textColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            background = MaterialTheme.colorScheme.tertiaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Horizontally scrollable address container
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(1f, fill = false)
+                                                .horizontalScroll(rememberScrollState()),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = outputWithType.output.address,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (outputWithType.isOurAddress)
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                    else MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                        when {
+                                            outputWithType.isChangeAddress == true -> {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "CHANGE",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    modifier = Modifier
+                                                        .background(
+                                                            MaterialTheme.colorScheme.secondaryContainer,
+                                                            RoundedCornerShape(4.dp)
+                                                        )
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            outputWithType.isOurAddress -> {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "RECEIVE",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                    modifier = Modifier
+                                                        .background(
+                                                            MaterialTheme.colorScheme.tertiaryContainer,
+                                                            RoundedCornerShape(4.dp)
+                                                        )
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = formatAmount(outputWithType.output.value, showInSats),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (outputWithType.isOurAddress)
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                        else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        if (index < outputsWithType.size - 1) {
+                            HorizontalDivider()
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // ==================== TRANSACTION SUMMARY ====================
+            // Sum of outputs leaving this wallet (excludes both change and receive self-spends).
+            val netSent = outputsWithType.filter { !it.isOurAddress }.sumOf { it.output.value }
+            val feeRate = if (psbtDetails.fee != null && psbtDetails.virtualSize > 0) {
+                psbtDetails.fee.toDouble() / psbtDetails.virtualSize
+            } else null
+            
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
-                
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                
-                // Net Amount Sent (excluding change)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Sending:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Transaction Summary",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = formatAmount(netSent, showInSats),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                
-                // Transaction Size
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Transaction Size:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${psbtDetails.virtualSize} vBytes",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                
-                // Fee Rate
-                feeRate?.let { rate ->
+                    
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    
+                    // Net Amount Sent (excluding change)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Fee Rate:",
+                            text = "Sending:",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "%.2f sats/vB".format(rate),
+                            text = formatAmount(netSent, showInSats),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    
+                    // Transaction Size
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Transaction Size:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${psbtDetails.virtualSize} vBytes",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    
+                    // Fee Rate
+                    feeRate?.let { rate ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Fee Rate:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "%.2f sats/vB".format(rate),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                    
+                    // Input/Output count
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Structure:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${psbtDetails.inputs.size} input${if (psbtDetails.inputs.size != 1) "s" else ""} → ${psbtDetails.outputs.size} output${if (psbtDetails.outputs.size != 1) "s" else ""}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
-                
-                // Input/Output count
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Structure:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${psbtDetails.inputs.size} input${if (psbtDetails.inputs.size != 1) "s" else ""} → ${psbtDetails.outputs.size} output${if (psbtDetails.outputs.size != 1) "s" else ""}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        // Fee section
-        psbtDetails.fee?.let { fee ->
+            // Fee section
+            psbtDetails.fee?.let { fee ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Network Fee:",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = formatAmount(fee, showInSats),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Total amount (only count payments leaving the wallet; ignore change AND receive self-spends)
+            val totalAmount = netSent + (psbtDetails.fee ?: 0)
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Network Fee:",
-                        style = MaterialTheme.typography.titleMedium
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Total Amount:",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = formatAmount(totalAmount, showInSats),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (netSent == 0L) {
+                        Text(
+                            text = "Self-Send — only the fee leaves your wallet",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontStyle = FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Sign button
+            Button(
+                onClick = onSign,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                enabled = !isProcessing && signBlockedReason == null
+            ) {
+                if (isProcessing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
-                    Text(
-                        text = formatAmount(fee, showInSats),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                } else {
+                    Text("Sign Transaction", style = MaterialTheme.typography.titleMedium)
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-        }
 
-        // Total amount (only count payments leaving the wallet; ignore change AND receive self-spends)
-        val totalAmount = netSent + (psbtDetails.fee ?: 0)
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Total Amount:",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = formatAmount(totalAmount, showInSats),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                if (netSent == 0L) {
-                    Text(
-                        text = "Self-Send — only the fee leaves your wallet",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
-                    )
-                }
+            // Cancel button
+            OutlinedButton(
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Cancel")
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Block signing for an unverified multisig wallet (authoritative check is in Wallet.signPsbt)
-        signBlockedReason?.let { reason ->
-            InfoCard(
-                text = reason,
-                tone = InfoTone.Danger
+/**
+ * The danger card pinned above the transaction details. Its height is capped by [maxHeight] so it
+ * can never push the details off screen: past the cap the text scrolls inside the card while the
+ * optional [action] stays visible beneath it.
+ */
+@Composable
+private fun SigningNoticeCard(
+    text: String,
+    maxHeight: Dp,
+    modifier: Modifier = Modifier,
+    action: (@Composable () -> Unit)? = null
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(max = maxHeight),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = text,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
             )
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // Sign button
-        Button(
-            onClick = onSign,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            enabled = !isProcessing && signBlockedReason == null
-        ) {
-            if (isProcessing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            } else {
-                Text("Sign Transaction", style = MaterialTheme.typography.titleMedium)
+            if (action != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                action()
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Cancel button
-        OutlinedButton(
-            onClick = onCancel,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Cancel")
-        }
-
-        if (errorMessage.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(16.dp))
-            InfoCard(
-                text = errorMessage,
-                tone = InfoTone.Danger
-            )
-        }
+/** The explicit override for a refusal the user may waive, styled to match the danger card it sits in. */
+@Composable
+private fun SignAnywayButton(enabled: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.error,
+            contentColor = MaterialTheme.colorScheme.onError
+        )
+    ) {
+        Text("Sign Anyway")
     }
 }
 
