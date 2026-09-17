@@ -712,7 +712,7 @@ internal fun SeedPhraseEntryStep(
                                     decodeContinuous { result ->
                                         result.text?.let { scannedText ->
                                             // Raw bytes are needed for CompactSeedQR (binary data gets corrupted in text)
-                                            val decodedWords = SeedQRUtils.decodeSeedQR(scannedText, result.rawBytes, ctx)
+                                            val decodedWords = SeedQRUtils.decodeSeedQR(scannedText, result.rawBytes)
 
                                             if (decodedWords != null) {
                                                 // Either supported length is accepted; the caller adopts it

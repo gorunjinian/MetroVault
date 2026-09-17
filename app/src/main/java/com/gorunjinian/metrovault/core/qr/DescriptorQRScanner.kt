@@ -11,10 +11,10 @@ import com.gorunjinian.bcur.registry.CryptoOutput
 import com.gorunjinian.bcur.registry.ScriptExpression
 import com.gorunjinian.bcur.registry.UROutputDescriptor
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.byteVector
-import com.gorunjinian.metrovault.lib.bitcoin.byteVector32
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.byteVector
+import com.gorunjinian.vaultovich.byteVector32
 
 /**
  * Helper class to track animated QR scanning for descriptors.

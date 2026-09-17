@@ -4,7 +4,7 @@ import com.gorunjinian.metrovault.core.crypto.SecureSeedCache
 import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.MnemonicCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

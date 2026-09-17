@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.feature.wallet.create
 
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.MnemonicCode
 
 /**
  * BIP39 mnemonic validation (wordlist membership + checksum) shared by the

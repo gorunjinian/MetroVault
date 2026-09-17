@@ -1,5 +1,7 @@
 package com.gorunjinian.metrovault.data.model
 
+import com.gorunjinian.vaultovich.ScriptType
+
 /**
  * The address formats a single-seed wallet can derive from, keyed by BIP purpose. Covers the four
  * script types plus BIP-352 Silent Payments, which is a wallet kind rather than a script type (its

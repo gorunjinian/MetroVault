@@ -2,12 +2,12 @@ package com.gorunjinian.metrovault.domain.service.silentpayments
 
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.SilentPaymentKeys
-import com.gorunjinian.metrovault.lib.bitcoin.Descriptor
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.PublicKey
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.ScanAddressCodec
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentAddress
+import com.gorunjinian.vaultovich.Descriptor
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.PublicKey
+import com.gorunjinian.vaultovich.silentpayments.ScanAddressCodec
+import com.gorunjinian.vaultovich.silentpayments.SilentPaymentAddress
 
 /**
  * Orchestration for an owned single-sig silent-payment wallet.

@@ -2,20 +2,20 @@ package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.lib.bitcoin.Bip322
-import com.gorunjinian.metrovault.lib.bitcoin.Block
-import com.gorunjinian.metrovault.lib.bitcoin.BlockHash
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.MessageSigning
-import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
-import com.gorunjinian.metrovault.lib.bitcoin.Psbt
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.Bip322
+import com.gorunjinian.vaultovich.Block
+import com.gorunjinian.vaultovich.BlockHash
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.MessageSigning
+import com.gorunjinian.vaultovich.PrivateKey
+import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.utils.Either
 
 /**
  * Wallet-level message signing and verification — the orchestration behind the Sign/Verify
  * Message screen.
  *
- * This is deliberately a separate layer from the protocol primitives in `lib/bitcoin`:
+ * This is deliberately a separate layer from the protocol primitives in `vaultovich`:
  * [MessageSigning] (ECDSA Electrum/BIP-137) and [Bip322] operate on bare keys and know nothing
  * about wallets. This object owns everything that requires the active [Wallet]: locating an
  * address on the BIP-32 tree and resolving its private key, dispatching to the right protocol for

@@ -1,7 +1,7 @@
 package com.gorunjinian.metrovault.data.model
 
-import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
-import com.gorunjinian.metrovault.lib.bitcoin.PublicKey
+import com.gorunjinian.vaultovich.PrivateKey
+import com.gorunjinian.vaultovich.PublicKey
 
 /**
  * A BIP-352 silent-payment keypair derived from the seed. Short-lived and in-memory only;

@@ -1,8 +1,8 @@
 package com.gorunjinian.metrovault.domain.service.silentpayments
 
-import com.gorunjinian.metrovault.data.model.ScriptType
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
+import com.gorunjinian.vaultovich.ScriptType
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.PrivateKey
 
 /**
  * Wallet keys needed to resolve silent-payment recipient outputs for display: the actual

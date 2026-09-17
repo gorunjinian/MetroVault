@@ -29,7 +29,7 @@ import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.feature.transaction.components.PSBTScannerView
 import com.gorunjinian.metrovault.feature.transaction.components.SignedPSBTDisplay
-import com.gorunjinian.metrovault.lib.bitcoin.MessageSigning
+import com.gorunjinian.vaultovich.MessageSigning
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds

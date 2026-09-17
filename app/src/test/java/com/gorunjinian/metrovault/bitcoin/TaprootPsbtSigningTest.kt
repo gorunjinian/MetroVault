@@ -1,40 +1,41 @@
 
 package com.gorunjinian.metrovault.bitcoin
 
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtKeyResolver
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtSigner
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
-import com.gorunjinian.metrovault.lib.bitcoin.ByteVector
-import com.gorunjinian.metrovault.lib.bitcoin.ByteVector32
-import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
-import com.gorunjinian.metrovault.lib.bitcoin.Crypto
-import com.gorunjinian.metrovault.lib.bitcoin.DataEntry
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.Global
-import com.gorunjinian.metrovault.lib.bitcoin.Input
-import com.gorunjinian.metrovault.lib.bitcoin.KeyPath
-import com.gorunjinian.metrovault.lib.bitcoin.OP_CHECKSIG
-import com.gorunjinian.metrovault.lib.bitcoin.OP_PUSHDATA
-import com.gorunjinian.metrovault.lib.bitcoin.OutPoint
-import com.gorunjinian.metrovault.lib.bitcoin.Output
-import com.gorunjinian.metrovault.lib.bitcoin.Psbt
-import com.gorunjinian.metrovault.lib.bitcoin.Satoshi
-import com.gorunjinian.metrovault.lib.bitcoin.Script
-import com.gorunjinian.metrovault.lib.bitcoin.SigHash
-import com.gorunjinian.metrovault.lib.bitcoin.ScriptFlags
-import com.gorunjinian.metrovault.lib.bitcoin.ScriptTree
-import com.gorunjinian.metrovault.lib.bitcoin.ScriptWitness
-import com.gorunjinian.metrovault.lib.bitcoin.TaprootBip32DerivationPath
-import com.gorunjinian.metrovault.lib.bitcoin.Transaction
-import com.gorunjinian.metrovault.lib.bitcoin.TxHash
-import com.gorunjinian.metrovault.lib.bitcoin.TxIn
-import com.gorunjinian.metrovault.lib.bitcoin.TxOut
-import com.gorunjinian.metrovault.lib.bitcoin.UpdateFailure
-import com.gorunjinian.metrovault.lib.bitcoin.taprootMerkleRoot
-import com.gorunjinian.metrovault.lib.bitcoin.XonlyPublicKey
-import com.gorunjinian.metrovault.lib.bitcoin.byteVector
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.ByteVector
+import com.gorunjinian.vaultovich.ByteVector32
+import com.gorunjinian.vaultovich.PrivateKey
+import com.gorunjinian.vaultovich.Crypto
+import com.gorunjinian.vaultovich.DataEntry
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.Global
+import com.gorunjinian.vaultovich.Input
+import com.gorunjinian.vaultovich.KeyPath
+import com.gorunjinian.vaultovich.OP_CHECKSIG
+import com.gorunjinian.vaultovich.OP_PUSHDATA
+import com.gorunjinian.vaultovich.OutPoint
+import com.gorunjinian.vaultovich.Output
+import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.Satoshi
+import com.gorunjinian.vaultovich.Script
+import com.gorunjinian.vaultovich.SigHash
+import com.gorunjinian.vaultovich.SignPolicy
+import com.gorunjinian.vaultovich.ScriptFlags
+import com.gorunjinian.vaultovich.ScriptTree
+import com.gorunjinian.vaultovich.ScriptWitness
+import com.gorunjinian.vaultovich.TaprootBip32DerivationPath
+import com.gorunjinian.vaultovich.Transaction
+import com.gorunjinian.vaultovich.TxHash
+import com.gorunjinian.vaultovich.TxIn
+import com.gorunjinian.vaultovich.TxOut
+import com.gorunjinian.vaultovich.UpdateFailure
+import com.gorunjinian.vaultovich.taprootMerkleRoot
+import com.gorunjinian.vaultovich.XonlyPublicKey
+import com.gorunjinian.vaultovich.byteVector
+import com.gorunjinian.vaultovich.utils.Either
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -266,13 +267,21 @@ class TaprootPsbtSigningTest {
         assertSignedInputVerifies(psbt, signingKeyOf(master))
     }
 
+    /**
+     * 0x83 is a valid BIP-341 sighash type, so the library can produce it — but only when the caller
+     * opts in. vaultovich's default [SignPolicy], which MetroVault's signer runs under, refuses
+     * anything but SIGHASH_DEFAULT / SIGHASH_ALL with a typed failure the app maps to a refusal.
+     */
     @Test
-    fun sighashSingleAnyoneCanPayStillSigns() {
+    fun sighashSingleAnyoneCanPaySignsOnlyUnderAPermissivePolicy() {
         val master = DeterministicWallet.generate(highBitSeed)
         val psbt = buildBip86Psbt(master, sighashType = 0x83)
 
-        val signed = psbt.sign(signingKeyOf(master), 0)
+        val refused = psbt.sign(signingKeyOf(master), 0)
+        assertTrue("the default policy must refuse 0x83: $refused", refused is Either.Left)
+        assertTrue((refused as Either.Left).value is UpdateFailure.SighashTypeNotAllowed)
 
+        val signed = psbt.sign(signingKeyOf(master), 0, SignPolicy.Permissive)
         assertTrue("0x83 is a valid BIP-341 sighash type: $signed", signed is Either.Right)
         val sig = (signed as Either.Right).value.psbt.inputs[0].taprootKeySignature!!
         assertEquals(65, sig.size())

@@ -5,10 +5,10 @@ import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.core.util.NetworkUtils
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.Result
-import com.gorunjinian.metrovault.lib.bitcoin.Base58Check
-import com.gorunjinian.metrovault.lib.bitcoin.Crypto
-import com.gorunjinian.metrovault.lib.bitcoin.Descriptor
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.vaultovich.Base58Check
+import com.gorunjinian.vaultovich.Crypto
+import com.gorunjinian.vaultovich.Descriptor
+import com.gorunjinian.vaultovich.DeterministicWallet
 
 /**
  * Parser for the ColdCard multisig setup file format.

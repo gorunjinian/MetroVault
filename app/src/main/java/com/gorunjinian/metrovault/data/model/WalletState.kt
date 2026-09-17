@@ -1,7 +1,7 @@
 package com.gorunjinian.metrovault.data.model
 
 import com.gorunjinian.metrovault.core.crypto.SecureByteArray
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.vaultovich.DeterministicWallet
 
 /**
  * Represents a Bitcoin wallet's in-memory runtime state.

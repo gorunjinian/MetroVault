@@ -5,9 +5,9 @@ import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.Result
-import com.gorunjinian.metrovault.data.model.ScriptType
-import com.gorunjinian.metrovault.lib.bitcoin.*
-import com.gorunjinian.metrovault.lib.bitcoin.io.readNBytes
+import com.gorunjinian.vaultovich.ScriptType
+import com.gorunjinian.vaultovich.*
+import com.gorunjinian.vaultovich.io.readNBytes
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
 import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
@@ -264,7 +264,7 @@ class MultisigAddressService {
                 return null
             }
 
-            val bis = com.gorunjinian.metrovault.lib.bitcoin.io.ByteArrayInput(bin)
+            val bis = com.gorunjinian.vaultovich.io.ByteArrayInput(bin)
             bis.read() // depth - skip
             bis.readNBytes(4) // parent - skip
             bis.readNBytes(4) // childNumber - skip
@@ -303,7 +303,7 @@ class MultisigAddressService {
             }
 
             // I = HMAC-SHA512(Key =    cpar, Data = serP(Kpar) || ser32(i))
-            val data = parentPublicKey + com.gorunjinian.metrovault.lib.bitcoin.crypto.Pack.writeInt32BE(index.toInt())
+            val data = parentPublicKey + com.gorunjinian.vaultovich.crypto.Pack.writeInt32BE(index.toInt())
             val I = Crypto.hmac512(parentChaincode, data)
 
             val IL = I.take(32).toByteArray()

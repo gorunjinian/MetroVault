@@ -4,7 +4,7 @@ import com.gorunjinian.metrovault.data.model.SilentPaymentKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.vaultovich.DeterministicWallet
 
 /**
  * BIP-352 silent-payment wallet operations.

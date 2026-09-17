@@ -53,11 +53,11 @@ fun DescriptorsScreen(
     // Compute display data based on export mode
     val displayData = remember(selectedAccountNumber, baseDerivationPath, exportForMultisig, showPrivate, bip48ScriptType) {
         if (exportForMultisig) {
-            // BIP48 multisig descriptor export
+            // BIP48 multisig key expression export
             if (showPrivate) {
-                wallet.getBip48PrivateDescriptorForAccount(selectedAccountNumber, bip48ScriptType)
+                wallet.getBip48PrivateKeyExpressionForAccount(selectedAccountNumber, bip48ScriptType)
             } else {
-                wallet.getBip48DescriptorForAccount(selectedAccountNumber, bip48ScriptType)
+                wallet.getBip48KeyExpressionForAccount(selectedAccountNumber, bip48ScriptType)
             }
         } else {
             // Single-sig descriptor export
@@ -70,7 +70,7 @@ fun DescriptorsScreen(
         }
     }
     // Labels for display
-    val exportTypeLabel = if (exportForMultisig) "Multisig Descriptor" else "Descriptor"
+    val exportTypeLabel = if (exportForMultisig) "Multisig Key" else "Descriptor"
     val keyTypeLabel = if (showPrivate) "Spending" else "Watch-Only"
     val fullLabel = "$keyTypeLabel $exportTypeLabel"
 
@@ -151,7 +151,7 @@ fun DescriptorsScreen(
             } else {
                 InfoCard(
                     text = if (exportForMultisig) {
-                        "Import this descriptor into a multisig coordinator."
+                        "Add this key expression to a multisig coordinator as this device's cosigner key."
                     } else {
                         "Import this to an online wallet as a watch-only wallet."
                     },

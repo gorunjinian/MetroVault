@@ -1,9 +1,9 @@
 package com.gorunjinian.metrovault.bitcoin
 
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
-import com.gorunjinian.metrovault.lib.bitcoin.ByteVector32
-import com.gorunjinian.metrovault.lib.bitcoin.SigHash
-import com.gorunjinian.metrovault.lib.bitcoin.UpdateFailure
+import com.gorunjinian.vaultovich.ByteVector32
+import com.gorunjinian.vaultovich.SigHash
+import com.gorunjinian.vaultovich.UpdateFailure
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -115,5 +115,45 @@ class TaprootSighashPolicyTest {
 
         assertTrue(refusal is InputSigningRefusal.Other)
         assertTrue(refusal.message.contains("already finalized"))
+    }
+
+    @Test
+    fun mapsMissingPreviousTransactionToAnActionableMessage() {
+        val refusal = InputSigningRefusal.from(5, UpdateFailure.MissingNonWitnessUtxo(5))
+
+        assertTrue(refusal is InputSigningRefusal.MissingPreviousTransaction)
+        assertTrue("message should name the input", refusal.message.contains("#5"))
+        assertTrue("message should say what to re-export", refusal.message.contains("non-witness UTXO"))
+    }
+
+    @Test
+    fun mapsDisallowedSighashAndShowsTheTypeInHex() {
+        val refusal = InputSigningRefusal.from(6, UpdateFailure.SighashTypeNotAllowed(6, SigHash.SIGHASH_NONE))
+
+        assertTrue(refusal is InputSigningRefusal.SighashNotAllowed)
+        assertTrue("message should show the offending type", refusal.message.contains("0x2"))
+    }
+
+    @Test
+    fun mapsSilentPaymentRuleViolationWithItsReason() {
+        val refusal = InputSigningRefusal.from(
+            7,
+            UpdateFailure.SilentPaymentRuleViolation(7, "silent payment fields require PSBT v2"),
+        )
+
+        assertTrue(refusal is InputSigningRefusal.SilentPaymentRule)
+        assertTrue(refusal.message.contains("PSBT v2"))
+    }
+
+    @Test
+    fun mapsSighashSingleWithoutOutputAndKeyMismatch() {
+        assertTrue(
+            InputSigningRefusal.from(0, UpdateFailure.SighashSingleWithoutMatchingOutput(0))
+                is InputSigningRefusal.SighashSingleWithoutOutput
+        )
+        assertTrue(
+            InputSigningRefusal.from(1, UpdateFailure.KeyDoesNotMatchInput(1))
+                is InputSigningRefusal.KeyMismatch
+        )
     }
 }

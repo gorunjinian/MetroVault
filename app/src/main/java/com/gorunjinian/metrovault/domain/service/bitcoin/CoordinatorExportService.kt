@@ -2,8 +2,8 @@ package com.gorunjinian.metrovault.domain.service.bitcoin
 
 import com.gorunjinian.metrovault.data.model.CoordinatorExportData
 import com.gorunjinian.metrovault.data.model.DerivationPaths
-import com.gorunjinian.metrovault.data.model.ScriptType
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
+import com.gorunjinian.vaultovich.ScriptType
+import com.gorunjinian.vaultovich.DeterministicWallet
 
 /**
  * Builds deterministic, public-only coordinator exports. This service performs no I/O and accepts

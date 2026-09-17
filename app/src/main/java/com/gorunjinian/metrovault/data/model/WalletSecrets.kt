@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.data.model
 
-import com.gorunjinian.metrovault.lib.bitcoin.MnemonicCode
+import com.gorunjinian.vaultovich.MnemonicCode
 
 /**
  * Wallet secrets - sensitive data (mnemonic, BIP39 seed).

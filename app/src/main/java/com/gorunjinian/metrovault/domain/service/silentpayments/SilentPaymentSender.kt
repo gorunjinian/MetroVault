@@ -1,29 +1,29 @@
 package com.gorunjinian.metrovault.domain.service.silentpayments
 
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.data.model.ScriptType
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.metrovault.data.model.SilentPaymentError
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtKeyResolver
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
-import com.gorunjinian.metrovault.lib.bitcoin.DataEntry
-import com.gorunjinian.metrovault.lib.bitcoin.DeterministicWallet
-import com.gorunjinian.metrovault.lib.bitcoin.PrivateKey
-import com.gorunjinian.metrovault.lib.bitcoin.Psbt
-import com.gorunjinian.metrovault.lib.bitcoin.Script
-import com.gorunjinian.metrovault.lib.bitcoin.SigHash
-import com.gorunjinian.metrovault.lib.bitcoin.byteVector
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.Bip374Fields
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.DleqProof
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentInputs
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentSpending
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentTweak
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPaymentInputs.SpInputKind
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments.EligibleInputKey
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.SilentPayments.RecipientKeys
-import com.gorunjinian.metrovault.lib.bitcoin.silentpayments.silentPaymentInfo
-import com.gorunjinian.metrovault.lib.bitcoin.utils.Either
+import com.gorunjinian.vaultovich.DataEntry
+import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.PrivateKey
+import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.Script
+import com.gorunjinian.vaultovich.SigHash
+import com.gorunjinian.vaultovich.byteVector
+import com.gorunjinian.vaultovich.silentpayments.Bip374Fields
+import com.gorunjinian.vaultovich.silentpayments.DleqProof
+import com.gorunjinian.vaultovich.silentpayments.SilentPaymentInputs
+import com.gorunjinian.vaultovich.silentpayments.SilentPaymentSpending
+import com.gorunjinian.vaultovich.silentpayments.silentPaymentTweak
+import com.gorunjinian.vaultovich.silentpayments.SilentPaymentInputs.SpInputKind
+import com.gorunjinian.vaultovich.silentpayments.SilentPayments
+import com.gorunjinian.vaultovich.silentpayments.SilentPayments.EligibleInputKey
+import com.gorunjinian.vaultovich.silentpayments.SilentPayments.RecipientKeys
+import com.gorunjinian.vaultovich.silentpayments.silentPaymentInfo
+import com.gorunjinian.vaultovich.utils.Either
 import java.security.SecureRandom
 
 /**
@@ -99,16 +99,21 @@ internal object SilentPaymentSender {
         psbt.inputs.forEachIndexed { index, input ->
             val scriptPubKey = PsbtUtils.getInputScriptPubKey(input) ?: return@forEachIndexed
             val redeemScript = input.redeemScript?.let { Script.write(it).byteVector() }
-            val kind = SilentPaymentInputs.classify(scriptPubKey, redeemScript, input.scriptWitness?.stack)
+            val witnessStack = input.scriptWitness?.stack
+            val kind = SilentPaymentInputs.classify(scriptPubKey, redeemScript, witnessStack)
             if (kind == SpInputKind.INELIGIBLE) return@forEachIndexed
+            val outPoint = psbt.global.tx.txIn[index].outPoint
+            val outpoint = outPoint.toString()
 
-            // An input spending a *received* SP output: its key d = b_spend + tweak exists on no
-            // BIP-32 branch, so derive it from PSBT_IN_SP_TWEAK and verify it against the input's
-            // taproot output key (P_k = d·G directly, no taptweak) — same check the receive signer
-            // makes before signing.
+            // The key BIP-352 sums for this input. For a P2TR input that is the private key of the
+            // taproot *output* key, never the BIP-86 internal key: a sum over the internal key
+            // derives outputs the receiver can never find, i.e. an unrecoverable payment.
             val tweak = input.silentPaymentTweak
-            if (tweak != null) {
-                val outpoint = psbt.global.tx.txIn[index].outPoint.toString()
+            val inputKey = if (tweak != null) {
+                // An input spending a *received* SP output: its key d = b_spend + tweak exists on no
+                // BIP-32 branch, so derive it from PSBT_IN_SP_TWEAK and verify it against the input's
+                // taproot output key (P_k = d·G directly, no taptweak) — same check the receive signer
+                // makes before signing.
                 if (spendPrivateKey == null) {
                     AppLog.w(TAG) { "Input $index spends a received SP output but no spend key is available" }
                     return Either.Left(SilentPaymentError.MissingPrivateKey(outpoint))
@@ -123,18 +128,28 @@ internal object SilentPaymentSender {
                     AppLog.w(TAG) { "SP tweak for input $index does not derive its output key" }
                     return Either.Left(SilentPaymentError.TweakMismatch(outpoint))
                 }
-                eligibleKeys.add(EligibleInputKey(d, isTaproot = true))
-                return@forEachIndexed
+                d
+            } else {
+                val resolved = PsbtKeyResolver.resolveFromDerivationPaths(input, masterPrivateKey, walletFingerprint, isTestnet)
+                    ?: PsbtKeyResolver.resolveFromAddressLookup(input, accountPrivateKey, addressLookup)?.first
+                if (resolved == null) {
+                    AppLog.w(TAG) { "No signing key for SP-eligible input $index" }
+                    return Either.Left(SilentPaymentError.MissingPrivateKey(outpoint))
+                }
+                // The resolver matches taproot inputs on their internal key; BIP-352 wants d = k + t.
+                if (kind == SpInputKind.P2TR) SilentPayments.taprootOutputPrivateKey(resolved.privateKey) else resolved.privateKey
             }
 
-            val resolved = PsbtKeyResolver.resolveFromDerivationPaths(input, masterPrivateKey, walletFingerprint, isTestnet)
-                ?: PsbtKeyResolver.resolveFromAddressLookup(input, accountPrivateKey, addressLookup)?.first
-            if (resolved == null) {
-                val outpoint = psbt.global.tx.txIn[index].outPoint.toString()
-                AppLog.w(TAG) { "No signing key for SP-eligible input $index" }
-                return Either.Left(SilentPaymentError.MissingPrivateKey(outpoint))
+            // Prove the key against the script it spends before it enters the sum. The library also
+            // drops the inputs BIP-352 receivers skip (key hashes over the uncompressed encoding).
+            val spent = SilentPayments.SpentInput(outPoint, inputKey, scriptPubKey, redeemScript, witnessStack)
+            val eligible = try {
+                SilentPayments.eligibleKey(spent)
+            } catch (e: SilentPayments.SilentPaymentMathException) {
+                AppLog.w(TAG) { "Input $index: ${e.message}" }
+                return Either.Left(mapMathError(e, outpoint))
             }
-            eligibleKeys.add(EligibleInputKey(resolved.privateKey, isTaproot = kind == SpInputKind.P2TR))
+            if (eligible != null) eligibleKeys.add(eligible)
         }
 
         if (eligibleKeys.isEmpty()) return Either.Left(SilentPaymentError.NoEligibleInputs)
@@ -184,12 +199,16 @@ internal object SilentPaymentSender {
         return Either.Right(psbt.copy(global = psbt.global.copy(tx = resolvedTx, unknown = newUnknown)))
     }
 
-    private fun mapMathError(e: SilentPayments.SilentPaymentMathException): SilentPaymentError = when (e.reason) {
+    private fun mapMathError(
+        e: SilentPayments.SilentPaymentMathException,
+        outpoint: String? = null,
+    ): SilentPaymentError = when (e.reason) {
         SilentPayments.FailureReason.NO_ELIGIBLE_INPUTS,
         SilentPayments.FailureReason.NO_RECIPIENTS -> SilentPaymentError.NoEligibleInputs
         SilentPayments.FailureReason.PRIVATE_KEY_SUM_ZERO -> SilentPaymentError.PrivateKeySumIsZero
         SilentPayments.FailureReason.INVALID_INPUT_HASH -> SilentPaymentError.InvalidInputHash
         SilentPayments.FailureReason.INVALID_TWEAK -> SilentPaymentError.InvalidTweak
         SilentPayments.FailureReason.GROUP_EXCEEDS_KMAX -> SilentPaymentError.GroupExceedsKMax
+        SilentPayments.FailureReason.KEY_DOES_NOT_MATCH_INPUT -> SilentPaymentError.KeyDoesNotMatchInput(outpoint)
     }
 }

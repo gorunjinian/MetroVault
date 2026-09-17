@@ -1,6 +1,6 @@
 package com.gorunjinian.metrovault.data.model
 
-import com.gorunjinian.metrovault.lib.bitcoin.PublicKey
+import com.gorunjinian.vaultovich.PublicKey
 
 /**
  * A silent-payment recipient declared in a PSBT output (`PSBT_OUT_SP_V0_INFO`).
@@ -83,5 +83,17 @@ sealed class SilentPaymentError {
     /** An input's `PSBT_IN_SP_TWEAK` does not derive the input's taproot output key. */
     data class TweakMismatch(val outpoint: String) : SilentPaymentError() {
         override val message = "The silent payment tweak for input $outpoint does not match its output key."
+    }
+
+    /**
+     * The key resolved for an SP-eligible input is not the key its script commits to. A shared
+     * secret derived from it would produce outputs the receiver can never find.
+     */
+    data class KeyDoesNotMatchInput(val outpoint: String?) : SilentPaymentError() {
+        override val message = if (outpoint != null) {
+            "The signing key resolved for input $outpoint does not match the script it spends."
+        } else {
+            "A signing key does not match the input it spends."
+        }
     }
 }
