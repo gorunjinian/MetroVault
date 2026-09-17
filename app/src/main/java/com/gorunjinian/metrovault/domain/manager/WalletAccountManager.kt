@@ -2,6 +2,7 @@ package com.gorunjinian.metrovault.domain.manager
 
 import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.data.model.AddressStartIndex
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -179,6 +180,69 @@ class WalletAccountManager(
                 }
             }
             AppLog.d(TAG) { "Renamed account $accountNumber" }
+            true
+        } else false
+    }
+
+    /**
+     * Addresses-screen start indices (receive, change) for a wallet's active account.
+     * Unknown wallets and unset chains start at 0.
+     */
+    fun getAddressStartIndices(
+        walletId: String?,
+        walletList: List<WalletMetadata>,
+        walletListLock: Any
+    ): Pair<Int, Int> {
+        if (walletId == null) return 0 to 0
+        val metadata = synchronized(walletListLock) {
+            walletList.find { it.id == walletId }
+        } ?: return 0 to 0
+        val account = metadata.activeAccountNumber
+        return metadata.getAddressStartIndex(account, false) to metadata.getAddressStartIndex(account, true)
+    }
+
+    /**
+     * Persist the Addresses-screen start index for both chains of one account.
+     *
+     * Inputs are normalised with [AddressStartIndex.normalize]: a value that collapses to 0 removes
+     * the key rather than storing a zero, so an untouched wallet keeps an empty map. Nothing is
+     * written when the result equals what is already stored.
+     */
+    suspend fun setAddressStartIndices(
+        walletId: String,
+        accountNumber: Int,
+        receiveStart: Int,
+        changeStart: Int,
+        isDecoyMode: Boolean,
+        walletList: MutableList<WalletMetadata>,
+        walletListLock: Any,
+        walletsFlow: MutableStateFlow<List<WalletMetadata>>
+    ): Boolean = withContext(Dispatchers.IO) {
+        val metadata = synchronized(walletListLock) {
+            walletList.find { it.id == walletId }
+        } ?: return@withContext false
+
+        if (!metadata.accounts.contains(accountNumber)) return@withContext false
+
+        var indices = metadata.addressStartIndices
+        listOf(false to receiveStart, true to changeStart).forEach { (isChange, raw) ->
+            val key = WalletMetadata.addressStartKey(accountNumber, isChange)
+            val value = AddressStartIndex.normalize(raw)
+            indices = if (value == 0) indices - key else indices + (key to value)
+        }
+        if (indices == metadata.addressStartIndices) return@withContext true
+
+        val updated = metadata.copy(addressStartIndices = indices)
+
+        if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
+            synchronized(walletListLock) {
+                val idx = walletList.indexOfFirst { it.id == walletId }
+                if (idx >= 0) {
+                    walletList[idx] = updated
+                    walletsFlow.value = walletList.toList()
+                }
+            }
+            AppLog.d(TAG) { "Updated address start indices for account $accountNumber" }
             true
         } else false
     }

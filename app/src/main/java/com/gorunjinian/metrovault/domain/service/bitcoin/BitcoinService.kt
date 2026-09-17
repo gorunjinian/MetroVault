@@ -79,7 +79,13 @@ class BitcoinService {
     ): DerivedWalletKeys? {
         return try {
             val seed = MnemonicCode.toSeed(mnemonicWords, passphrase)
-            val masterPrivateKey = DeterministicWallet.generate(seed.byteVector())
+            // The ByteArray overload hashes the seed in place without copying it, so zeroing
+            // it afterwards leaves no seed bytes behind once the master key exists.
+            val masterPrivateKey = try {
+                DeterministicWallet.generate(seed)
+            } finally {
+                seed.fill(0)
+            }
             val path = BitcoinUtils.parseDerivationPath(derivationPath)
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(path)
             val accountPublicKey = accountPrivateKey.extendedPublicKey

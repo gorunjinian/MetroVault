@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.compose.runtime.Stable
 import com.gorunjinian.metrovault.core.logging.AppLog
+import com.gorunjinian.metrovault.data.model.AddressFormat
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.Result
@@ -511,6 +512,10 @@ class   Wallet(context: Context) {
      * Delegates to WalletRepository for loading logic.
      */
     suspend fun openWallet(walletId: String, showLoading: Boolean = true): Boolean {
+        // Exactly one wallet is ever active: opening a persisted wallet disposes any stateless one,
+        // so signing/address generation can never fall through to the wrong keys.
+        statelessWalletManager.wipe()
+
         // Already loaded and active
         if (walletStates.containsKey(walletId) && activeWalletId == walletId) {
             return true
@@ -537,6 +542,8 @@ class   Wallet(context: Context) {
 
     fun setActiveWallet(walletId: String): Boolean {
         return if (walletStates.containsKey(walletId)) {
+            // Exactly one wallet is ever active: a persisted wallet displaces any stateless one
+            statelessWalletManager.wipe()
             activeWalletId = walletId
             AppLog.d(TAG) { "Active wallet set" }
             true
@@ -590,38 +597,63 @@ class   Wallet(context: Context) {
         )
 
     /**
-     * Switch a single-sig wallet's BIP purpose (script type) to a new one. The wallet's master key,
-     * fingerprint, seed, accounts list and custom account names are all preserved — only the
-     * `derivationPath` is rewritten under the new purpose at the current active account. The
-     * wallet is then unloaded and reloaded so `WalletState` rebuilds against the new path.
+     * Move a persisted single-seed wallet to [format] (any of the four single-sig BIP purposes or
+     * BIP-352 Silent Payments) on the given network, without re-importing the seed. Pass the
+     * current format to change only the network, or the current network to change only the
+     * format. The master key, fingerprint, seed, accounts list and custom account names are all
+     * preserved; only `derivationPath` (rewritten under the new purpose and coin type at the
+     * current active account) and the silent-payment flag change. The wallet is then unloaded
+     * and reloaded so `WalletState` rebuilds against the new path.
      *
-     * Rejects multisig (BIP-48 has cosigner-fixed script type), silent-payment (a different wallet
-     * kind, not a script type), and missing-metadata calls. A no-op switch to the current type
+     * The cached silent-payment scan/spend pubkeys depend on both purpose and coin type, so they
+     * are cleared here and re-derived by [persistAndReload] when the target is Silent Payments —
+     * from the master key in memory, which for a passphrase wallet is the with-passphrase one,
+     * the same identity creation uses. Rejects multisig (BIP-48 has a cosigner-fixed script type
+     * and network-bound cosigner xpubs) and missing-metadata calls. A call that changes nothing
      * returns `true` without touching storage.
      */
-    suspend fun changeScriptType(walletId: String, newScriptType: ScriptType): Boolean =
+    suspend fun changeDerivation(walletId: String, format: AddressFormat, testnet: Boolean): Boolean =
         withContext(Dispatchers.IO) {
             val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode)
                 ?: return@withContext false
-            if (metadata.isMultisig || metadata.isSilentPayment) return@withContext false
-            val isTestnet = DerivationPaths.isTestnet(metadata.derivationPath)
-            val activeAccount = metadata.activeAccountNumber
-            val newBase = DerivationPaths.baseForScriptType(newScriptType, isTestnet)
-            val currentScriptType = DerivationPaths.getScriptType(metadata.derivationPath)
-            if (currentScriptType == newScriptType) return@withContext true
-            val newPath = DerivationPaths.withAccountNumber(newBase, activeAccount)
-            val updated = metadata.copy(derivationPath = newPath)
-            if (!secureStorage.updateWalletMetadata(updated, isDecoyMode)) return@withContext false
-            synchronized(walletListLock) {
-                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    _walletMetadataList[idx] = updated
-                    _wallets.value = _walletMetadataList.toList()
-                }
-            }
-            unloadWallet(walletId)
-            openWallet(walletId)
+            if (metadata.isMultisig) return@withContext false
+            val newPath = DerivationPaths.withAccountNumber(
+                DerivationPaths.baseForFormat(format, testnet),
+                metadata.activeAccountNumber
+            )
+            if (newPath == metadata.getActiveDerivationPath() &&
+                metadata.isSilentPayment == format.isSilentPayment
+            ) return@withContext true
+            persistAndReload(
+                metadata.copy(
+                    derivationPath = newPath,
+                    isSilentPayment = format.isSilentPayment,
+                    silentPaymentScanPubKey = "",
+                    silentPaymentSpendPubKey = ""
+                )
+            )
         }
+
+    /**
+     * Persist [updated] metadata (whose `derivationPath` has been rewritten), publish the new list,
+     * reload the wallet so its `WalletState` is rebuilt against the new path, and refresh the
+     * cached silent-payment pubkeys if the wallet is SP-flagged. Returns the reload result;
+     * `false` if the metadata write failed.
+     */
+    private suspend fun persistAndReload(updated: WalletMetadata): Boolean {
+        if (!secureStorage.updateWalletMetadata(updated, isDecoyMode)) return false
+        synchronized(walletListLock) {
+            val idx = _walletMetadataList.indexOfFirst { it.id == updated.id }
+            if (idx >= 0) {
+                _walletMetadataList[idx] = updated
+                _wallets.value = _walletMetadataList.toList()
+            }
+        }
+        unloadWallet(updated.id)
+        val reloaded = openWallet(updated.id)
+        if (reloaded) refreshSilentPaymentPubkeysIfSp(updated.id)
+        return reloaded
+    }
 
     /** Switch active account. Reloads wallet with new derivation path. */
     suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean {
@@ -683,6 +715,29 @@ class   Wallet(context: Context) {
             _walletMetadataList, walletListLock, _wallets
         )
 
+    /**
+     * Addresses-screen start indices (receive, change) for the active wallet's active account.
+     * Stateless wallets have no metadata to read from and always start at 0.
+     */
+    fun getAddressStartIndices(): Pair<Int, Int> {
+        if (statelessWalletManager.get() != null) return 0 to 0
+        return accountManager.getAddressStartIndices(activeWalletId, _walletMetadataList, walletListLock)
+    }
+
+    /**
+     * Persist Addresses-screen start indices for the active wallet's active account.
+     * Returns false for stateless wallets, which have nowhere to store the preference;
+     * the screen then keeps the values for the current visit only.
+     */
+    suspend fun setAddressStartIndices(receiveStart: Int, changeStart: Int): Boolean {
+        if (statelessWalletManager.get() != null) return false
+        val walletId = activeWalletId ?: return false
+        return accountManager.setAddressStartIndices(
+            walletId, getActiveAccountNumber(), receiveStart, changeStart, isDecoyMode,
+            _walletMetadataList, walletListLock, _wallets
+        )
+    }
+
     // ==================== Memory Management ====================
 
     fun unloadWallet(walletId: String) {
@@ -693,10 +748,12 @@ class   Wallet(context: Context) {
     /**
      * Wipe all wallet keys from memory but keep metadata list.
      * Use when navigating away from wallet screens (security).
-     * Resets RAM to same state as fresh app launch.
+     * Resets RAM to same state as fresh app launch, which includes disposing
+     * the in-memory stateless wallet: returning Home is "done with the wallet".
      * Delegates to WalletRepository.
      */
     fun unloadAllWalletKeys() {
+        statelessWalletManager.wipe()
         walletRepository.unloadAllWalletKeys()
         activeWalletId = null
     }
@@ -707,6 +764,7 @@ class   Wallet(context: Context) {
      * Delegates to WalletRepository.
      */
     fun unloadAllWallets() {
+        statelessWalletManager.wipe()
         walletRepository.unloadAllWallets()
         activeWalletId = null
     }
@@ -720,12 +778,18 @@ class   Wallet(context: Context) {
         derivationPath: String
     ): String? = statelessWalletManager.computeFingerprintOnly(mnemonic, passphrase, derivationPath)
     
-    /** Creates a stateless wallet from mnemonic and passphrase (memory-only). */
+    /**
+     * Creates a stateless wallet from mnemonic and passphrase (memory-only).
+     * Any loaded persisted wallet is unloaded first so exactly one wallet is ever active.
+     */
     fun createStatelessWallet(
         mnemonic: List<String>,
         passphrase: String = "",
         derivationPath: String
-    ): WalletState? = statelessWalletManager.create(mnemonic, passphrase, derivationPath)
+    ): WalletState? {
+        unloadAllWalletKeys()
+        return statelessWalletManager.create(mnemonic, passphrase, derivationPath)
+    }
     
     /** Gets the current stateless wallet state, if one exists. */
     fun getStatelessWalletState(): WalletState? = statelessWalletManager.get()

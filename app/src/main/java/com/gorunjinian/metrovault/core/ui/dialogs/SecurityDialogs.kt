@@ -133,77 +133,173 @@ fun ChangePasswordDialog(
     )
 }
 
+/**
+ * "New password + confirm" dialog shared by the decoy and duress password flows.
+ *
+ * Length and match validation happens here; [errorMessage] carries the
+ * caller's storage-level error (e.g. a collision with another password) and
+ * is shown once the caller's work finishes. While [isLoading] the inputs are
+ * replaced by a spinner and the dialog cannot be dismissed, because setting a
+ * password runs PBKDF2 against every existing record.
+ *
+ * @param warning Optional extra line rendered in the error colour, for
+ *   destructive flows.
+ */
 @Composable
-fun AddDecoyPasswordDialog(
+fun SetPasswordDialog(
+    title: String,
+    description: String,
+    passwordLabel: String,
+    confirmText: String = "Set Password",
+    warning: String? = null,
+    isLoading: Boolean = false,
+    errorMessage: String = "",
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var errorMessage by remember { mutableStateOf("") }
+    var validationError by remember { mutableStateOf("") }
 
     // Focus requesters for keyboard navigation
     val confirmPasswordFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    fun submit() {
+        if (password.length < 8) {
+            validationError = "Password must be at least 8 characters"
+        } else if (password != confirmPassword) {
+            validationError = "Passwords do not match"
+        } else {
+            validationError = ""
+            onConfirm(password)
+        }
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Set Decoy Password") },
+        onDismissRequest = { if (!isLoading) onDismiss() },
+        title = { Text(title) },
         text = {
             Column {
-                Text("This password will open a separate, empty vault. Use it to protect your main wallets under duress.")
-                Spacer(modifier = Modifier.height(16.dp))
-                SecurePasswordTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Decoy Password") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(
-                        onNext = { confirmPasswordFocusRequester.requestFocus() }
+                if (isLoading) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "Saving password...",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else {
+                    Text(description)
+                    if (warning != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = warning,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    SecurePasswordTextField(
+                        value = password,
+                        onValueChange = { password = it; validationError = "" },
+                        label = { Text(passwordLabel) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(
+                            onNext = { confirmPasswordFocusRequester.requestFocus() }
+                        )
                     )
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                SecurePasswordTextField(
-                    value = confirmPassword,
-                    onValueChange = { confirmPassword = it },
-                    label = { Text("Confirm Password") },
-                    singleLine = true,
-                    modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = { keyboardController?.hide() }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SecurePasswordTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it; validationError = "" },
+                        label = { Text("Confirm Password") },
+                        singleLine = true,
+                        modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                keyboardController?.hide()
+                                submit()
+                            }
+                        )
                     )
-                )
-                if (errorMessage.isNotEmpty()) {
-                    Text(
-                        text = errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    val shownError = validationError.ifEmpty { errorMessage }
+                    if (shownError.isNotEmpty()) {
+                        Text(
+                            text = shownError,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    if (password.length < 8) {
-                        errorMessage = "Password must be at least 8 characters"
-                    } else if (password != confirmPassword) {
-                        errorMessage = "Passwords do not match"
-                    } else {
-                        onConfirm(password)
-                    }
+            if (!isLoading) {
+                TextButton(onClick = { submit() }) {
+                    Text(confirmText)
                 }
-            ) {
-                Text("Set Password")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            if (!isLoading) {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         }
+    )
+}
+
+@Composable
+fun AddDecoyPasswordDialog(
+    isLoading: Boolean = false,
+    errorMessage: String = "",
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    SetPasswordDialog(
+        title = "Set Decoy Password",
+        description = "This password will open a separate, empty vault. Use it to protect your main wallets under duress.",
+        passwordLabel = "Decoy Password",
+        isLoading = isLoading,
+        errorMessage = errorMessage,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm
+    )
+}
+
+/**
+ * Sets or changes the duress password. The same dialog serves both cases:
+ * nothing is encrypted under the duress password, so changing it needs no
+ * old-password step.
+ */
+@Composable
+fun SetDuressPasswordDialog(
+    isChange: Boolean,
+    isLoading: Boolean = false,
+    errorMessage: String = "",
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    SetPasswordDialog(
+        title = if (isChange) "Change Duress Password" else "Set Duress Password",
+        description = "Entering this password on the unlock screen permanently wipes ALL app data, then opens a fresh throwaway wallet so the screen looks like a normal unlock. It must be different from your main and decoy passwords.",
+        warning = "This cannot be undone. Make sure your seed phrases are backed up.",
+        passwordLabel = "Duress Password",
+        confirmText = if (isChange) "Change" else "Set Password",
+        isLoading = isLoading,
+        errorMessage = errorMessage,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm
     )
 }
 
@@ -220,7 +316,7 @@ fun BiometricSetupDialog(
         title = { Text("Setup Biometric Unlock") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Choose which wallets to unlock with biometrics:")
+                Text("Choose what your fingerprint does on the unlock screen:")
                 
                 // Main wallet option
                 Row(
@@ -251,6 +347,29 @@ fun BiometricSetupDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Decoy Wallets")
+                    }
+                }
+
+                // Duress wipe option: the fingerprint destroys everything and
+                // opens a throwaway wallet instead of a vault
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedTarget = UserPreferencesRepository.BIOMETRIC_TARGET_DURESS },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = selectedTarget == UserPreferencesRepository.BIOMETRIC_TARGET_DURESS,
+                        onClick = { selectedTarget = UserPreferencesRepository.BIOMETRIC_TARGET_DURESS }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Duress Wipe")
+                        Text(
+                            text = "Erases all data instead of unlocking",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

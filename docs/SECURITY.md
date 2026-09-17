@@ -600,11 +600,87 @@ the cost of clock-manipulation attacks without requiring secure time.
 
 Users can enable **"Wipe Data on Failed Login"** in Security settings. When
 enabled, the 4th consecutive failed password attempt permanently destroys all
-app data: both vaults, password records, biometric ciphertexts and their
-Keystore keys, settings, and session state. Failed attempts originating from
-biometric unlock never count toward this threshold. This is an explicit
-opt-in, protected by a confirmation dialog, intended for high-threat models
-where seizure of the device is the primary concern.
+app data (see [What a Wipe Destroys](#what-a-wipe-destroys)). Failed attempts
+originating from biometric unlock never count toward this threshold. This is
+an explicit opt-in, protected by a confirmation dialog, intended for
+high-threat models where seizure of the device is the primary concern.
+
+### Duress Password and Biometric Duress Wipe
+
+A **duress password** is an optional third password, set from the main vault's
+Security settings, that destroys all app data the moment it is entered on the
+unlock screen. The same effect can be bound to a fingerprint: the biometric
+target selector offers **Duress Wipe** alongside Main and Decoy, and a
+successful biometric unlock then wipes instead of opening a vault. Both
+complement the decoy password for coercion scenarios where showing a real
+wallet is unacceptable.
+
+Behaviour:
+
+- **Looks like a normal unlock**: after the wipe the app opens a *duress
+  session*, a fake session in decoy mode holding one freshly generated
+  12-word Native SegWit wallet ("My Wallet"), so the attacker sees a working
+  wallet app rather than an empty or wiped one. Everything in that session,
+  including anything the attacker creates, lives only in RAM: `SecureStorage`
+  routes both vault files to an in-memory store for as long as the session
+  lasts. The first lock or backgrounding ends the session, and with no main
+  password left the app then shows first-time setup, like a fresh install.
+- **In-session prompts**: seed export and other password prompts accept the
+  duress password. Its verifier (salt plus one-way HKDF output, never the
+  password itself) is the only thing carried across the wipe, copied into the
+  RAM store and discarded with the session. After a biometric duress unlock
+  with no duress password set, any non-empty password is accepted, since
+  there is nothing the user could know. An in-session password change
+  replaces the RAM verifier only.
+- **Always available**: the duress password is honoured even while the
+  rate limiter has locked the screen, and independently of the
+  "Wipe Data on Failed Login" toggle. A person under coercion must never be
+  told to wait.
+- **Unlock screen only**: every other password prompt (seed export, biometric
+  setup, password change) treats the duress password as incorrect. A
+  biometric-stored main or decoy password is never checked against it; the
+  duress fingerprint slot holds a random token, and a successful decrypt of
+  that token is the trigger.
+- **Never collides**: it must differ from both vault passwords at the time it
+  is set, and changing a vault password to the duress value is rejected with
+  the same neutral message used for main/decoy collisions, so decoy mode never
+  learns that a duress password exists. A collision would otherwise wipe the
+  device on a legitimate unlock.
+- **Storage**: only a verifier is stored (same PBKDF2 → HKDF record format as
+  the vault passwords, in the main vault file). Nothing is encrypted under it,
+  so changing it needs no old-password step and it is removable from settings.
+- **Cost**: it is checked last, after both vault records fail, so a correct
+  login never pays for the extra derivation. Wrong passwords cost one more
+  PBKDF2 run while a duress password is set.
+- **Safety net**: whenever the app starts, or a session ends, with no main
+  password but vault, settings, biometric or lockout data still on disk (a
+  duress session's settings writes, or a wipe cut short by a process kill),
+  it runs the full wipe before showing setup. At startup this happens off the
+  main thread while the splash screen is up; on session end it happens before
+  the setup screen is shown. A genuinely fresh install has no such residue and
+  is untouched.
+
+### What a Wipe Destroys
+
+Every wipe trigger (failed logins, duress password, duress fingerprint, the
+startup safety net) calls the same routine, which clears and then deletes:
+
+- Main vault data (wallets, keys, password record, duress record)
+- Decoy vault data (wallets, keys, password record)
+- Biometric ciphertexts and their Android Keystore wrapping keys
+- User preferences, including biometric and wipe settings
+- Rate-limiter state and the in-memory session key
+- Every file under the app's `shared_prefs/`, `files/`, `cache/` and
+  `no_backup/` directories, including SharedPreferences' `.bak` backups
+
+Each store is first cleared through its live SharedPreferences instance with a
+synchronous commit, so memory and disk agree before the files are removed.
+The files are deleted directly rather than through
+`Context.deleteSharedPreferences`, because that call evicts Android's
+process-wide cached instance and any storage object created afterwards would
+hold a second, independent in-memory copy of the same file whose writes
+silently clobber each other. Keeping the cached instances alive preserves one
+authoritative copy per file; a later write simply recreates the file from it.
 
 ---
 
@@ -651,6 +727,11 @@ If forced to unlock the device:
 2. App shows decoy wallets with minimal funds
 3. Attacker sees a functional wallet app
 4. Real funds remain hidden and inaccessible
+
+If even the decoy vault must not be shown, enter the
+[duress password](#duress-password-and-biometric-duress-wipe) (or use the
+duress fingerprint) instead: the app wipes itself and opens a throwaway
+wallet in its place.
 
 ---
 
@@ -816,6 +897,7 @@ MetroVault implements multiple layers of security to protect your Bitcoin:
 | **Biometrics** | Hardware-backed keys with crypto binding; stale credentials auto-disabled |
 | **Rate Limiting** | Exponential backoff on both wall and monotonic clocks |
 | **Optional Wipe** | Opt-in destruction of all data after 4 consecutive failed logins |
+| **Duress Unlock** | Optional password or fingerprint that wipes all data at unlock and opens a throwaway wallet in its place |
 | **Plausible Deniability** | Decoy password protects against coercion |
 | **UI Hardening** | Screenshot/autofill/clipboard protection |
 

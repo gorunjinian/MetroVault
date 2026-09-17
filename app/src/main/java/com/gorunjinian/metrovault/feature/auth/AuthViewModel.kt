@@ -5,7 +5,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.core.crypto.BiometricPasswordManager
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.data.model.DerivationPaths
+import com.gorunjinian.metrovault.data.model.WalletCreationResult
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.Dispatchers
@@ -22,19 +25,27 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     @SuppressLint("StaticFieldLeak")
     private val context = application.applicationContext
-    
+
     // Dependencies - in a real app, these would be injected via Hilt/Koin
     private val secureStorage: SecureStorage by lazy { SecureStorage(context) }
     private val wallet: Wallet by lazy { Wallet.getInstance(context) }
-    private val userPreferencesRepository: UserPreferencesRepository by lazy { 
-        UserPreferencesRepository(context) 
+    private val userPreferencesRepository: UserPreferencesRepository by lazy {
+        UserPreferencesRepository(context)
     }
-    private val biometricPasswordManager: BiometricPasswordManager by lazy { 
-        BiometricPasswordManager(context) 
+    private val biometricPasswordManager: BiometricPasswordManager by lazy {
+        BiometricPasswordManager(context)
+    }
+
+    companion object {
+        private const val TAG = "AuthViewModel"
+
+        // The throwaway wallet a duress session shows so Home is not empty.
+        private const val DURESS_WALLET_NAME = "My Wallet"
+        private const val DURESS_WALLET_WORDS = 12
     }
 
     // ========== UI State ==========
-    
+
     data class UnlockUiState(
         val password: String = "",
         val errorMessage: String = "",
@@ -58,7 +69,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     val setupState: StateFlow<SetupUiState> = _setupState.asStateFlow()
 
     // ========== Events ==========
-    
+
     sealed class AuthEvent {
         data class UnlockSuccess(val autoOpenRequested: Boolean) : AuthEvent()
         object SetupComplete : AuthEvent()
@@ -77,16 +88,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 userPreferencesRepository.biometricsEnabled,
                 userPreferencesRepository.biometricTarget
             ) { enabled, target ->
-                val hasBioPwd = when (target) {
-                    UserPreferencesRepository.BIOMETRIC_TARGET_MAIN -> 
-                        biometricPasswordManager.hasEncodedPassword(false)
-                    UserPreferencesRepository.BIOMETRIC_TARGET_DECOY -> 
-                        biometricPasswordManager.hasEncodedPassword(true)
-                    else -> false
-                }
+                val hasBioPwd = biometricPasswordManager.hasEncodedPassword(target)
                 Triple(enabled, target, hasBioPwd)
             }.collect { (enabled, target, hasBioPwd) ->
-                _unlockState.update { 
+                _unlockState.update {
                     it.copy(
                         biometricsEnabled = enabled,
                         biometricTarget = target,
@@ -100,8 +105,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     // ========== Unlock Screen Actions ==========
 
     fun updatePassword(password: String) {
-        _unlockState.update { 
-            it.copy(password = password, errorMessage = "") 
+        _unlockState.update {
+            it.copy(password = password, errorMessage = "")
         }
     }
 
@@ -116,12 +121,19 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _unlockState.update { it.copy(isAuthenticating = true) }
 
             // Machine-originated attempts (biometric-stored password) must not
-            // count toward the lockout/wipe counters - they are not brute force.
+            // count toward the lockout/wipe counters - they are not brute force -
+            // and must never be able to trigger the duress wipe.
             val result = withContext(Dispatchers.IO) {
-                secureStorage.verifyPassword(password, recordFailure = !fromBiometric)
+                secureStorage.verifyPassword(
+                    password,
+                    recordFailure = !fromBiometric,
+                    allowDuress = !fromBiometric
+                )
             }
 
-            if (result.success) {
+            if (result.isDuress) {
+                openDuressSession()
+            } else if (result.success) {
                 wallet.setSession(result.isDecoy)
                 val isDecoy = result.isDecoy
                 val loaded = withContext(Dispatchers.IO) {
@@ -143,8 +155,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
                     _events.emit(AuthEvent.UnlockSuccess(autoOpenRequested))
                 } else {
-                    _unlockState.update { 
-                        it.copy(isAuthenticating = false, errorMessage = "Failed to load wallets") 
+                    _unlockState.update {
+                        it.copy(isAuthenticating = false, errorMessage = "Failed to load wallets")
                     }
                 }
             } else if (fromBiometric && !result.lockedOut) {
@@ -152,10 +164,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 // it is stale (e.g. the password was changed without updating
                 // biometric unlock). Disable biometrics rather than letting
                 // repeated taps feed the failed-attempt counters.
-                val useDecoy = _unlockState.value.biometricTarget ==
-                    UserPreferencesRepository.BIOMETRIC_TARGET_DECOY
                 withContext(Dispatchers.IO) {
-                    biometricPasswordManager.removeBiometricData(useDecoy)
+                    biometricPasswordManager.removeBiometricData(_unlockState.value.biometricTarget)
                 }
                 userPreferencesRepository.setBiometricsEnabled(false)
                 userPreferencesRepository.setBiometricTarget(UserPreferencesRepository.BIOMETRIC_TARGET_NONE)
@@ -176,6 +186,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     withContext(Dispatchers.IO) {
                         secureStorage.wipeAllData()
                     }
+                    // The wipe cleared the settings file; drop the stale
+                    // in-memory flags too (same as the duress path)
+                    userPreferencesRepository.reload()
                     _unlockState.update { it.copy(isAuthenticating = false, password = "", errorMessage = "") }
                     _events.emit(AuthEvent.DataWiped)
                 } else {
@@ -193,20 +206,64 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun unlockWithBiometrics(cipher: Cipher) {
         viewModelScope.launch {
-            val useDecoy = _unlockState.value.biometricTarget ==
-                UserPreferencesRepository.BIOMETRIC_TARGET_DECOY
-
-            val decryptedPassword = biometricPasswordManager.decryptPassword(useDecoy, cipher)
-
-            if (decryptedPassword != null) {
-                _unlockState.update { it.copy(password = decryptedPassword) }
-                unlockWithPassword(fromBiometric = true)
-            } else {
+            val target = _unlockState.value.biometricTarget
+            val decryptedPassword = biometricPasswordManager.decryptPassword(target, cipher)
+            if (decryptedPassword == null) {
                 _unlockState.update {
                     it.copy(errorMessage = "Failed to decrypt password. Please use password to unlock.")
                 }
+                return@launch
+            }
+
+            if (target == UserPreferencesRepository.BIOMETRIC_TARGET_DURESS) {
+                // The duress slot holds a random token, not a password: a
+                // successful biometric decrypt of it is the trigger.
+                openDuressSession()
+            } else {
+                _unlockState.update { it.copy(password = decryptedPassword) }
+                unlockWithPassword(fromBiometric = true)
             }
         }
+    }
+
+    /**
+     * Duress unlock, by password or by fingerprint: destroy everything, then
+     * open the fake session so the screen looks like an ordinary unlock.
+     *
+     * The session runs in decoy mode (its settings never mention decoy or
+     * duress features), with a freshly generated Native SegWit wallet that
+     * lives only in RAM (see [SecureStorage.enterDuressSession]). The next
+     * lock ends the session, and with no main password left the app then
+     * shows first-time setup.
+     */
+    private suspend fun openDuressSession() {
+        _unlockState.update { it.copy(isAuthenticating = true, errorMessage = "") }
+
+        withContext(Dispatchers.IO) {
+            secureStorage.enterDuressSession()
+        }
+        // The wipe cleared the settings file; drop the stale in-memory flags
+        // too (biometric target, wipe-on-failed-login, ...).
+        userPreferencesRepository.reload()
+
+        wallet.setSession(isDecoy = true)
+        withContext(Dispatchers.IO) {
+            val mnemonic = wallet.generateMnemonic(DURESS_WALLET_WORDS)
+            val result = wallet.createWallet(
+                name = DURESS_WALLET_NAME,
+                mnemonic = mnemonic,
+                derivationPath = DerivationPaths.NATIVE_SEGWIT
+            )
+            if (result !is WalletCreationResult.Success) {
+                AppLog.e(TAG) { "Duress wallet creation failed: $result" }
+            }
+            wallet.loadWalletList()
+        }
+
+        _unlockState.update { it.copy(password = "", errorMessage = "") }
+        System.gc()
+
+        _events.emit(AuthEvent.UnlockSuccess(autoOpenRequested = false))
     }
 
     fun setBiometricError(error: String) {
@@ -214,10 +271,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getDecryptCipher(): Cipher? {
-        val useDecoy = _unlockState.value.biometricTarget == 
-            UserPreferencesRepository.BIOMETRIC_TARGET_DECOY
         return try {
-            biometricPasswordManager.getDecryptCipher(useDecoy)
+            biometricPasswordManager.getDecryptCipher(_unlockState.value.biometricTarget)
         } catch (_: Exception) {
             null
         }
@@ -256,16 +311,16 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                             secureStorage.verifyPassword(state.password)
                         }
                         wallet.setSession(isDecoy = false)
-                        
+
                         // Clear passwords from state
-                        _setupState.update { 
-                            it.copy(password = "", confirmPassword = "", isProcessing = false) 
+                        _setupState.update {
+                            it.copy(password = "", confirmPassword = "", isProcessing = false)
                         }
-                        
+
                         _events.emit(AuthEvent.SetupComplete)
                     } else {
-                        _setupState.update { 
-                            it.copy(isProcessing = false, errorMessage = "Failed to save password") 
+                        _setupState.update {
+                            it.copy(isProcessing = false, errorMessage = "Failed to save password")
                         }
                     }
                 }

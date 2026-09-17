@@ -1,6 +1,5 @@
 package com.gorunjinian.metrovault.core.ui.components
 
-import android.view.autofill.AutofillManager
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
@@ -15,10 +14,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.autofill.ContentDataType
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDataType
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -26,25 +25,27 @@ import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.core.util.SecurityUtils
 
 /**
  * A wrapper around OutlinedTextField that completely disables:
  * - Autocorrect
  * - Predictive text / suggestions bar
- * - Autofill / password manager suggestions
+ * - Autofill / password manager suggestions (fill and save)
  * - Keyboard learning from input
- * 
+ *
  * This is critical for security in a Bitcoin wallet app - we don't want the system
- * keyboard to learn from or suggest passwords, seed phrases, or other sensitive data.
- * 
+ * keyboard to learn from or suggest passwords, seed phrases, or other sensitive data,
+ * nor an external password manager to capture and store the typed password/passphrase.
+ *
  * Uses multiple layers of protection:
- * 1. SecurityUtils.disableAutofill() - Sets View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS on parent
- * 2. Disables AutofillManager and notifies it nothing is autofillable
- * 3. autoCorrectEnabled = false - Disables autocorrect
- * 4. PlatformImeOptions with Gboard incognito flags - Prevents keyboard learning
- * 5. KeyboardType.Password (when isPasswordField=true) - Completely hides suggestions bar
- * 
+ * 1. contentDataType = ContentDataType.None on the field's semantics node - opts the field
+ *    out of the autofill framework so no fill/save session is ever started for it. This is
+ *    the effective control on modern Compose, whose semantic-autofill path ignores the
+ *    host View's importantForAutofill flag (see the note on secureModifier below).
+ * 2. autoCorrectEnabled = false - Disables autocorrect
+ * 3. PlatformImeOptions with Gboard incognito flags - Prevents keyboard learning
+ * 4. KeyboardType.Password (when isPasswordField=true) - Completely hides suggestions bar
+ *
  * @param isPasswordField Set to true for password/passphrase inputs to use Password keyboard type
  *        which completely hides the suggestions bar and password manager prompts
  */
@@ -72,25 +73,6 @@ fun SecureOutlinedTextField(
     isPasswordField: Boolean = false,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors()
 ) {
-    val view = LocalView.current
-    val context = LocalContext.current
-    
-    // Disable autofill on the view hierarchy using SecurityUtils
-    SecurityUtils.disableAutofill(view)
-    
-    // Aggressively disable autofill manager
-    LaunchedEffect(Unit) {
-        try {
-            val autofillManager = context.getSystemService(AutofillManager::class.java)
-            // Cancel any pending autofill requests
-            autofillManager?.cancel()
-            // Notify that nothing is autofillable in this context
-            autofillManager?.notifyViewExited(view)
-        } catch (_: Exception) {
-            // Ignore - some devices may not have autofill service
-        }
-    }
-    
     // Create secure keyboard options with incognito mode flags
     val secureKeyboardOptions = keyboardOptions.copy(
         // Disable autocorrect
@@ -110,12 +92,24 @@ fun SecureOutlinedTextField(
         )
     )
     
-    // Modifier that disables autofill on any child views when they are positioned
-    val secureModifier = modifier.onGloballyPositioned { _ ->
-        // Find the underlying Android View and disable autofill on it
-        // The view hierarchy has already been set up via SecurityUtils.disableAutofill
-        // This callback ensures the flag is applied after layout
-    }
+    // Opt this field out of the autofill framework at the semantics level.
+    //
+    // Compose text fields register themselves for autofill by tagging their semantics node
+    // with contentDataType = Text (plus onFillData, and ContentType.Password for password
+    // fields). The platform AutofillManager is then notified on focus and on every value
+    // change, which is what makes an external password manager (e.g. Proton Pass) pop the
+    // "save password?" dialog for whatever the user typed here. Marking the node
+    // contentDataType = None makes it report as non-autofillable
+    // (AndroidAutofillManager.isAutofillable() short-circuits on None), so no autofill
+    // session is ever started or committed for it — no fill suggestions, no save prompt.
+    //
+    // This override must land on the SAME layout node as the field's own semantics and win
+    // the collapse. CoreTextField applies our incoming modifier as the OUTERMOST semantics
+    // and its own CoreTextFieldSemanticsModifier inner; same-node peer collapse is first-wins
+    // per key, so the outermost value (ours) wins. Note this replaces the old
+    // SecurityUtils.disableAutofill()/AutofillManager.cancel() approach, which no longer works:
+    // the new semantic-autofill notify path ignores the host View's importantForAutofill flag.
+    val secureModifier = modifier.semantics { contentDataType = ContentDataType.None }
     
     OutlinedTextField(
         value = value,
@@ -249,23 +243,6 @@ fun SecureOutlinedTextField(
     isPasswordField: Boolean = false,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors()
 ) {
-    val view = LocalView.current
-    val context = LocalContext.current
-    
-    // Disable autofill on the view hierarchy using SecurityUtils
-    SecurityUtils.disableAutofill(view)
-    
-    // Aggressively disable autofill manager
-    LaunchedEffect(Unit) {
-        try {
-            val autofillManager = context.getSystemService(AutofillManager::class.java)
-            autofillManager?.cancel()
-            autofillManager?.notifyViewExited(view)
-        } catch (_: Exception) {
-            // Ignore - some devices may not have autofill service
-        }
-    }
-    
     // Create secure keyboard options with incognito mode flags
     val secureKeyboardOptions = keyboardOptions.copy(
         autoCorrectEnabled = false,
@@ -280,9 +257,9 @@ fun SecureOutlinedTextField(
         )
     )
     
-    val secureModifier = modifier.onGloballyPositioned { _ ->
-        // Autofill already disabled via SecurityUtils
-    }
+    // Opt this field out of the autofill framework at the semantics level.
+    // See the String overload above for the full rationale.
+    val secureModifier = modifier.semantics { contentDataType = ContentDataType.None }
     
     OutlinedTextField(
         value = value,

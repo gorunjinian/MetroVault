@@ -9,6 +9,7 @@ import androidx.compose.runtime.Stable
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.security.MessageDigest
+import java.security.SecureRandom
 import androidx.core.content.edit
 import com.gorunjinian.metrovault.core.crypto.BiometricPasswordManager
 import com.gorunjinian.metrovault.core.crypto.KeyDerivation
@@ -18,7 +19,9 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletSecrets
+import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import org.json.JSONArray
+import java.io.File
 
 /**
  * Secure password record with per-user salt.
@@ -82,12 +85,17 @@ data class PasswordHash(
  *
  * @property lockedOut true when the failure was caused by rate limiting, not a
  *   wrong password — callers must not treat this as stale credentials.
+ * @property isDuress true when the entered password is the duress password.
+ *   [success] is false and no session was opened; the caller runs
+ *   [SecureStorage.enterDuressSession], which wipes all data and opens the
+ *   fake session that stands in for a normal unlock.
  */
 data class PasswordVerification(
     val success: Boolean,
     val isDecoy: Boolean = false,
     val errorMessage: String? = null,
-    val lockedOut: Boolean = false
+    val lockedOut: Boolean = false,
+    val isDuress: Boolean = false
 )
 
 /**
@@ -132,6 +140,19 @@ class SecureStorage(private val context: Context) {
         private const val DECOY_PREFS_NAME = "metrovault_decoy_prefs"
         private const val KEY_PASSWORD_HASH = "password_hash"
         private const val KEY_DECOY_PASSWORD_HASH = "decoy_password_hash"
+        // Lives in the main vault file: it is a verifier only, nothing is
+        // encrypted under it, and it is wiped together with everything else.
+        private const val KEY_DURESS_PASSWORD_HASH = "duress_password_hash"
+
+        // Shared rejection text for any password that collides with one of the
+        // other passwords. Deliberately neutral: in decoy mode it must not
+        // reveal that a main vault or a duress password exists.
+        private const val PASSWORD_UNAVAILABLE = "This password is unavailable — choose a different one"
+
+        // EncryptedSharedPreferences keeps its Tink keysets in the same file
+        // under keys with this prefix; they are present on a fresh install and
+        // survive clear(), so they never count as user data.
+        private const val ESP_RESERVED_KEY_PREFIX = "__androidx_security_crypto_encrypted_prefs"
         private const val KEY_WALLET_IDS = "wallet_ids"
         private const val KEY_WALLET_ORDER = "wallet_order"
         private const val KEY_KEY_IDS = "wallet_key_ids"       // Index of all WalletKeys IDs
@@ -154,7 +175,7 @@ class SecureStorage(private val context: Context) {
             .build()
     }
 
-    private val mainPrefs: SharedPreferences by lazy {
+    private val persistentMainPrefs: SharedPreferences by lazy {
         EncryptedSharedPreferences.create(
             context,
             PREFS_NAME,
@@ -164,7 +185,7 @@ class SecureStorage(private val context: Context) {
         )
     }
 
-    private val decoyPrefs: SharedPreferences by lazy {
+    private val persistentDecoyPrefs: SharedPreferences by lazy {
         EncryptedSharedPreferences.create(
             context,
             DECOY_PREFS_NAME,
@@ -173,6 +194,16 @@ class SecureStorage(private val context: Context) {
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
+
+    // Every vault read and write goes through these. During a duress session
+    // they resolve to RAM-only stores so the fake session never touches disk;
+    // otherwise to the encrypted files. Only the wipe and the startup safety
+    // net address the persistent files directly.
+    private val mainPrefs: SharedPreferences
+        get() = if (DuressSession.isActive) DuressSession.mainPrefs else persistentMainPrefs
+
+    private val decoyPrefs: SharedPreferences
+        get() = if (DuressSession.isActive) DuressSession.decoyPrefs else persistentDecoyPrefs
 
     // ============================================================================
     // PASSWORD MANAGEMENT
@@ -206,15 +237,16 @@ class SecureStorage(private val context: Context) {
     }
 
     /**
-     * Sets the decoy password.
+     * Sets the decoy password. It must differ from the main and duress passwords.
+     *
+     * @return Pair<success, errorMessage>
      */
-    fun setDecoyPassword(password: String): Boolean {
-        if (hasDecoyPassword()) return false
+    fun setDecoyPassword(password: String): Pair<Boolean, String?> {
+        if (hasDecoyPassword()) return false to "A decoy password is already set"
 
-        // Ensure it's different from main password
-        if (verifyMainPassword(password)) {
+        if (verifyMainPassword(password) || verifyDuressPassword(password)) {
             AppLog.w(TAG) { "Password cannot match existing password" }
-            return false
+            return false to PASSWORD_UNAVAILABLE
         }
 
         return try {
@@ -222,9 +254,52 @@ class SecureStorage(private val context: Context) {
             masterKey.fill(0)
             decoyPrefs.edit { putString(KEY_DECOY_PASSWORD_HASH, record.toStorageString()) }
             AppLog.d(TAG) { "Password set" }
-            true
+            true to null
         } catch (e: Exception) {
             AppLog.e(TAG, e) { "Failed to set password: ${e.message}" }
+            false to "Failed to save decoy password"
+        }
+    }
+
+    /**
+     * Sets or replaces the duress password — the password that, when entered on
+     * the unlock screen, destroys all app data (see [wipeAllData]).
+     *
+     * It must differ from both vault passwords: a collision would make the
+     * login ambiguous and could wipe the device on a legitimate unlock. There
+     * is no old-password step because nothing is encrypted under it; the
+     * caller is already authenticated in the main vault.
+     *
+     * @return Pair<success, errorMessage>
+     */
+    fun setDuressPassword(password: String): Pair<Boolean, String?> {
+        if (classifyPassword(password) != PasswordOwner.NONE) {
+            AppLog.w(TAG) { "Duress password cannot match a vault password" }
+            return false to PASSWORD_UNAVAILABLE
+        }
+
+        return try {
+            val (record, masterKey) = createPasswordRecord(password)
+            masterKey.fill(0)
+            mainPrefs.edit { putString(KEY_DURESS_PASSWORD_HASH, record.toStorageString()) }
+            AppLog.d(TAG) { "Duress password set" }
+            true to null
+        } catch (e: Exception) {
+            AppLog.e(TAG, e) { "Failed to set duress password: ${e.message}" }
+            false to "Failed to save duress password"
+        }
+    }
+
+    /**
+     * Removes the duress password. Entering it afterwards is just a wrong password.
+     */
+    fun removeDuressPassword(): Boolean {
+        return try {
+            mainPrefs.edit { remove(KEY_DURESS_PASSWORD_HASH) }
+            AppLog.d(TAG) { "Duress password removed" }
+            true
+        } catch (e: Exception) {
+            AppLog.e(TAG, e) { "Failed to remove duress password: ${e.message}" }
             false
         }
     }
@@ -232,6 +307,8 @@ class SecureStorage(private val context: Context) {
     fun hasMainPassword(): Boolean = mainPrefs.contains(KEY_PASSWORD_HASH)
 
     fun hasDecoyPassword(): Boolean = decoyPrefs.contains(KEY_DECOY_PASSWORD_HASH)
+
+    fun hasDuressPassword(): Boolean = mainPrefs.contains(KEY_DURESS_PASSWORD_HASH)
 
     /**
      * Verifies [password] against the stored record at [key], honoring the
@@ -283,12 +360,26 @@ class SecureStorage(private val context: Context) {
      * Verifies password with rate limiting.
      * On success, initializes the session key for subsequent operations.
      *
+     * The duress password is recognised only here — the unlock path — and is
+     * reported via [PasswordVerification.isDuress] rather than acted on, so
+     * the caller controls the wipe. It is checked even while rate-limit locked
+     * out: a user under coercion must always be able to trigger it.
+     *
      * @param recordFailure false for machine-originated attempts (e.g. a
      *   biometric-stored password) so they don't count toward lockout/wipe
+     * @param allowDuress false for machine-originated attempts: only a human
+     *   typing the duress password may wipe the device
      */
-    fun verifyPassword(password: String, recordFailure: Boolean = true): PasswordVerification {
+    fun verifyPassword(
+        password: String,
+        recordFailure: Boolean = true,
+        allowDuress: Boolean = true
+    ): PasswordVerification {
         // Check rate limiting first
         if (loginAttemptManager.isLockedOut()) {
+            if (allowDuress && verifyDuressPassword(password)) {
+                return PasswordVerification(success = false, isDuress = true)
+            }
             val remaining = loginAttemptManager.getRemainingLockoutTime()
             return PasswordVerification(
                 success = false,
@@ -312,6 +403,12 @@ class SecureStorage(private val context: Context) {
             }
         }
 
+        // Neither vault matched — last, the duress password. Checked after the
+        // vaults so a correct login never pays for the extra derivation.
+        if (allowDuress && verifyDuressPassword(password)) {
+            return PasswordVerification(success = false, isDuress = true)
+        }
+
         // Failed
         if (!recordFailure) {
             return PasswordVerification(success = false, errorMessage = "Incorrect password")
@@ -329,6 +426,7 @@ class SecureStorage(private val context: Context) {
      * Simple password verification without rate limiting (for internal checks)
      */
     fun verifyPasswordSimple(password: String): Boolean {
+        if (DuressSession.acceptsAnyPassword) return password.isNotEmpty()
         return verifyMainPassword(password) || verifyDecoyPassword(password)
     }
 
@@ -340,10 +438,17 @@ class SecureStorage(private val context: Context) {
         verifyStoredPassword(decoyPrefs, KEY_DECOY_PASSWORD_HASH, password)
             ?.also { it.fill(0) } != null
 
+    private fun verifyDuressPassword(password: String): Boolean =
+        verifyStoredPassword(mainPrefs, KEY_DURESS_PASSWORD_HASH, password)
+            ?.also { it.fill(0) } != null
+
     /**
      * Checks if the given password is the decoy password
      */
-    fun isDecoyPassword(password: String): Boolean = verifyDecoyPassword(password)
+    fun isDecoyPassword(password: String): Boolean {
+        if (DuressSession.acceptsAnyPassword) return password.isNotEmpty()
+        return verifyDecoyPassword(password)
+    }
 
     /** Which vault a password belongs to. See [classifyPassword]. */
     enum class PasswordOwner { MAIN, DECOY, NONE }
@@ -353,8 +458,17 @@ class SecureStorage(private val context: Context) {
      * derivations, without rate limiting. Password-confirmation dialogs should use this
      * instead of `verifyPasswordSimple(p) && !isDecoyPassword(p)`, which derives the decoy
      * hash twice (up to three PBKDF2 runs at 600k iterations each).
+     *
+     * The duress password is never a vault owner: every prompt other than the
+     * unlock screen treats it as an incorrect password.
+     *
+     * Inside a duress session the "decoy" record is whatever [DuressSession]
+     * holds in RAM (the duress password's verifier, or nothing, in which case
+     * any non-empty password passes) so the fake session can answer prompts.
      */
     fun classifyPassword(password: String): PasswordOwner = when {
+        DuressSession.acceptsAnyPassword ->
+            if (password.isNotEmpty()) PasswordOwner.DECOY else PasswordOwner.NONE
         verifyMainPassword(password) -> PasswordOwner.MAIN
         verifyDecoyPassword(password) -> PasswordOwner.DECOY
         else -> PasswordOwner.NONE
@@ -370,12 +484,14 @@ class SecureStorage(private val context: Context) {
      * @return Pair<success, errorMessage>
      */
     fun changeMainPassword(oldPassword: String, newPassword: String): Pair<Boolean, String?> {
+        if (DuressSession.isActive) return changePasswordInDuressSession(oldPassword, newPassword)
         if (!verifyMainPassword(oldPassword)) return false to "Current password is incorrect"
         if (isDecoyPassword(oldPassword)) return false to "Current password is incorrect"
-        // The two vault passwords must never collide: a shared password would
-        // make login ambiguous and half-open both vaults.
-        if (verifyDecoyPassword(newPassword)) {
-            return false to "This password is unavailable — choose a different one"
+        // The passwords must never collide: a shared vault password would make
+        // login ambiguous and half-open both vaults, and a vault password equal
+        // to the duress password could wipe the device on a legitimate unlock.
+        if (verifyDecoyPassword(newPassword) || verifyDuressPassword(newPassword)) {
+            return false to PASSWORD_UNAVAILABLE
         }
 
         return try {
@@ -396,12 +512,13 @@ class SecureStorage(private val context: Context) {
      * @return Pair<success, errorMessage>
      */
     fun changeDecoyPassword(oldPassword: String, newPassword: String): Pair<Boolean, String?> {
+        if (DuressSession.isActive) return changePasswordInDuressSession(oldPassword, newPassword)
         if (!verifyDecoyPassword(oldPassword)) return false to "Current password is incorrect"
         // Deliberately the same neutral message as the main-side check: in
         // decoy mode this dialog is just "Change Password" and the error must
-        // not reveal that another vault exists.
-        if (verifyMainPassword(newPassword)) {
-            return false to "This password is unavailable — choose a different one"
+        // not reveal that another vault or a duress password exists.
+        if (verifyMainPassword(newPassword) || verifyDuressPassword(newPassword)) {
+            return false to PASSWORD_UNAVAILABLE
         }
 
         return try {
@@ -412,6 +529,29 @@ class SecureStorage(private val context: Context) {
             }
         } catch (e: Exception) {
             AppLog.e(TAG, e) { "Failed to change password: ${e.message}" }
+            false to "Password change failed — no data was modified"
+        }
+    }
+
+    /**
+     * Password change inside a duress session. Nothing on disk is involved and
+     * the in-memory wallet blobs stay under the random session key, so only
+     * the RAM verifier is replaced; from then on prompts accept the new
+     * password only. The response mirrors a real change so the fake session
+     * behaves normally.
+     */
+    private fun changePasswordInDuressSession(oldPassword: String, newPassword: String): Pair<Boolean, String?> {
+        if (!DuressSession.acceptsAnyPassword && !verifyDecoyPassword(oldPassword)) {
+            return false to "Current password is incorrect"
+        }
+        return try {
+            val (record, masterKey) = createPasswordRecord(newPassword)
+            masterKey.fill(0)
+            DuressSession.decoyPrefs.edit { putString(KEY_DECOY_PASSWORD_HASH, record.toStorageString()) }
+            DuressSession.passwordRecordStored()
+            true to null
+        } catch (e: Exception) {
+            AppLog.e(TAG, e) { "Failed to change duress-session password: ${e.message}" }
             false to "Password change failed — no data was modified"
         }
     }
@@ -1164,9 +1304,83 @@ class SecureStorage(private val context: Context) {
 
     /**
      * Clears the session key cache. Call on logout.
+     *
+     * Also ends any duress session, dropping its RAM-only stores, before the
+     * session flag flips: observers reacting to the lock then see an
+     * unprovisioned app and route to setup rather than unlock.
      */
     fun clearSession() {
+        DuressSession.end()
         sessionKeyManager.clearSession()
+    }
+
+    // ============================================================================
+    // DURESS SESSION
+    // ============================================================================
+
+    /**
+     * Destroys all persistent data and opens the fake session shown after a
+     * duress unlock. See [DuressSession] for what the session holds.
+     *
+     * The duress password's verifier (when one exists) is carried into the
+     * RAM "decoy" record before the wipe so in-session prompts keep accepting
+     * the password the attacker just watched being typed. The session key is
+     * random: nothing on disk was ever encrypted under it and it dies with
+     * the session. The caller opens the session in decoy mode and creates the
+     * throwaway wallet.
+     */
+    fun enterDuressSession() {
+        val duressRecord = persistentMainPrefs.getString(KEY_DURESS_PASSWORD_HASH, null)
+
+        wipeAllData()
+
+        DuressSession.start(acceptAnyPassword = duressRecord == null)
+        if (duressRecord != null) {
+            DuressSession.decoyPrefs.edit { putString(KEY_DECOY_PASSWORD_HASH, duressRecord) }
+        }
+
+        val sessionKey = ByteArray(32)
+        SecureRandom().nextBytes(sessionKey)
+        try {
+            sessionKeyManager.initializeSessionWithMasterKey(sessionKey)
+        } finally {
+            sessionKey.fill(0)
+        }
+        AppLog.w(TAG) { "Duress session started" }
+    }
+
+    /**
+     * Safety net, run at startup and whenever a session ends. With no main
+     * password on disk nothing else on disk can be legitimate: decoy and
+     * duress passwords are only ever set from a provisioned main vault.
+     * Anything found is residue, either of a wipe cut short by a process kill
+     * or of a duress session's disk writes (settings toggles, biometric
+     * material), and is destroyed before setup can run. A genuinely fresh
+     * install has no residue and is left untouched.
+     *
+     * @return true if a wipe ran
+     */
+    fun wipeResidueIfUnprovisioned(): Boolean {
+        if (hasMainPassword()) return false
+
+        val files = listOf(
+            PREFS_NAME,
+            DECOY_PREFS_NAME,
+            UserPreferencesRepository.PREFS_NAME,
+            BiometricPasswordManager.PREFS_NAME,
+            LoginAttemptManager.PREFS_NAME
+        )
+        // Raw (undecrypted) view: the cached instance the encrypted wrapper
+        // sits on, so this never creates a second keyset.
+        val hasResidue = files.any { name ->
+            context.getSharedPreferences(name, Context.MODE_PRIVATE).all.keys
+                .any { !it.startsWith(ESP_RESERVED_KEY_PREFIX) }
+        }
+        if (!hasResidue) return false
+
+        AppLog.w(TAG) { "No main password but residual data found - wiping" }
+        wipeAllData()
+        return true
     }
 
     /**
@@ -1177,35 +1391,52 @@ class SecureStorage(private val context: Context) {
     }
 
     /**
-     * Completely wipes all app data - both main and decoy wallets, passwords, and preferences.
-     * Called when the "wipe on failed login" security feature is triggered.
+     * Completely wipes all app data - both main and decoy wallets, passwords,
+     * preferences and lockout state - and deletes the backing files so the
+     * app's data directory looks like a fresh install on the next launch.
+     * Triggered by the "wipe on failed login" feature and by the duress password.
      *
      * WARNING: This is irreversible! All wallet data will be permanently deleted.
      *
      * Clears:
-     * - Main vault data (wallets, password hash)
+     * - Main vault data (wallets, password hash, duress password hash)
      * - Decoy vault data (wallets, password hash)
-     * - Biometric password storage
+     * - Biometric password storage and its Android Keystore keys
      * - User preferences (including biometric settings)
      * - Login attempts
      * - Session keys
+     * - Every file under shared_prefs/, files/, cache/ and no_backup/
+     *
+     * Ordering matters: each store is first cleared through its live
+     * SharedPreferences instance with a synchronous commit, so memory and disk
+     * agree, and only then are the files removed. The files are deleted
+     * directly rather than via Context.deleteSharedPreferences, because that
+     * call evicts Android's process-wide cached instance: any SecureStorage or
+     * UserPreferencesRepository created afterwards would get a second,
+     * independent in-memory copy of the same file, and the two copies' writes
+     * would silently clobber each other. Leaving the cached instances alive
+     * keeps exactly one authoritative copy per file; a later write simply
+     * recreates the file from it.
      */
     fun wipeAllData() {
-        AppLog.w(TAG) { "SECURITY WIPE: Wiping all application data due to failed login attempts" }
+        AppLog.w(TAG) { "SECURITY WIPE: Wiping all application data" }
+
+        // Any fake session is over too; its RAM stores go with it
+        DuressSession.end()
 
         try {
             // Clear all main vault data
-            mainPrefs.edit { clear() }
+            persistentMainPrefs.edit(commit = true) { clear() }
             AppLog.d(TAG) { "Main vault data wiped" }
 
             // Clear all decoy vault data
-            decoyPrefs.edit { clear() }
+            persistentDecoyPrefs.edit(commit = true) { clear() }
             AppLog.d(TAG) { "Decoy vault data wiped" }
 
             // Clear biometric password storage
             try {
-                val biometricPrefs = context.getSharedPreferences("biometric_prefs", Context.MODE_PRIVATE)
-                biometricPrefs.edit { clear() }
+                context.getSharedPreferences(BiometricPasswordManager.PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit(commit = true) { clear() }
                 AppLog.d(TAG) { "Biometric passwords wiped" }
             } catch (e: Exception) {
                 AppLog.e(TAG) { "Error clearing biometric prefs: ${e.message}" }
@@ -1215,24 +1446,25 @@ class SecureStorage(private val context: Context) {
             // passwords are gone, so the wrapping keys must not linger)
             try {
                 val biometricKeys = BiometricPasswordManager(context)
-                biometricKeys.deleteKey(isDecoy = false)
-                biometricKeys.deleteKey(isDecoy = true)
+                BiometricPasswordManager.ALL_TARGETS.forEach { biometricKeys.deleteKey(it) }
                 AppLog.d(TAG) { "Biometric keystore keys deleted" }
             } catch (e: Exception) {
                 AppLog.e(TAG) { "Error deleting biometric keystore keys: ${e.message}" }
             }
 
-            // Clear user preferences (biometric enabled state, etc.)
+            // Clear user preferences (biometric enabled state, etc.). This goes
+            // through the same cached SharedPreferences instance every
+            // UserPreferencesRepository wraps, so their in-memory maps are
+            // cleared too (their StateFlows are refreshed by the caller).
             try {
-                // UserPreferencesRepository uses EncryptedSharedPreferences with "metrovault_settings"
                 val userPrefs = EncryptedSharedPreferences.create(
                     context,
-                    "metrovault_settings",
+                    UserPreferencesRepository.PREFS_NAME,
                     masterKey,
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 )
-                userPrefs.edit { clear() }
+                userPrefs.edit(commit = true) { clear() }
                 AppLog.d(TAG) { "User preferences wiped" }
             } catch (e: Exception) {
                 AppLog.e(TAG) { "Error clearing user prefs: ${e.message}" }
@@ -1241,6 +1473,9 @@ class SecureStorage(private val context: Context) {
             // Reset login attempts
             loginAttemptManager.resetAttempts()
             AppLog.d(TAG) { "Login attempts reset" }
+
+            // Remove the (now empty) files from disk
+            deleteDataFiles()
 
             // Clear session
             sessionKeyManager.clearSession()
@@ -1251,10 +1486,40 @@ class SecureStorage(private val context: Context) {
             AppLog.e(TAG, e) { "Error during security wipe: ${e.message}" }
             // Even if there's an error, try to clear as much as possible
             try {
-                mainPrefs.edit { clear() }
-                decoyPrefs.edit { clear() }
-                context.getSharedPreferences("biometric_prefs", Context.MODE_PRIVATE).edit { clear() }
+                persistentMainPrefs.edit(commit = true) { clear() }
+                persistentDecoyPrefs.edit(commit = true) { clear() }
+                context.getSharedPreferences(BiometricPasswordManager.PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit(commit = true) { clear() }
+                deleteDataFiles()
             } catch (_: Exception) { }
+            sessionKeyManager.clearSession()
+        }
+    }
+
+    /**
+     * Deletes everything inside the app's private data directories - every
+     * shared-preferences file (including SharedPreferences' `.bak` backups)
+     * plus the files, cache and no-backup directories. The directories
+     * themselves are kept; Android recreates their contents on demand.
+     */
+    private fun deleteDataFiles() {
+        val directories = listOf(
+            File(context.dataDir, "shared_prefs"),
+            context.filesDir,
+            context.cacheDir,
+            context.noBackupFilesDir
+        )
+        for (dir in directories) {
+            val entries = try {
+                dir.listFiles() ?: continue
+            } catch (_: Exception) {
+                continue
+            }
+            var deleted = 0
+            for (entry in entries) {
+                if (entry.deleteRecursively()) deleted++
+            }
+            AppLog.d(TAG) { "Deleted $deleted/${entries.size} entries under ${dir.name}" }
         }
     }
 }

@@ -169,25 +169,20 @@ object DerivationPaths {
      * Used by the create/import wizards' testnet toggle; account selection is applied separately
      * via [withAccountNumber].
      */
-    fun forNetwork(basePath: String, testnet: Boolean): String = when (getPurpose(basePath)) {
-        86 -> if (testnet) TAPROOT_TESTNET else TAPROOT
-        84 -> if (testnet) NATIVE_SEGWIT_TESTNET else NATIVE_SEGWIT
-        49 -> if (testnet) NESTED_SEGWIT_TESTNET else NESTED_SEGWIT
-        44 -> if (testnet) LEGACY_TESTNET else LEGACY
-        352 -> if (testnet) SILENT_PAYMENT_TESTNET else SILENT_PAYMENT
-        else -> if (testnet) NATIVE_SEGWIT_TESTNET else NATIVE_SEGWIT
-    }
+    fun forNetwork(basePath: String, testnet: Boolean): String =
+        baseForFormat(AddressFormat.fromPath(basePath), testnet)
 
     /**
-     * Get the matching base path constant for a given [ScriptType] / network. Used by
-     * `Wallet.changeScriptType` to rewrite a wallet's derivation path under a new BIP purpose
-     * while preserving the active account and testnet selection.
+     * Get the matching base path constant for a given [AddressFormat] / network. Used by
+     * `Wallet.changeDerivation` to rewrite a wallet's derivation path under a new BIP purpose
+     * and coin type while preserving the active account.
      */
-    fun baseForScriptType(scriptType: ScriptType, testnet: Boolean): String = when (scriptType) {
-        ScriptType.P2TR -> if (testnet) TAPROOT_TESTNET else TAPROOT
-        ScriptType.P2WPKH -> if (testnet) NATIVE_SEGWIT_TESTNET else NATIVE_SEGWIT
-        ScriptType.P2SH_P2WPKH -> if (testnet) NESTED_SEGWIT_TESTNET else NESTED_SEGWIT
-        ScriptType.P2PKH -> if (testnet) LEGACY_TESTNET else LEGACY
+    fun baseForFormat(format: AddressFormat, testnet: Boolean): String = when (format) {
+        AddressFormat.TAPROOT -> if (testnet) TAPROOT_TESTNET else TAPROOT
+        AddressFormat.NATIVE_SEGWIT -> if (testnet) NATIVE_SEGWIT_TESTNET else NATIVE_SEGWIT
+        AddressFormat.NESTED_SEGWIT -> if (testnet) NESTED_SEGWIT_TESTNET else NESTED_SEGWIT
+        AddressFormat.LEGACY -> if (testnet) LEGACY_TESTNET else LEGACY
+        AddressFormat.SILENT_PAYMENTS -> if (testnet) SILENT_PAYMENT_TESTNET else SILENT_PAYMENT
     }
 
     /** Get the script type for a derivation path based on its purpose number */

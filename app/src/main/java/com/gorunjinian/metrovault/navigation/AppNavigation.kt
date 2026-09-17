@@ -51,7 +51,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.VerifyMultisigScreen
 import com.gorunjinian.metrovault.feature.wallet.details.ExportOptionsScreen
 import com.gorunjinian.metrovault.feature.wallet.details.CoordinatorExportScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SPAddressScreen
-import com.gorunjinian.metrovault.feature.wallet.details.ScriptTypeScreen
+import com.gorunjinian.metrovault.feature.wallet.details.AddressTypeScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SilentPaymentExportScreen
 import com.gorunjinian.metrovault.feature.wallet.details.SeedPhraseScreen
 import com.gorunjinian.metrovault.feature.wallet.details.RootKeyScreen
@@ -139,7 +139,7 @@ sealed class Screen(val route: String) {
     object SettingsSecurity : Screen("settings_security")
     object SettingsAdvanced : Screen("settings_advanced")
     object DifferentAccounts : Screen("different_accounts")
-    object ScriptType : Screen("script_type")
+    object AddressType : Screen("address_type")
     object AccountKeys : Screen("account_keys")
     object Descriptors : Screen("descriptors")
     object SeedPhrase : Screen("seed_phrase")
@@ -167,6 +167,8 @@ fun AppNavigation(
     // Determine start destination based on password state only - computed ONCE at startup
     // Using rememberSaveable to ensure it survives recomposition and configuration changes
     // All subsequent navigation is handled imperatively
+    // The startup safety net (SettingsViewModel's bootstrap) has already wiped
+    // any unprovisioned residue by the time this composes.
     val startDestination = rememberSaveable {
         when {
             !secureStorage.hasMainPassword() -> Screen.SetupPassword.route
@@ -198,6 +200,14 @@ fun AppNavigation(
                 }
                 AppSessionViewModel.NavigationEvent.ToUnlock -> {
                     navController.navigate(Screen.Unlock.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                AppSessionViewModel.NavigationEvent.ToSetup -> {
+                    // The store was just wiped; this instance feeds the theme
+                    // and every settings screen, so its cached values go too
+                    userPreferencesRepository.reload()
+                    navController.navigate(Screen.SetupPassword.route) {
                         popUpTo(0) { inclusive = true }
                     }
                 }
@@ -267,6 +277,7 @@ fun AppNavigation(
                 onUnlockSuccess = sessionViewModel::onUnlockSuccess,
                 onDataWiped = {
                     // Data was wiped due to failed login attempts - navigate to setup
+                    userPreferencesRepository.reload()
                     navController.navigate(Screen.SetupPassword.route) {
                         popUpTo(0) { inclusive = true }
                     }
@@ -378,7 +389,7 @@ fun AppNavigation(
                 onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
                 onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },
                 onDifferentAccounts = { navController.navigate(Screen.DifferentAccounts.route) },
-                onChangeScriptType = { navController.navigate(Screen.ScriptType.route) },
+                onChangeAddressType = { navController.navigate(Screen.AddressType.route) },
                 onLock = {
                     navController.navigate(Screen.Unlock.route) {
                         popUpTo(0) { inclusive = true }
@@ -594,8 +605,8 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.ScriptType.route) {
-            ScriptTypeScreen(
+        composable(Screen.AddressType.route) {
+            AddressTypeScreen(
                 wallet = wallet,
                 onBack = { navController.navigateBackOr(Screen.Home) }
             )

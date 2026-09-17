@@ -1,15 +1,18 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -20,6 +23,7 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
+import com.gorunjinian.metrovault.data.model.AddressFormat
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.WalletMetadata
@@ -40,7 +44,7 @@ fun WalletDetailsScreen(
     onSignMessage: () -> Unit,
     onCheckAddress: () -> Unit,
     onDifferentAccounts: () -> Unit,
-    onChangeScriptType: () -> Unit,
+    onChangeAddressType: () -> Unit,
     onLock: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -180,6 +184,7 @@ fun WalletDetailsScreen(
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                     }
+                    // Circular container mirrors the home screen's lock button
                     IconButton(
                         onClick = {
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -187,11 +192,20 @@ fun WalletDetailsScreen(
                             onLock()
                         }
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_lock),
-                            contentDescription = "Lock",
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_lock),
+                                contentDescription = "Lock",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
                     }
                 }
             )
@@ -455,10 +469,10 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Sign/Verify Message (not for multisig or stateless wallets). SP wallets use the
-            // BIP-322 protocol: verification works on-device, and signing goes through
-            // message-signing PSBT QR .
-            if (!isMultisig && !isStatelessWallet) {
+            // Sign/Verify Message (not for multisig). Stateless wallets get it exactly like
+            // persisted ones. SP wallets use the BIP-322 protocol: verification works
+            // on-device, and signing goes through message-signing PSBT QR.
+            if (!isMultisig) {
                 ActionCard(
                     icon = R.drawable.ic_signature,
                     title = "Sign/Verify Message",
@@ -487,25 +501,15 @@ fun WalletDetailsScreen(
                 )
             }
 
-            // Change Script Type (single-sig only; hidden for multisig, stateless, and SP).
-            // The same seed backs every script type — only the BIP purpose / address tree changes.
-            if (!isMultisig && !isStatelessWallet && !isSilentPayment) {
-                val currentScriptType = DerivationPaths.getScriptType(derivationPath)
-                val currentSubtitle = when (currentScriptType) {
-                    com.gorunjinian.vaultovich.ScriptType.P2TR ->
-                        if (isTestnet) "Currently: Taproot (tb1p…)" else "Currently: Taproot (bc1p…)"
-                    com.gorunjinian.vaultovich.ScriptType.P2WPKH ->
-                        if (isTestnet) "Currently: Native SegWit (tb1q…)" else "Currently: Native SegWit (bc1q…)"
-                    com.gorunjinian.vaultovich.ScriptType.P2SH_P2WPKH ->
-                        if (isTestnet) "Currently: Nested SegWit (2…)" else "Currently: Nested SegWit (3…)"
-                    com.gorunjinian.vaultovich.ScriptType.P2PKH ->
-                        if (isTestnet) "Currently: Legacy (m/n…)" else "Currently: Legacy (1…)"
-                }
+            // Address Type & Network (hidden for multisig and stateless). Any persisted single-seed
+            // wallet can move between the five address formats (incl. Silent Payments) and between
+            // mainnet and testnet. The same seed backs every choice — only the address tree changes.
+            if (!isMultisig && !isStatelessWallet) {
                 ActionCard(
                     icon = R.drawable.ic_tune,
-                    title = "Change Script Type",
-                    description = currentSubtitle,
-                    onClick = onChangeScriptType
+                    title = "Address Type & Network",
+                    description = "Currently: ${AddressFormat.fromPath(derivationPath).label(isTestnet)}",
+                    onClick = onChangeAddressType
                 )
             }
 

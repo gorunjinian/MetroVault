@@ -24,8 +24,8 @@ class SilentPaymentManager {
 
     /**
      * True if the SP scan-key export can be offered for this wallet — single-sig with the master
-     * key currently in memory. Multisig and stateless wallets are excluded (no single seed / no
-     * exposed master key respectively).
+     * key currently in memory. Multisig wallets are excluded (no single seed). Stateless wallets
+     * qualify: their master key is held in memory for the life of the wallet.
      */
     fun canExportSilentPayment(walletState: WalletState?, metadata: WalletMetadata?): Boolean {
         if (metadata?.isMultisig == true) return false

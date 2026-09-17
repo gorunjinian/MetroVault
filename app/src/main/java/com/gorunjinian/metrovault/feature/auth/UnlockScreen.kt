@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gorunjinian.metrovault.BuildConfig
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.crypto.BiometricAuthManager
 import com.gorunjinian.metrovault.core.ui.components.SecurePasswordTextField
@@ -298,5 +299,16 @@ fun UnlockScreen(
                 )
             }
         }
+
+        // App version pinned to the bottom of the screen
+        Text(
+            text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp)
+        )
     }
 }

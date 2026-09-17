@@ -11,9 +11,6 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.vaultovich.MnemonicCode
-import com.gorunjinian.vaultovich.BIP39Wordlist
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
 import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
@@ -23,7 +20,6 @@ import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 fun CompleteMnemonicScreen(
     onBack: () -> Unit
 ) {
-    
     // Mnemonic input state
     var mnemonicWords by remember { mutableStateOf<List<String>>(emptyList()) }
     var currentWord by remember { mutableStateOf("") }
@@ -161,7 +157,7 @@ fun CompleteMnemonicScreen(
 
                             scope.launch {
                                 val validWords = withContext(Dispatchers.Default) {
-                                    calculatePossibleLastWords(mnemonicWords)
+                                    possibleLastWords(mnemonicWords)
                                 }
 
                                 isCalculating = false
@@ -234,54 +230,3 @@ fun CompleteMnemonicScreen(
     }
 }
 
-/**
- * Calculates all possible valid last words for an incomplete mnemonic.
- * Uses the BIP39 English wordlist (2048 words, indices 0-2047) and validates
- *
- * BIP39 Checksum Details:
- * - 12-word mnemonic: 128 bits entropy + 4 bits checksum = 132 bits total
- *   With 11 words given (121 bits), last word has 11 bits (7 entropy + 4 checksum)
- *   Result: ~8-16 valid last words
- *
- * - 24-word mnemonic: 256 bits entropy + 8 bits checksum = 264 bits total
- *   With 23 words given (253 bits), last word has 11 bits (3 entropy + 8 checksum)
- *   Result: ~8-256 valid last words
- *
- * @param incompleteWords List of 11 or 23 words
- * @return List of valid last words that complete the mnemonic with a valid checksum
- */
-private fun calculatePossibleLastWords(incompleteWords: List<String>): List<String> {
-    val validLastWords = mutableListOf<String>()
-
-    try {
-        // Load the BIP39 English wordlist (2048 words, indices 0-2047)
-        val bip39Words = BIP39Wordlist.getEnglishWordlist()
-
-        if (bip39Words.isEmpty()) {
-            AppLog.e("CompleteMnemonic") { "Failed to load BIP39 wordlist" }
-            return emptyList()
-        }
-
-        AppLog.d("CompleteMnemonic") { "Loaded ${bip39Words.size} BIP39 words" }
-
-        // Try each word from the wordlist as the last word
-        for (candidateWord in bip39Words) {
-            try {
-                val completeMnemonic = incompleteWords + candidateWord
-                // MnemonicCode.validate will check the checksum
-                MnemonicCode.validate(completeMnemonic)
-                // If we get here without exception, the mnemonic is valid
-                validLastWords.add(candidateWord)
-            } catch (_: Exception) {
-                // Invalid checksum, skip this word
-            }
-        }
-
-        AppLog.d("CompleteMnemonic") { "Found ${validLastWords.size} valid last words" }
-
-    } catch (e: Exception) {
-        AppLog.e("CompleteMnemonic", e) { "Error calculating last words: ${e.message}" }
-    }
-
-    return validLastWords.sorted()
-}

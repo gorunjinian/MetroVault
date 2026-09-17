@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import com.gorunjinian.metrovault.core.logging.AppLog
+import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -26,6 +27,7 @@ import kotlinx.coroutines.withContext
 class AppSessionViewModel(application: Application) : AndroidViewModel(application) {
 
     private val wallet: Wallet by lazy { Wallet.getInstance(application.applicationContext) }
+    private val secureStorage: SecureStorage by lazy { SecureStorage(application.applicationContext) }
     private val sessionKeyManager = SessionKeyManager.getInstance()
 
     sealed interface NavigationEvent {
@@ -37,6 +39,12 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
 
         /** Session expired while visible on a non-auth screen. */
         data object ToUnlock : NavigationEvent
+
+        /**
+         * Session ended and no main password exists any more: a duress session
+         * just closed. The app is a fresh install now, so show setup.
+         */
+        data object ToSetup : NavigationEvent
     }
 
     private val _navigationEvents = Channel<NavigationEvent>(Channel.BUFFERED)
@@ -63,10 +71,23 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                         route != Screen.Unlock.route &&
                         route != Screen.SetupPassword.route
                     ) {
-                        AppLog.d(TAG) { "Session expired while app resumed - navigating to unlock screen" }
+                        AppLog.d(TAG) { "Session expired while app resumed - navigating to auth screen" }
                         // Wipe stateless wallet on session lock
                         wallet.wipeStatelessWallet()
-                        _navigationEvents.send(NavigationEvent.ToUnlock)
+                        val provisioned = withContext(Dispatchers.IO) {
+                            if (secureStorage.hasMainPassword()) {
+                                true
+                            } else {
+                                // A duress session just ended. Anything it wrote to
+                                // disk (settings, biometric material) must not leak
+                                // into the vault about to be set up.
+                                secureStorage.wipeResidueIfUnprovisioned()
+                                false
+                            }
+                        }
+                        _navigationEvents.send(
+                            if (provisioned) NavigationEvent.ToUnlock else NavigationEvent.ToSetup
+                        )
                     }
                 }
         }
