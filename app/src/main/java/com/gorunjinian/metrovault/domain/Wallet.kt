@@ -1306,7 +1306,7 @@ class   Wallet(context: Context) {
         )
     }
 
-    fun getBip48DescriptorForAccount(
+    fun getBip48KeyExpressionForAccount(
         accountNumber: Int,
         bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
     ): String {
@@ -1315,20 +1315,20 @@ class   Wallet(context: Context) {
         val fingerprint = state.fingerprint
         val isTestnet = isActiveWalletTestnet()
 
-        return keyEncodingService.getBip48DescriptorForAccount(
+        return keyEncodingService.getBip48KeyExpressionForAccount(
             fingerprint, masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
         )
     }
 
     /**
-     * Gets the BIP48 multisig descriptor (private/spending) for watch+sign setups.
+     * Gets the BIP48 key expression (private/spending), `[fp/48h/...]xprv`, for watch+sign setups.
      * WARNING: Contains private keys - handle with extreme care!
      *
      * @param accountNumber Account number to derive descriptor for
      * @param bip48ScriptType Script type: P2WSH (native) or P2SH_P2WSH (wrapped)
-     * @return Private descriptor string with checksum, or empty on error
+     * @return Private key expression, or empty on error
      */
-    fun getBip48PrivateDescriptorForAccount(
+    fun getBip48PrivateKeyExpressionForAccount(
         accountNumber: Int,
         bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
     ): String {
@@ -1337,7 +1337,7 @@ class   Wallet(context: Context) {
         val fingerprint = state.fingerprint
         val isTestnet = isActiveWalletTestnet()
 
-        return keyEncodingService.getBip48PrivateDescriptorForAccount(
+        return keyEncodingService.getBip48PrivateKeyExpressionForAccount(
             fingerprint, masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
         )
     }

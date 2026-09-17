@@ -6,6 +6,7 @@ import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentSen
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.vaultovich.ByteVector
 import com.gorunjinian.vaultovich.ByteVector32
+import com.gorunjinian.vaultovich.Crypto
 import com.gorunjinian.vaultovich.DataEntry
 import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.vaultovich.Global
@@ -20,6 +21,7 @@ import com.gorunjinian.vaultovich.PublicKey
 import com.gorunjinian.vaultovich.Satoshi
 import com.gorunjinian.vaultovich.Script
 import com.gorunjinian.vaultovich.SigHash
+import com.gorunjinian.vaultovich.TaprootBip32DerivationPath
 import com.gorunjinian.vaultovich.Transaction
 import com.gorunjinian.vaultovich.TxId
 import com.gorunjinian.vaultovich.TxIn
@@ -31,6 +33,7 @@ import com.gorunjinian.vaultovich.silentpayments.SilentPayments.EligibleInputKey
 import com.gorunjinian.vaultovich.silentpayments.SilentPayments.RecipientKeys
 import com.gorunjinian.vaultovich.utils.Either
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -70,6 +73,20 @@ class SilentPaymentSenderServiceTest {
         return Input.WitnessInput.PartiallySignedWitnessInput(
             TxOut(Satoshi(50_000), scriptPubKey), null, sighash, emptyMap(), paths, null, null,
             emptySet(), emptySet(), emptySet(), emptySet(), null, emptyMap(), null, emptyList()
+        )
+    }
+
+    private fun taprootKey(index: Int) = master.derivePrivateKey(KeyPath("m/86'/1'/0'/0/$index"))
+
+    /** A BIP-86 input of this wallet: the script pays the tweaked output key, the PSBT declares the internal key. */
+    private fun walletP2trInput(index: Int): Input.WitnessInput.PartiallySignedWitnessInput {
+        val internal = taprootKey(index).publicKey.xOnly()
+        val (outputKey, _) = internal.outputKey(Crypto.TaprootTweak.NoScriptTweak)
+        val script = Script.write(Script.pay2tr(outputKey)).byteVector()
+        val path = TaprootBip32DerivationPath(emptyList(), fingerprint, KeyPath("m/86'/1'/0'/0/$index"))
+        return Input.WitnessInput.PartiallySignedWitnessInput(
+            TxOut(Satoshi(50_000), script), null, null, emptyMap(), emptyMap(), null, null,
+            emptySet(), emptySet(), emptySet(), emptySet(), null, mapOf(internal to path), internal, emptyList()
         )
     }
 
@@ -171,5 +188,45 @@ class SilentPaymentSenderServiceTest {
         val result = resolve(psbt)
         assertTrue(result is Either.Left)
         assertTrue((result as Either.Left).value is SilentPaymentError.MissingPrivateKey)
+    }
+
+    @Test
+    fun taprootInputsEnterTheSumAsTheirOutputKeyNotTheInternalKey() {
+        val psbt = psbtOf(listOf(walletP2trInput(0), walletP2wpkhInput(1)), listOf(op0, op1))
+        val result = resolve(psbt)
+        assertTrue("expected Right, got $result", result is Either.Right)
+        val resolvedScript = (result as Either.Right).value.global.tx.txOut[0].publicKeyScript
+        val recipients = listOf(RecipientKeys(recipient.scanPubKey, recipient.spendPubKey))
+
+        // BIP-352: a P2TR input contributes the private key of its taproot *output* key (d = k + t).
+        val expected = SilentPayments.deriveOutputs(
+            listOf(
+                EligibleInputKey(SilentPayments.taprootOutputPrivateKey(taprootKey(0).privateKey), true),
+                EligibleInputKey(derivedKey(1).privateKey, false),
+            ),
+            listOf(op0, op1), recipients
+        )
+        assertEquals(Script.write(Script.pay2tr(expected.first().outputKey)).byteVector(), resolvedScript)
+
+        // Summing the untweaked internal key instead derives an output the receiver could never find.
+        val wrong = SilentPayments.deriveOutputs(
+            listOf(EligibleInputKey(taprootKey(0).privateKey, true), EligibleInputKey(derivedKey(1).privateKey, false)),
+            listOf(op0, op1), recipients
+        )
+        assertNotEquals(Script.write(Script.pay2tr(wrong.first().outputKey)).byteVector(), resolvedScript)
+    }
+
+    @Test
+    fun rejectsAKeyThatDoesNotMatchTheInputScript() {
+        // The derivation entry names our key 0 but the script pays key 1. A sum over key 0 would
+        // derive outputs the receiver can never find, so the sender must refuse rather than guess.
+        val input = witnessInput(
+            Script.write(Script.pay2wpkh(derivedKey(1).publicKey)).byteVector(),
+            derivedKey(0).publicKey, "m/84'/1'/0'/0/0", fingerprint
+        )
+        val psbt = psbtOf(listOf(input), listOf(op0))
+        val result = resolve(psbt)
+        assertTrue("expected Left, got $result", result is Either.Left)
+        assertEquals(SilentPaymentError.KeyDoesNotMatchInput(op0.toString()), (result as Either.Left).value)
     }
 }

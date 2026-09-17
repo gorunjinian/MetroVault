@@ -22,6 +22,7 @@ import com.gorunjinian.vaultovich.Psbt
 import com.gorunjinian.vaultovich.Satoshi
 import com.gorunjinian.vaultovich.Script
 import com.gorunjinian.vaultovich.SigHash
+import com.gorunjinian.vaultovich.SignPolicy
 import com.gorunjinian.vaultovich.ScriptFlags
 import com.gorunjinian.vaultovich.ScriptTree
 import com.gorunjinian.vaultovich.ScriptWitness
@@ -266,13 +267,21 @@ class TaprootPsbtSigningTest {
         assertSignedInputVerifies(psbt, signingKeyOf(master))
     }
 
+    /**
+     * 0x83 is a valid BIP-341 sighash type, so the library can produce it — but only when the caller
+     * opts in. vaultovich's default [SignPolicy], which MetroVault's signer runs under, refuses
+     * anything but SIGHASH_DEFAULT / SIGHASH_ALL with a typed failure the app maps to a refusal.
+     */
     @Test
-    fun sighashSingleAnyoneCanPayStillSigns() {
+    fun sighashSingleAnyoneCanPaySignsOnlyUnderAPermissivePolicy() {
         val master = DeterministicWallet.generate(highBitSeed)
         val psbt = buildBip86Psbt(master, sighashType = 0x83)
 
-        val signed = psbt.sign(signingKeyOf(master), 0)
+        val refused = psbt.sign(signingKeyOf(master), 0)
+        assertTrue("the default policy must refuse 0x83: $refused", refused is Either.Left)
+        assertTrue((refused as Either.Left).value is UpdateFailure.SighashTypeNotAllowed)
 
+        val signed = psbt.sign(signingKeyOf(master), 0, SignPolicy.Permissive)
         assertTrue("0x83 is a valid BIP-341 sighash type: $signed", signed is Either.Right)
         val sig = (signed as Either.Right).value.psbt.inputs[0].taprootKeySignature!!
         assertEquals(65, sig.size())

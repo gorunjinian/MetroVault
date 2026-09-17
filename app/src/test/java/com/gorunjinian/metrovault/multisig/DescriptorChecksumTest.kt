@@ -31,4 +31,10 @@ class DescriptorChecksumTest {
     fun isEightChars() {
         assertEquals(8, BSMS.descriptorChecksum(descriptor).length)
     }
+
+    @Test
+    fun returnsEmptyForCharactersOutsideTheDescriptorCharset() {
+        // vaultovich throws for these; callers key off "" to show a placeholder instead.
+        assertEquals("", BSMS.descriptorChecksum("wsh(sortedmulti(2,[1a2b3c4d/48'/0'/0'/2']xpubAAAA/0/*,ünicode))"))
+    }
 }

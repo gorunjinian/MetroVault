@@ -58,10 +58,18 @@ class SilentPaymentV2SignTest {
         val inputKey = master.derivePrivateKey(KeyPath("m/84'/1'/0'/0/0"))
         val pub = inputKey.publicKey
 
-        // P2WPKH input belonging to this wallet (declared via BIP-32 derivation).
+        // P2WPKH input belonging to this wallet (declared via BIP-32 derivation). The previous
+        // transaction rides along as PSBT_IN_NON_WITNESS_UTXO, as coordinators send it: the default
+        // signing policy refuses a segwit v0 input without it, since the fee cannot be verified.
         val witnessUtxo = TxOut(Satoshi(100_000), Script.pay2wpkh(pub))
+        val prevTx = Transaction(
+            2,
+            listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 0xffffffffL), ByteVector.empty, 0xffffffffL)),
+            listOf(witnessUtxo),
+            0
+        )
         val input = Input.WitnessInput.PartiallySignedWitnessInput(
-            witnessUtxo, null, null, emptyMap(),
+            witnessUtxo, prevTx, null, emptyMap(),
             mapOf(pub to KeyPathWithMaster(fingerprint, KeyPath("m/84'/1'/0'/0/0"))),
             null, null, emptySet(), emptySet(), emptySet(), emptySet(), null, emptyMap(), null, emptyList()
         )
@@ -72,7 +80,7 @@ class SilentPaymentV2SignTest {
 
         val tx = Transaction(
             2,
-            listOf(TxIn(op0, ByteVector.empty, 0xfffffffeL)),
+            listOf(TxIn(OutPoint(prevTx, 0L), ByteVector.empty, 0xfffffffeL)),
             listOf(TxOut(Satoshi(90_000), ByteVector.empty)), // SP output: no script yet
             0
         )

@@ -122,6 +122,52 @@ sealed class InputSigningRefusal {
                 "wallet could verify."
     }
 
+    /**
+     * A segwit v0 input carries only PSBT_IN_WITNESS_UTXO. Without the full previous transaction
+     * the amounts of the other inputs, and so the fee shown on screen, cannot be verified (the
+     * BIP-143 fee attack, CVE-2020-14199), so vaultovich's default signing policy refuses it.
+     */
+    data class MissingPreviousTransaction(override val inputIndex: Int) : InputSigningRefusal() {
+        override val message: String
+            get() = "Input #$inputIndex does not include its previous transaction, so the amount it " +
+                "spends and the fee cannot be verified. Export the PSBT again with full previous " +
+                "transactions (non-witness UTXOs) included."
+    }
+
+    /** The sighash type is well-defined but outside what MetroVault is willing to produce. */
+    data class SighashNotAllowed(
+        override val inputIndex: Int,
+        val sighashType: Int,
+    ) : InputSigningRefusal() {
+        override val message: String
+            get() = "Input #$inputIndex requests sighash type 0x${sighashType.toUInt().toString(16)}. " +
+                "MetroVault only signs with SIGHASH_ALL (SIGHASH_DEFAULT for Taproot), because any " +
+                "other type lets the transaction be changed after it is signed."
+    }
+
+    /** SIGHASH_SINGLE with no output at the input's index: the legacy digest degenerates to the constant 1. */
+    data class SighashSingleWithoutOutput(override val inputIndex: Int) : InputSigningRefusal() {
+        override val message: String
+            get() = "Input #$inputIndex uses SIGHASH_SINGLE but there is no output at its index. A " +
+                "signature on it could be replayed, so MetroVault refused."
+    }
+
+    /** The script does not reference the key MetroVault resolved: a key-selection bug, not a user error. */
+    data class KeyMismatch(override val inputIndex: Int) : InputSigningRefusal() {
+        override val message: String
+            get() = "Input #$inputIndex does not reference the key MetroVault selected for it, so no " +
+                "signature was produced."
+    }
+
+    /** The transaction pays a silent-payment address but breaks a BIP-375 signing rule. */
+    data class SilentPaymentRule(
+        override val inputIndex: Int,
+        val reason: String,
+    ) : InputSigningRefusal() {
+        override val message: String
+            get() = "Input #$inputIndex cannot be signed for a silent payment: $reason"
+    }
+
     data class Other(
         override val inputIndex: Int,
         val reason: String,
@@ -136,6 +182,11 @@ sealed class InputSigningRefusal {
                 TaprootScriptTree(inputIndex, merkleRootProven = failure.merkleRoot != null)
             is UpdateFailure.CannotSignTaprootScriptPathKey -> TaprootScriptPathKey(inputIndex)
             is UpdateFailure.UnsupportedSighashType -> UnsupportedSighash(inputIndex, failure.sighashType)
+            is UpdateFailure.MissingNonWitnessUtxo -> MissingPreviousTransaction(inputIndex)
+            is UpdateFailure.SighashTypeNotAllowed -> SighashNotAllowed(inputIndex, failure.sighashType)
+            is UpdateFailure.SighashSingleWithoutMatchingOutput -> SighashSingleWithoutOutput(inputIndex)
+            is UpdateFailure.KeyDoesNotMatchInput -> KeyMismatch(inputIndex)
+            is UpdateFailure.SilentPaymentRuleViolation -> SilentPaymentRule(inputIndex, failure.reason)
             is UpdateFailure.CannotSignInput -> Other(inputIndex, failure.reason)
             is UpdateFailure.InvalidWitnessUtxo -> Other(inputIndex, failure.reason)
             is UpdateFailure.InvalidNonWitnessUtxo -> Other(inputIndex, failure.reason)

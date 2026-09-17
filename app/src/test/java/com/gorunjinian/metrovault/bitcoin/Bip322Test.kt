@@ -141,8 +141,10 @@ class Bip322Test {
         val outputScript = Script.write(Script.pay2tr(d.xOnlyPublicKey())).byteVector()
         val spAddress = (Bitcoin.addressFromPublicKeyScript(mainnet, outputScript.toByteArray()) as Either.Right).value
 
-        // Build the PSBT exactly as drongo's getBip322PsbtSp does (v0, witnessUtxo, SIGHASH_ALL,
-        // PSBT_GLOBAL_GENERIC_SIGNED_MESSAGE).
+        // Build the PSBT as drongo's getBip322PsbtSp does (witnessUtxo, SIGHASH_ALL,
+        // PSBT_GLOBAL_GENERIC_SIGNED_MESSAGE), as PSBT v2: since vaultovich 0.2.0 the silent-payment
+        // fields (here PSBT_IN_SP_TWEAK) are v2-only per BIP-375, and a v0 carrier is refused by
+        // both Psbt.write and Psbt.read.
         val toSpend = Bip322.toSpend(outputScript, message)
         val toSign = Bip322.toSign(toSpend)
         val input = Input.WitnessInput.PartiallySignedWitnessInput(
@@ -152,7 +154,7 @@ class Bip322Test {
         )
         val output = Output.UnspecifiedOutput(emptyMap(), null, emptyMap(), emptyList())
         val messageEntry = DataEntry(ByteVector(byteArrayOf(Bip322.PSBT_GLOBAL_GENERIC_SIGNED_MESSAGE)), ByteVector(message.encodeToByteArray()))
-        val psbt = Psbt(Global(0, toSign, emptyList(), listOf(messageEntry)), listOf(input), listOf(output))
+        val psbt = Psbt(Global(2, toSign, emptyList(), listOf(messageEntry), fallbackLocktime = 0L), listOf(input), listOf(output))
 
         // Round-trip through serialization, as the QR boundary would.
         val parsed = (Psbt.read(Psbt.write(psbt).toByteArray()) as Either.Right).value

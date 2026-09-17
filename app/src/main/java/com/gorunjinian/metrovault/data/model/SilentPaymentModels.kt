@@ -84,4 +84,16 @@ sealed class SilentPaymentError {
     data class TweakMismatch(val outpoint: String) : SilentPaymentError() {
         override val message = "The silent payment tweak for input $outpoint does not match its output key."
     }
+
+    /**
+     * The key resolved for an SP-eligible input is not the key its script commits to. A shared
+     * secret derived from it would produce outputs the receiver can never find.
+     */
+    data class KeyDoesNotMatchInput(val outpoint: String?) : SilentPaymentError() {
+        override val message = if (outpoint != null) {
+            "The signing key resolved for input $outpoint does not match the script it spends."
+        } else {
+            "A signing key does not match the input it spends."
+        }
+    }
 }

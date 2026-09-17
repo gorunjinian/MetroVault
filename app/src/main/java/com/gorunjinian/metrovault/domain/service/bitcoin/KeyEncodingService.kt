@@ -171,7 +171,7 @@ class KeyEncodingService {
     ): String {
         val fp = fingerprint.toLongOrNull(16) ?: 0L
         val xpriv = encodeBip32Private(accountPrivateKey, isTestnet)
-        return DescriptorExtensions.getUnifiedDescriptor(fp, accountPath, xpriv, scriptType)
+        return privateUnifiedDescriptor(fp, accountPath, xpriv, scriptType)
     }
 
     /**
@@ -345,7 +345,21 @@ class KeyEncodingService {
     }
 
 
-    fun getBip48DescriptorForAccount(
+    /**
+     * Gets the BIP48 key expression this device contributes to a multisig wallet:
+     * `[fingerprint/48h/coin'h/account'h/script'h]xpub`, the BIP-380 KEY expression with key origin.
+     * This is what a coordinator takes as a cosigner key. It is deliberately not wrapped in `wsh()`:
+     * BIP-382 requires `wsh()` to wrap a script expression such as `sortedmulti`, so the wallet
+     * descriptor can only be built once every cosigner's key is known.
+     *
+     * @param fingerprint Master fingerprint as hex string
+     * @param masterPrivateKey The master private key (at depth 0)
+     * @param accountNumber Account number to derive the key for
+     * @param bip48ScriptType BIP48 script type (P2WSH or P2SH-P2WSH), which selects the path
+     * @param isTestnet Whether to use testnet prefixes
+     * @return Key expression, or empty string on error
+     */
+    fun getBip48KeyExpressionForAccount(
         fingerprint: String,
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         accountNumber: Int,
@@ -358,26 +372,25 @@ class KeyEncodingService {
             val accountPublicKey = accountPrivateKey.extendedPublicKey
             val xpub = encodeBip32Public(accountPublicKey, isTestnet)
             val fp = fingerprint.toLongOrNull(16) ?: 0L
-            val isWrapped = bip48ScriptType == DerivationPaths.Bip48ScriptType.P2SH_P2WSH
-            DescriptorExtensions.getBip48Descriptor(fp, bip48Path, xpub, isWrapped)
+            DescriptorExtensions.getBip48KeyExpression(fp, bip48Path, xpub)
         } catch (_: Exception) {
-            AppLog.e(TAG) { "Failed to generate BIP48 descriptor for account $accountNumber" }
+            AppLog.e(TAG) { "Failed to generate BIP48 key expression for account $accountNumber" }
             ""
         }
     }
 
     /**
-     * Gets the BIP48 multisig descriptor (private/spending) for a specific account number.
-     * WARNING: Contains private keys - handle with extreme care!
+     * Gets the BIP48 key expression (private/spending) for a specific account number:
+     * `[fingerprint/48h/...]xprv`. WARNING: Contains private keys - handle with extreme care!
      *
      * @param fingerprint Master fingerprint as hex string
      * @param masterPrivateKey The master private key (at depth 0)
-     * @param accountNumber Account number to derive descriptor for
-     * @param bip48ScriptType BIP48 script type (P2WSH or P2SH-P2WSH)
+     * @param accountNumber Account number to derive the key for
+     * @param bip48ScriptType BIP48 script type (P2WSH or P2SH-P2WSH), which selects the path
      * @param isTestnet Whether to use testnet prefixes
-     * @return Private descriptor string with checksum, or empty on error
+     * @return Private key expression, or empty on error
      */
-    fun getBip48PrivateDescriptorForAccount(
+    fun getBip48PrivateKeyExpressionForAccount(
         fingerprint: String,
         masterPrivateKey: DeterministicWallet.ExtendedPrivateKey,
         accountNumber: Int,
@@ -389,10 +402,9 @@ class KeyEncodingService {
             val accountPrivateKey = masterPrivateKey.derivePrivateKey(bip48Path)
             val xpriv = encodeBip32Private(accountPrivateKey, isTestnet)
             val fp = fingerprint.toLongOrNull(16) ?: 0L
-            val isWrapped = bip48ScriptType == DerivationPaths.Bip48ScriptType.P2SH_P2WSH
-            DescriptorExtensions.getBip48Descriptor(fp, bip48Path, xpriv, isWrapped)
+            keyExpression(fp, bip48Path, xpriv)
         } catch (_: Exception) {
-            AppLog.e(TAG) { "Failed to generate BIP48 private descriptor for account $accountNumber" }
+            AppLog.e(TAG) { "Failed to generate BIP48 private key expression for account $accountNumber" }
             ""
         }
     }
@@ -426,6 +438,32 @@ class KeyEncodingService {
     }
 
     // ==================== Private Helpers ====================
+
+    // vaultovich's descriptor builders refuse private keys by design: a signing device does not
+    // normally export them. The password-gated "Spending" export on the Descriptors screen is the
+    // deliberate exception, so the private forms are assembled here with exactly the layout the
+    // library gives the public ones (`[fp/path]key` origin, `<0;1>` multipath, BIP-380 checksum).
+
+    private fun keyExpression(fingerprint: Long, path: String, extendedKey: String): String {
+        val origin = path.removePrefix("m/").removePrefix("m").removePrefix("/").replace("'", "h")
+        return "[${Descriptor.formatFingerprint(fingerprint)}/$origin]$extendedKey"
+    }
+
+    private fun privateUnifiedDescriptor(
+        fingerprint: Long,
+        accountPath: String,
+        xpriv: String,
+        scriptType: ScriptType
+    ): String {
+        val key = "${keyExpression(fingerprint, accountPath, xpriv)}/<0;1>/*"
+        val desc = when (scriptType) {
+            ScriptType.P2WPKH -> "wpkh($key)"
+            ScriptType.P2TR -> "tr($key)"
+            ScriptType.P2SH_P2WPKH -> "sh(wpkh($key))"
+            ScriptType.P2PKH -> "pkh($key)"
+        }
+        return "$desc#${Descriptor.checksum(desc)}"
+    }
 
     // Descriptors always carry BIP32-format inner keys (xpub/tpub, xprv/tprv) regardless of
     // script type — the wrapper (wpkh/sh/wsh/tr) conveys the script type. SLIP132 prefixes
