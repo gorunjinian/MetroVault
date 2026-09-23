@@ -40,7 +40,7 @@ fun LibUsedScreen(
 
         // UI & Design
         Library("Compose Material 3", "UI & Design", "Material Design 3 components for Compose", "1.4.0"),
-        Library("Jetpack Compose", "UI & Design", "Modern declarative UI toolkit", "BOM 2026.08.00"),
+        Library("Jetpack Compose", "UI & Design", "Modern declarative UI toolkit", "BOM 2026.09.00"),
         Library("Compose Material Icons", "UI & Design", "Extended Material Design icons"),
         Library("Navigation Compose", "UI & Design", "Navigation for Compose apps", "2.10.0"),
         Library("Reorderable", "UI & Design", "Drag-and-drop reordering for Compose lists", "3.1.0"),
