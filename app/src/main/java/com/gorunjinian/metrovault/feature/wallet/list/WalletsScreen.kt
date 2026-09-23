@@ -28,8 +28,9 @@ import androidx.compose.ui.res.painterResource
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
+import com.gorunjinian.metrovault.core.ui.dialogs.InfoDialog
 import com.gorunjinian.metrovault.core.ui.dialogs.PassphraseEntryDialog
-import com.gorunjinian.metrovault.core.ui.dialogs.RenameWalletDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.RenameDialog
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.QuickShortcut
@@ -255,7 +256,9 @@ fun WalletsListContent(
 
     if (showRenameDialog != null) {
         val (walletId, currentName) = showRenameDialog!!
-        RenameWalletDialog(
+        RenameDialog(
+            title = "Rename Wallet",
+            label = "Wallet Name",
             currentName = currentName,
             onDismiss = { showRenameDialog = null },
             onConfirm = { newName ->
@@ -378,16 +381,9 @@ fun WalletsListContent(
     }
     
     if (errorMessage.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { errorMessage = "" },
-            title = { Text("Error") },
-            text = { Text(errorMessage) },
-            confirmButton = {
-                TextButton(onClick = { errorMessage = "" }) {
-                    Text("OK")
-                }
-            }
-        )
+        InfoDialog(title = "Error", onDismiss = { errorMessage = "" }) {
+            Text(errorMessage)
+        }
     }
     
     // Delete wallet dialogs (reusable component handles both confirmation and password steps)

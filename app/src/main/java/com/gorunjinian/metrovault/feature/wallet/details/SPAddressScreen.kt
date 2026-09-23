@@ -13,20 +13,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.qr.QRCodeUtils
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.CopyableValueCard
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
-import com.gorunjinian.metrovault.core.ui.dialogs.VerifyPasswordDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.RevealedKeysDialog
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.data.model.SilentPaymentKeys
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
@@ -108,9 +106,7 @@ fun SilentPaymentAddressContent(
         }
     }
 
-    var showWarningDialog by remember { mutableStateOf(false) }
-    var showPasswordDialog by remember { mutableStateOf(false) }
-    var showKeysDialog by remember { mutableStateOf(false) }
+    var showRevealGate by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf("") }
     var revealedKeys by remember { mutableStateOf<SilentPaymentKeys?>(null) }
 
@@ -201,7 +197,10 @@ fun SilentPaymentAddressContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedButton(
-            onClick = { showWarningDialog = true },
+            onClick = {
+                passwordError = ""
+                showRevealGate = true
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Show SP Keys")
@@ -223,111 +222,54 @@ fun SilentPaymentAddressContent(
         Spacer(modifier = Modifier.height(24.dp))
     }
 
-    if (showWarningDialog) {
-        AlertDialog(
-            onDismissRequest = { showWarningDialog = false },
-            title = { Text("Security Warning") },
-            text = {
-                Text(
-                    "The scan private key lets whoever holds it detect every silent payment to " +
-                        "this wallet. The spend public key alone does not let them spend.\n\n" +
-                        "Ensure you are in a private location and no one is watching your screen."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showWarningDialog = false
-                    passwordError = ""
-                    showPasswordDialog = true
-                }) { Text("I Understand") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showWarningDialog = false }) { Text("Cancel") }
-            },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_warning),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
-        )
-    }
-
-    if (showPasswordDialog) {
-        VerifyPasswordDialog(
+    if (showRevealGate) {
+        PasswordGatedWarningDialog(
+            title = "Show Silent Payment Keys?",
+            confirmLabel = "Show Keys",
             secureStorage = secureStorage,
             isDecoyMode = wallet.isDecoyMode,
-            onDismiss = {
-                showPasswordDialog = false
-                passwordError = ""
-            },
+            onDismiss = { showRevealGate = false },
             onVerified = {
-                revealedKeys = wallet.getActiveSilentPaymentKeys()
-                showPasswordDialog = false
-                showKeysDialog = revealedKeys != null
-                passwordError = if (revealedKeys == null) "Keys unavailable" else ""
+                // On failure the password step stays up and says why, instead of closing silently
+                val keys = wallet.getActiveSilentPaymentKeys()
+                if (keys != null) {
+                    revealedKeys = keys
+                    showRevealGate = false
+                } else {
+                    passwordError = "Couldn't load the silent payment keys for this wallet."
+                }
             },
+            destructive = false,
             errorMessage = passwordError
-        )
-    }
-
-    if (showKeysDialog && revealedKeys != null) {
-        SpKeysDialog(
-            keys = revealedKeys!!,
-            onDismiss = {
-                showKeysDialog = false
-                revealedKeys = null
-            }
-        )
-    }
-}
-
-@Composable
-private fun SpKeysDialog(keys: SilentPaymentKeys, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 16.dp),
-            shape = MaterialTheme.shapes.extraLarge
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "Silent Payment Keys",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
+            Text("The scan private key lets anyone who has it see every silent payment this wallet receives. It can't spend them, and the spend private key is never shown.")
+            Text("Make sure you're somewhere private and no one can see your screen.")
+        }
+    }
 
-                CopyableValueCard(
-                    label = "Scan Public Key",
-                    value = keys.scanPublicKey.toHex(),
-                    sensitive = false,
-                    clipboardLabel = "SP Scan Public Key"
-                )
-                CopyableValueCard(
-                    label = "Spend Public Key",
-                    value = keys.spendPublicKey.toHex(),
-                    sensitive = false,
-                    clipboardLabel = "SP Spend Public Key"
-                )
-                CopyableValueCard(
-                    label = "Scan Private Key",
-                    value = keys.scanPrivateKey.toHex(),
-                    sensitive = true,
-                    clipboardLabel = "SP Scan Private Key"
-                )
-
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.End)
-                ) { Text("Close") }
-            }
+    revealedKeys?.let { keys ->
+        RevealedKeysDialog(
+            title = "Silent Payment Keys",
+            onDismiss = { revealedKeys = null }
+        ) {
+            CopyableValueCard(
+                label = "Scan Public Key",
+                value = keys.scanPublicKey.toHex(),
+                sensitive = false,
+                clipboardLabel = "SP Scan Public Key"
+            )
+            CopyableValueCard(
+                label = "Spend Public Key",
+                value = keys.spendPublicKey.toHex(),
+                sensitive = false,
+                clipboardLabel = "SP Spend Public Key"
+            )
+            CopyableValueCard(
+                label = "Scan Private Key",
+                value = keys.scanPrivateKey.toHex(),
+                sensitive = true,
+                clipboardLabel = "SP Scan Private Key"
+            )
         }
     }
 }

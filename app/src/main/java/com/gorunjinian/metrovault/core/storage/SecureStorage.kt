@@ -1031,26 +1031,6 @@ class SecureStorage(private val context: Context) {
         return updatedCount
     }
 
-    /**
-     * Gets all multisig wallets that reference a given key by fingerprint.
-     * This includes multisig wallets where the key matches a cosigner fingerprint,
-     * regardless of whether the key was present at import time.
-     *
-     * @param fingerprint The key fingerprint to check
-     * @param isDecoy Whether to check in decoy mode
-     * @return List of wallet names that use this key as a cosigner
-     */
-    fun getMultisigWalletsUsingFingerprint(fingerprint: String, isDecoy: Boolean): List<String> {
-        return loadAllWalletMetadata(isDecoy)
-            .filter { metadata ->
-                metadata.isMultisig &&
-                metadata.multisigConfig?.cosigners?.any {
-                    it.fingerprint.equals(fingerprint, ignoreCase = true)
-                } == true
-            }
-            .map { it.name }
-    }
-
     // ============================================================================
     // WALLET INDEX & ORDER
     // ============================================================================

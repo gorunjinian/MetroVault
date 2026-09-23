@@ -58,8 +58,10 @@ For users who prefer verifiable randomness:
 │  • 12-word mnemonic: requires 128 flips                         │
 │  • 24-word mnemonic: requires 256 flips                         │
 │                                                                 │
-│  Packing: 8 flips → 1 byte                                      │
-│  Example: H,T,T,H,T,H,H,T → 0b01101001 → 0x69                   │
+
+
+│  Encoding: 1 byte per flip, in entry order                      │
+│  Example: H,T,T,H → 0x00 0x01 0x01 0x00                         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -72,13 +74,15 @@ Casino-grade dice provide excellent physical randomness:
 │                      Dice Roll Method                           │
 ├─────────────────────────────────────────────────────────────────┤
 │  • Each roll (1-6) contributes ~2.58 bits (log₂(6))             │
-│  • Two rolls combined: (roll1 - 1) × 6 + (roll2 - 1)            │
-│  • Result: 0-35 packed into one byte                            │
+│  • Encoding: 1 byte per roll (1-6), in entry order              │
+│  • Example: 3,6,1 → 0x03 0x06 0x01                              │
 │                                                                 │
 │  12-word mnemonic: ~50 rolls (128 bits / 2.58 bits per roll)    │
 │  24-word mnemonic: ~100 rolls                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Neither source is packed into bits. SHA-256 compresses the input during mixing (below), so every toss or roll reaches the hash, including a final partial byte of tosses or an odd last roll.
 
 ### Entropy Mixing (When User Entropy Is Provided)
 

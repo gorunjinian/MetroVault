@@ -18,7 +18,9 @@ import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.core.ui.dialogs.VerifyPasswordDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
 import com.gorunjinian.metrovault.data.model.WalletKeys
+import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
 
@@ -53,15 +55,18 @@ fun WalletKeysScreen(
     
     // Delete dialog state
     var keyToDelete by remember { mutableStateOf<WalletKeys?>(null) }
-    var showDeleteWarning by remember { mutableStateOf(false) }
-    var showDeletePasswordDialog by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
-    var walletsToDelete by remember { mutableStateOf<List<String>>(emptyList()) }
-    var multisigWalletsUsingKey by remember { mutableStateOf<List<String>>(emptyList()) }
-    
+    var deletionImpact by remember { mutableStateOf(KeyDeletionImpact()) }
+
     // Load keys on composition
     fun loadKeys() {
         keys = secureStorage.loadAllWalletKeys(wallet.isDecoyMode)
+    }
+
+    // Every delete starts with the warning, which lists the wallets the deletion affects
+    fun requestDeleteKey(key: WalletKeys) {
+        deletionImpact = keyDeletionImpact(key.keyId, secureStorage.loadAllWalletMetadata(wallet.isDecoyMode))
+        keyToDelete = key
     }
     
     // Initial load
@@ -179,13 +184,7 @@ fun WalletKeysScreen(
                                 },
                                 onLongClick = {
                                     if (!isEditMode) {
-                                        keyToDelete = key
-                                        walletsToDelete = referencingWallets
-                                        // Get multisig wallets that reference this key by fingerprint
-                                        multisigWalletsUsingKey = secureStorage.getMultisigWalletsUsingFingerprint(
-                                            key.fingerprint, wallet.isDecoyMode
-                                        )
-                                        showDeleteWarning = true
+                                        requestDeleteKey(key)
                                     }
                                 }
                             ),
@@ -224,12 +223,7 @@ fun WalletKeysScreen(
                             if (isEditMode) {
                                 IconButton(
                                     onClick = {
-                                        keyToDelete = key
-                                        walletsToDelete = referencingWallets
-                                        multisigWalletsUsingKey = secureStorage.getMultisigWalletsUsingFingerprint(
-                                            key.fingerprint, wallet.isDecoyMode
-                                        )
-                                        showDeletePasswordDialog = true
+                                        requestDeleteKey(key)
                                     }
                                 ) {
                                     Icon(
@@ -492,162 +486,119 @@ fun WalletKeysScreen(
     }
     
     // ========================================
-    // Delete Warning Dialog
+    // Delete Key: warning, then password
     // ========================================
-    if (showDeleteWarning && keyToDelete != null) {
-        val key = keyToDelete!!
-        val directWalletCount = walletsToDelete.size
-        val multisigCount = multisigWalletsUsingKey.size
-        
-        AlertDialog(
-            onDismissRequest = { 
-                showDeleteWarning = false
-                keyToDelete = null
-            },
-            icon = { 
-                Icon(
-                    painter = painterResource(R.drawable.ic_warning), 
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                ) 
-            },
-            title = { Text("Delete ${key.label.ifEmpty { "Key" }}?") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (directWalletCount == 0 && multisigCount == 0) {
-                        Text(
-                            "This key is not used by any wallet and will be permanently deleted.\n\n" +
-                            "This action cannot be undone."
-                        )
-                    } else {
-                        Text(
-                            "This will permanently delete this key.",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        
-                        if (directWalletCount > 0) {
-                            Text(
-                                "• $directWalletCount ${if (directWalletCount == 1) "wallet" else "wallets"} will be deleted",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        
-                        if (multisigCount > 0) {
-                            Text(
-                                "This key is also used by $multisigCount multisig ${if (multisigCount == 1) "wallet" else "wallets"}:",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            multisigWalletsUsingKey.forEach { name ->
-                                Text(
-                                    "   • $name",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                            Text(
-                                "These multisig wallets will lose the ability to sign with this key.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "This action cannot be undone unless you have your seed phrase backed up.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteWarning = false
-                        showDeletePasswordDialog = true
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showDeleteWarning = false
-                    keyToDelete = null
-                }) { Text("Cancel") }
-            }
-        )
-    }
-    
-    // ========================================
-    // Delete Password Confirmation Dialog
-    // ========================================
-    if (showDeletePasswordDialog && keyToDelete != null) {
-        VerifyPasswordDialog(
+    keyToDelete?.let { key ->
+        PasswordGatedWarningDialog(
+            title = if (key.label.isNotEmpty()) "Delete \"${key.label}\"?" else "Delete This Key?",
+            confirmLabel = "Delete",
             secureStorage = secureStorage,
             isDecoyMode = wallet.isDecoyMode,
-            onDismiss = {
-                showDeletePasswordDialog = false
-                keyToDelete = null
-            },
+            onDismiss = { keyToDelete = null },
             onVerified = {
                 val isDecoy = wallet.isDecoyMode
                 isDeleting = true
                 scope.launch {
-                        val key = keyToDelete!!
-                        
-                        // First, delete all wallets that reference this key
-                        val walletsList = secureStorage.loadAllWalletMetadata(isDecoy)
-                        for (w in walletsList) {
-                            // Delete single-sig wallets that use this key
-                            if (!w.isMultisig && w.keyIds.contains(key.keyId)) {
-                                wallet.deleteWallet(w.id)
-                            }
-                            // Delete multisig wallets that ONLY have this key as local signer
-                            if (w.isMultisig && w.keyIds.size == 1 && w.keyIds.contains(key.keyId)) {
-                                wallet.deleteWallet(w.id)
-                            }
-                            // For multisig with multiple local keys, remove this key reference
-                            if (w.isMultisig && w.keyIds.size > 1 && w.keyIds.contains(key.keyId)) {
-                                val updatedKeyIds = w.keyIds.filter { it != key.keyId }
-                                // Update cosigner isLocal flags
-                                val updatedCosigners = w.multisigConfig?.cosigners?.map { cosigner ->
-                                    if (cosigner.keyId == key.keyId) {
-                                        cosigner.copy(isLocal = false, keyId = null)
-                                    } else {
-                                        cosigner
-                                    }
-                                }
-                                val updatedConfig = w.multisigConfig?.copy(
-                                    cosigners = updatedCosigners ?: emptyList(),
-                                    localKeyFingerprints = w.multisigConfig.localKeyFingerprints.filter { 
-                                        !it.equals(key.fingerprint, ignoreCase = true) 
-                                    }
-                                )
-                                val updatedMetadata = w.copy(
-                                    keyIds = updatedKeyIds,
-                                    multisigConfig = updatedConfig
-                                )
-                                secureStorage.updateWalletMetadata(updatedMetadata, isDecoy)
-                            }
+                    // First, delete all wallets that reference this key
+                    val walletsList = secureStorage.loadAllWalletMetadata(isDecoy)
+                    for (w in walletsList) {
+                        // Delete single-sig wallets that use this key
+                        if (!w.isMultisig && w.keyIds.contains(key.keyId)) {
+                            wallet.deleteWallet(w.id)
                         }
-                        
-                        // Now delete the key (should be unreferenced or force delete)
-                        secureStorage.deleteWalletKey(key.keyId, isDecoy)
-                        
-                        // Refresh wallet list
-                        wallet.refreshWallets()
-                        
-                        isDeleting = false
-                        showDeletePasswordDialog = false
-                        keyToDelete = null
-                        loadKeys()
+                        // Delete multisig wallets that ONLY have this key as local signer
+                        if (w.isMultisig && w.keyIds.size == 1 && w.keyIds.contains(key.keyId)) {
+                            wallet.deleteWallet(w.id)
+                        }
+                        // For multisig with multiple local keys, remove this key reference
+                        if (w.isMultisig && w.keyIds.size > 1 && w.keyIds.contains(key.keyId)) {
+                            val updatedKeyIds = w.keyIds.filter { it != key.keyId }
+                            // Update cosigner isLocal flags
+                            val updatedCosigners = w.multisigConfig?.cosigners?.map { cosigner ->
+                                if (cosigner.keyId == key.keyId) {
+                                    cosigner.copy(isLocal = false, keyId = null)
+                                } else {
+                                    cosigner
+                                }
+                            }
+                            val updatedConfig = w.multisigConfig?.copy(
+                                cosigners = updatedCosigners ?: emptyList(),
+                                localKeyFingerprints = w.multisigConfig.localKeyFingerprints.filter {
+                                    !it.equals(key.fingerprint, ignoreCase = true)
+                                }
+                            )
+                            val updatedMetadata = w.copy(
+                                keyIds = updatedKeyIds,
+                                multisigConfig = updatedConfig
+                            )
+                            secureStorage.updateWalletMetadata(updatedMetadata, isDecoy)
+                        }
                     }
+
+                    // Now delete the key (should be unreferenced or force delete)
+                    secureStorage.deleteWalletKey(key.keyId, isDecoy)
+
+                    // Refresh wallet list
+                    wallet.refreshWallets()
+
+                    isDeleting = false
+                    keyToDelete = null
+                    loadKeys()
+                }
             },
             isLoading = isDeleting
+        ) {
+            if (deletionImpact.deletedWallets.isEmpty() && deletionImpact.multisigsLosingKey.isEmpty()) {
+                Text("No wallet uses this key. It will be permanently removed from this device.")
+            } else {
+                Text("This permanently removes the key from this device.")
+                KeyDeletionWalletList(
+                    heading = "These wallets depend on it and will also be deleted:",
+                    walletNames = deletionImpact.deletedWallets
+                )
+                KeyDeletionWalletList(
+                    heading = "These multisig wallets stay, but can no longer sign with this key:",
+                    walletNames = deletionImpact.multisigsLosingKey
+                )
+            }
+            Text(
+                "You can only restore it from its seed phrase.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * What deleting a key does to the vault's wallets, for the delete warning. Mirrors the
+ * deletion in the password dialog's `onVerified`: a wallet goes with the key when the key is
+ * its only local signer, and a multisig wallet with other local signers just loses this one.
+ */
+private class KeyDeletionImpact(
+    val deletedWallets: List<String> = emptyList(),
+    val multisigsLosingKey: List<String> = emptyList()
+)
+
+private fun keyDeletionImpact(keyId: String, wallets: List<WalletMetadata>): KeyDeletionImpact {
+    val (losingKey, deleted) = wallets
+        .filter { keyId in it.keyIds }
+        .partition { it.isMultisig && it.keyIds.size > 1 }
+    return KeyDeletionImpact(
+        deletedWallets = deleted.map { it.name },
+        multisigsLosingKey = losingKey.map { it.name }
+    )
+}
+
+@Composable
+private fun KeyDeletionWalletList(heading: String, walletNames: List<String>) {
+    if (walletNames.isEmpty()) return
+    Text(heading, color = MaterialTheme.colorScheme.error)
+    walletNames.forEach { name ->
+        Text(
+            "   • $name",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
         )
     }
 }

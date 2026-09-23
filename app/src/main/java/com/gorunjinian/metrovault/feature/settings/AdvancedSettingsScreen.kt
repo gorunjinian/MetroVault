@@ -16,7 +16,9 @@ import kotlinx.coroutines.launch
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.SettingsInfoCard
 import com.gorunjinian.metrovault.core.ui.components.SettingsItem
+import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
 import com.gorunjinian.metrovault.core.ui.dialogs.VerifyPasswordDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.WarningDialog
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 
@@ -40,7 +42,6 @@ fun AdvancedSettingsScreen(
     val silentPaymentsEnabled by userPreferencesRepository.silentPaymentsEnabled.collectAsState()
 
     var showDeleteAllWalletsDialog by remember { mutableStateOf(false) }
-    var showDeletePasswordDialog by remember { mutableStateOf(false) }
     var showDisableAccountsWarningDialog by remember { mutableStateOf(false) }
     var showKeysPasswordDialog by remember { mutableStateOf(false) }
 
@@ -299,56 +300,17 @@ fun AdvancedSettingsScreen(
         }
     }
 
-    // Delete All Wallets warning dialog (Step 1)
+    // Delete All Wallets: warning, then password
     if (showDeleteAllWalletsDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteAllWalletsDialog = false },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_warning),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            },
-            title = { Text("Delete All Wallets") },
-            text = {
-                Text(
-                    "This will permanently delete all wallets from this vault.\n\n" +
-                    "This action cannot be undone unless you have your seed phrases backed up."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteAllWalletsDialog = false
-                        showDeletePasswordDialog = true
-                    }
-                ) {
-                    Text("I Understand", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteAllWalletsDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    // Delete All Wallets password confirmation dialog (Step 2)
-    if (showDeletePasswordDialog) {
         var passwordError by remember { mutableStateOf("") }
         var isDeleting by remember { mutableStateOf(false) }
 
-        VerifyPasswordDialog(
+        PasswordGatedWarningDialog(
+            title = "Delete All Wallets?",
+            confirmLabel = "Delete All",
             secureStorage = secureStorage,
             isDecoyMode = wallet.isDecoyMode,
-            onDismiss = {
-                if (!isDeleting) {
-                    showDeletePasswordDialog = false
-                    passwordError = ""
-                }
-            },
+            onDismiss = { if (!isDeleting) showDeleteAllWalletsDialog = false },
             onVerified = {
                 isDeleting = true
                 scope.launch {
@@ -363,7 +325,7 @@ fun AdvancedSettingsScreen(
                     }
                     isDeleting = false
                     if (allDeleted) {
-                        showDeletePasswordDialog = false
+                        showDeleteAllWalletsDialog = false
                         android.widget.Toast.makeText(
                             context,
                             "All wallets deleted",
@@ -376,43 +338,26 @@ fun AdvancedSettingsScreen(
             },
             isLoading = isDeleting,
             errorMessage = passwordError
-        )
+        ) {
+            Text("This permanently removes every wallet in this vault from this device, along with their keys.")
+            Text("You'll need your backups to access them again: each wallet's seed phrase (plus its passphrase, if it has one), and the descriptor of each multisig wallet.")
+        }
     }
 
     // Warning dialog for disabling Different Accounts with multi-account wallets
     if (showDisableAccountsWarningDialog) {
-        AlertDialog(
-            onDismissRequest = { showDisableAccountsWarningDialog = false },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_warning),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
+        WarningDialog(
+            title = "Hide Different Accounts?",
+            confirmLabel = "Hide Anyway",
+            onConfirm = {
+                userPreferencesRepository.setDifferentAccountsEnabled(false)
+                showDisableAccountsWarningDialog = false
             },
-            title = { Text("Hide Different Accounts?") },
-            text = {
-                Text(
-                    "One or more wallets have multiple account numbers. " +
-                    "Hiding this option will not delete the accounts, but you won't " +
-                    "be able to access or switch between them from within the app.\n\n" +
-                    "You can re-enable this setting at any time to regain access."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    userPreferencesRepository.setDifferentAccountsEnabled(false)
-                    showDisableAccountsWarningDialog = false
-                }) {
-                    Text("Hide Anyway", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDisableAccountsWarningDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
+            onDismiss = { showDisableAccountsWarningDialog = false }
+        ) {
+            Text("One or more wallets have multiple account numbers. Hiding this option doesn't delete those accounts, but you won't be able to open or switch between them in the app.")
+            Text("You can turn this setting back on at any time to regain access.")
+        }
     }
 
     // Password confirmation dialog for View All Saved Keys

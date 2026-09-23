@@ -1,6 +1,7 @@
 package com.gorunjinian.metrovault.feature.wallet.create
 
 import android.annotation.SuppressLint
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -22,6 +24,8 @@ import com.gorunjinian.metrovault.core.ui.components.InfoCard
 import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
+import com.gorunjinian.metrovault.core.ui.dialogs.InfoDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.WarningDialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
@@ -54,6 +58,22 @@ fun CreateWalletScreen(
         onDispose {
             viewModel.clearSensitiveData()
         }
+    }
+
+    // Collecting coin tosses or dice rolls takes minutes, and a screen timeout pauses the
+    // activity, whose emergency wipe locks the app and loses the wizard. Keep the screen on
+    // for the whole flow; pressing the power button or leaving the app still wipes as before.
+    val view = LocalView.current
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
+
+    // System back steps through the wizard like the top bar's arrow instead of leaving it
+    BackHandler {
+        viewModel.goToPreviousStep()
     }
 
     Scaffold(
@@ -94,7 +114,7 @@ fun CreateWalletScreen(
                     entropyInputCount = uiState.entropyInputCount,
                     onEntropyTypeChange = { viewModel.setEntropyType(it) },
                     onAddEntropy = { viewModel.addEntropyInput(it) },
-                    onResetEntropy = { viewModel.resetEntropy() },
+                    onResetEntropy = { viewModel.requestResetEntropy() },
                     onRevealSeed = { viewModel.showSecurityWarning() }
                 )
 
@@ -130,55 +150,69 @@ fun CreateWalletScreen(
 
     // Entropy explanation dialog, shown before the entropy step can be used
     if (uiState.showEntropyInfoDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissEntropyInfo() },
-            title = { Text("How Your Seed Is Generated") },
-            text = {
-                Text(
-                    text = androidx.compose.ui.text.buildAnnotatedString {
-                        append("Your seed phrase is generated from your device's cryptographically secure random number generator.\n\nOptionally, you can add your own randomness with coin tosses or dice rolls. Your input is combined with the device's randomness using SHA-256 — ")
-                        withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append("it is added on top of system entropy, never used alone")
-                        }
-                        append(", so it can only strengthen the result.\n\nSkipping this step is safe: your seed will still use full system entropy.")
+        InfoDialog(
+            title = "How Your Seed Is Generated",
+            onDismiss = { viewModel.dismissEntropyInfo() },
+            buttonLabel = "Got It",
+            icon = R.drawable.ic_info
+        ) {
+            Text(
+                text = androidx.compose.ui.text.buildAnnotatedString {
+                    append("Your seed phrase is generated from your device's cryptographically secure random number generator.\n\nOptionally, you can add your own randomness with coin tosses or dice rolls. Your input is combined with the device's randomness using SHA-256 — ")
+                    withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append("it is added on top of system entropy, never used alone")
                     }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissEntropyInfo() }) {
-                    Text("Got It")
+                    append(", so it can only strengthen the result.\n\nSkipping this step is safe: your seed will still use full system entropy.")
                 }
-            },
-            icon = { Icon(painter = painterResource(R.drawable.ic_info), contentDescription = null) }
+            )
+        }
+    }
+
+    // Warning before the new seed phrase is generated and shown
+    if (uiState.showWarningDialog) {
+        WarningDialog(
+            title = "Show Your Seed Phrase?",
+            confirmLabel = "Show Seed Phrase",
+            onConfirm = { viewModel.generateMnemonic() },
+            onDismiss = { viewModel.dismissSecurityWarning() },
+            destructive = false
+        ) {
+            Text("Your seed phrase is the only way to recover this wallet if this device is lost or reset. Anyone who sees it can take your funds.")
+            Text(
+                text = "Write it down on paper and keep it somewhere safe and private. Never photograph it or store it digitally.",
+                fontWeight = FontWeight.Bold
+            )
+            Text("Make sure you're somewhere private and no one can see your screen.")
+        }
+    }
+
+    uiState.pendingEntropyType?.let { pendingType ->
+        WarningDialog(
+            title = "Switch to ${if (pendingType == "coin") "Coin Tosses" else "Dice Rolls"}?",
+            message = "Switching sources discards the ${uiState.entropyInputCount} you've entered so far.",
+            confirmLabel = "Switch",
+            onConfirm = { viewModel.confirmEntropyTypeSwitch() },
+            onDismiss = { viewModel.dismissEntropyTypeSwitch() }
         )
     }
 
-    // Security warning dialog
-    if (uiState.showWarningDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissSecurityWarning() },
-            title = { Text("Security Warning") },
-            text = {
-                Text(
-                    text = androidx.compose.ui.text.buildAnnotatedString {
-                        append("Your seed phrase is the master key to your funds. Never share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.\n\n")
-                        withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append("Write it down and keep it somewhere secure and private")
-                        }
-                    }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.generateMnemonic() }) {
-                    Text("I Understand")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.dismissSecurityWarning() }) {
-                    Text("Cancel")
-                }
-            },
-            icon = { Icon(painter = painterResource(R.drawable.ic_warning), contentDescription = null) }
+    if (uiState.showResetEntropyDialog) {
+        WarningDialog(
+            title = "Reset Entropy?",
+            message = "The ${uiState.entropyInputCount} you've entered will be discarded. This can't be undone.",
+            confirmLabel = "Reset",
+            onConfirm = { viewModel.confirmResetEntropy() },
+            onDismiss = { viewModel.dismissResetEntropy() }
+        )
+    }
+
+    if (uiState.showDiscardSeedDialog) {
+        WarningDialog(
+            title = "Discard This Seed Phrase?",
+            message = "Going back discards this seed phrase. Revealing again generates a completely different one, so don't keep any words you've already written down.",
+            confirmLabel = "Discard",
+            onConfirm = { viewModel.confirmDiscardSeed() },
+            onDismiss = { viewModel.dismissDiscardSeed() }
         )
     }
 }

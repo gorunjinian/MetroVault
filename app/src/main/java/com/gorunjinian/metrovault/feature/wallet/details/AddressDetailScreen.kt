@@ -2,8 +2,6 @@ package com.gorunjinian.metrovault.feature.wallet.details
 
 import android.graphics.Bitmap
 import android.widget.Toast
-import androidx.compose.ui.res.painterResource
-import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,7 +24,8 @@ import com.gorunjinian.metrovault.core.qr.QRCodeUtils
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.CopyableValueCard
-import com.gorunjinian.metrovault.core.ui.dialogs.VerifyPasswordDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.RevealedKeysDialog
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
@@ -45,8 +44,7 @@ fun AddressDetailScreen(
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     
     // Show Keys dialog states
-    var showWarningDialog by remember { mutableStateOf(false) }
-    var showPasswordDialog by remember { mutableStateOf(false) }
+    var showRevealGate by remember { mutableStateOf(false) }
     var showKeysDialog by remember { mutableStateOf(false) }
     var addressKeys by remember { mutableStateOf<AddressService.AddressKeyPair?>(null) }
 
@@ -156,7 +154,7 @@ fun AddressDetailScreen(
 
             // Show Keys button
             OutlinedButton(
-                onClick = { showWarningDialog = true },
+                onClick = { showRevealGate = true },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Show Keys")
@@ -193,110 +191,56 @@ fun AddressDetailScreen(
         }
     }
     
-    // Security Warning Dialog
-    if (showWarningDialog) {
-        AlertDialog(
-            onDismissRequest = { showWarningDialog = false },
-            title = { Text("Security Warning") },
-            text = {
-                Text("The private key can spend all funds sent to this address.\n\nNever share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showWarningDialog = false
-                        showPasswordDialog = true
-                    }
-                ) {
-                    Text("I Understand")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showWarningDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_warning),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
-        )
-    }
-    
-    // Password Confirmation Dialog
-    if (showPasswordDialog) {
-        VerifyPasswordDialog(
+    // Show Keys: security warning, then password
+    if (showRevealGate) {
+        PasswordGatedWarningDialog(
+            title = "Security Warning",
+            confirmLabel = "I Understand",
             secureStorage = secureStorage,
             isDecoyMode = wallet.isDecoyMode,
-            onDismiss = { showPasswordDialog = false },
+            onDismiss = { showRevealGate = false },
             onVerified = {
                 addressKeys = wallet.getAddressKeys(
                     index = addressIndex,
                     isChange = isChange
                 )
-                showPasswordDialog = false
+                showRevealGate = false
                 showKeysDialog = true
-            }
-        )
+            },
+            destructive = false
+        ) {
+            Text("The private key can spend all funds sent to this address.\n\nNever share it with anyone.\n\nEnsure you are in a private location and no one is watching your screen.")
+        }
     }
-    
+
     // Keys Display Dialog
-    if (showKeysDialog && addressKeys != null) {
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { 
+    val keys = addressKeys
+    if (showKeysDialog && keys != null) {
+        RevealedKeysDialog(
+            title = "Address Keys",
+            onDismiss = {
                 showKeysDialog = false
                 addressKeys = null
-            }
+            },
+            spacing = 20.dp
         ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 16.dp),
-                shape = MaterialTheme.shapes.extraLarge
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    Text(
-                        text = "Address Keys",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    
-                    // Public Key
-                    CopyableValueCard(
-                        value = addressKeys!!.publicKey,
-                        clipboardLabel = "Public Key",
-                        label = "Public Key",
-                        sensitive = false,
-                        textStyle = MaterialTheme.typography.bodyLarge
-                    )
+            // Public Key
+            CopyableValueCard(
+                value = keys.publicKey,
+                clipboardLabel = "Public Key",
+                label = "Public Key",
+                sensitive = false,
+                textStyle = MaterialTheme.typography.bodyLarge
+            )
 
-                    // Private Key (WIF) — sensitive, so the clipboard entry self-clears
-                    CopyableValueCard(
-                        value = addressKeys!!.privateKeyWIF,
-                        clipboardLabel = "Private Key",
-                        label = "Private Key",
-                        sensitive = true,
-                        textStyle = MaterialTheme.typography.bodyLarge
-                    )
-
-                    // Close button
-                    TextButton(
-                        onClick = { 
-                            showKeysDialog = false
-                            addressKeys = null
-                        },
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("Close")
-                    }
-                }
-            }
+            // Private Key (WIF) — sensitive, so the clipboard entry self-clears
+            CopyableValueCard(
+                value = keys.privateKeyWIF,
+                clipboardLabel = "Private Key",
+                label = "Private Key",
+                sensitive = true,
+                textStyle = MaterialTheme.typography.bodyLarge
+            )
         }
     }
 }

@@ -62,12 +62,15 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         val isCreatingWallet: Boolean = false,
         val showWarningDialog: Boolean = false,
         val showEntropyInfoDialog: Boolean = false,
-        val hasShownEntropyInfo: Boolean = false
+        val hasShownEntropyInfo: Boolean = false,
+
+        // Confirmations for actions that throw away entered data
+        val pendingEntropyType: String? = null, // Source the user asked to switch to, awaiting confirmation
+        val showResetEntropyDialog: Boolean = false,
+        val showDiscardSeedDialog: Boolean = false
     ) {
         // Derived properties
         val requiredEntropyBits: Int get() = if (wordCount == 12) 128 else 256
-
-        val entropyBytes: ByteArray get() = calculateEntropyBytes(entropyType, collectedEntropy)
 
         // Calculate bits collected based on entropy type
         // Coin flip: 1 bit per flip (log2(2) = 1)
@@ -82,9 +85,11 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         val entropyProgress: Float get() =
             (bitsCollected.toFloat() / requiredEntropyBits).coerceIn(0f, 1f)
 
-        val entropyInputCount: String get() = "${collectedEntropy.size} ${
-            if (entropyType == "coin") "coin flips" else "dice rolls"
-        }"
+        val entropyInputCount: String get() {
+            val count = collectedEntropy.size
+            val noun = if (entropyType == "coin") "coin flip" else "dice roll"
+            return "$count $noun${if (count == 1) "" else "s"}"
+        }
     }
 
     private val _uiState = MutableStateFlow(UiState())
@@ -117,13 +122,29 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
 
     fun goToPreviousStep() {
         val currentStep = _uiState.value.currentStep
-        if (currentStep > 1) {
-            _uiState.update { it.copy(currentStep = currentStep - 1) }
-        } else {
-            viewModelScope.launch {
+        when {
+            // Leaving the seed step discards the seed (revealing again generates a new one), so ask first
+            currentStep == 3 -> _uiState.update { it.copy(showDiscardSeedDialog = true) }
+            currentStep > 1 -> _uiState.update { it.copy(currentStep = currentStep - 1) }
+            else -> viewModelScope.launch {
                 _events.emit(CreateWalletEvent.NavigateBack)
             }
         }
+    }
+
+    fun confirmDiscardSeed() {
+        _uiState.update {
+            it.copy(
+                showDiscardSeedDialog = false,
+                currentStep = 2,
+                generatedMnemonic = emptyList(),
+                realtimeFingerprint = "" // Belonged to the discarded seed
+            )
+        }
+    }
+
+    fun dismissDiscardSeed() {
+        _uiState.update { it.copy(showDiscardSeedDialog = false) }
     }
 
     // ========== Step 1: Configuration ==========
@@ -156,9 +177,26 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
     // ========== Step 2: Entropy ==========
 
     fun setEntropyType(type: String) {
-        _uiState.update {
-            it.copy(entropyType = type, collectedEntropy = emptyList())
+        _uiState.update { state ->
+            when {
+                // Re-tapping the active source must not wipe its entries
+                type == state.entropyType -> state
+                state.collectedEntropy.isEmpty() -> state.copy(entropyType = type)
+                // Switching discards what was entered, so confirm first
+                else -> state.copy(pendingEntropyType = type)
+            }
         }
+    }
+
+    fun confirmEntropyTypeSwitch() {
+        _uiState.update { state ->
+            val type = state.pendingEntropyType ?: return@update state
+            state.copy(entropyType = type, collectedEntropy = emptyList(), pendingEntropyType = null)
+        }
+    }
+
+    fun dismissEntropyTypeSwitch() {
+        _uiState.update { it.copy(pendingEntropyType = null) }
     }
 
     fun addEntropyInput(value: Int) {
@@ -167,8 +205,18 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun resetEntropy() {
-        _uiState.update { it.copy(collectedEntropy = emptyList()) }
+    fun requestResetEntropy() {
+        _uiState.update {
+            if (it.collectedEntropy.isEmpty()) it else it.copy(showResetEntropyDialog = true)
+        }
+    }
+
+    fun confirmResetEntropy() {
+        _uiState.update { it.copy(collectedEntropy = emptyList(), showResetEntropyDialog = false) }
+    }
+
+    fun dismissResetEntropy() {
+        _uiState.update { it.copy(showResetEntropyDialog = false) }
     }
 
     fun dismissEntropyInfo() {
@@ -189,13 +237,17 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
 
             val state = _uiState.value
             val userEntropyBytes = if (state.collectedEntropy.isNotEmpty()) {
-                state.entropyBytes
+                encodeUserEntropy(state.collectedEntropy)
             } else {
                 null
             }
 
-            val mnemonic = withContext(Dispatchers.IO) {
-                wallet.generateMnemonic(state.wordCount, userEntropyBytes)
+            val mnemonic = try {
+                withContext(Dispatchers.IO) {
+                    wallet.generateMnemonic(state.wordCount, userEntropyBytes)
+                }
+            } finally {
+                userEntropyBytes?.fill(0)
             }
 
             _uiState.update {
@@ -300,55 +352,6 @@ class CreateWalletViewModel(application: Application) : AndroidViewModel(applica
                 confirmBip39Passphrase = "",
                 collectedEntropy = emptyList()
             )
-        }
-    }
-
-    companion object {
-        /**
-         * Converts collected entropy inputs to a byte array.
-         * For coins: packs bits (0=Heads, 1=Tails) into bytes
-         * For dice: converts dice values to bytes using the raw values
-         */
-        private fun calculateEntropyBytes(entropyType: String, inputs: List<Int>): ByteArray {
-            if (inputs.isEmpty()) return ByteArray(0)
-
-            return when (entropyType) {
-                "coin" -> {
-                    // Pack coin flips as bits into bytes
-                    val bytes = mutableListOf<Byte>()
-                    var currentByte = 0
-                    var bitCount = 0
-
-                    for (flip in inputs) {
-                        currentByte = (currentByte shl 1) or flip
-                        bitCount++
-
-                        if (bitCount == 8) {
-                            bytes.add(currentByte.toByte())
-                            currentByte = 0
-                            bitCount = 0
-                        }
-                    }
-
-                    bytes.toByteArray()
-                }
-                "dice" -> {
-                    // Use dice values directly, each roll contributes ~2.58 bits
-                    // Pack pairs of dice rolls into bytes for efficiency
-                    val bytes = mutableListOf<Byte>()
-
-                    for (i in inputs.indices step 2) {
-                        if (i + 1 < inputs.size) {
-                            // Combine two dice values (1-6) into one byte
-                            val combined = (inputs[i] - 1) * 6 + (inputs[i + 1] - 1)
-                            bytes.add(combined.toByte())
-                        }
-                    }
-
-                    bytes.toByteArray()
-                }
-                else -> ByteArray(0)
-            }
         }
     }
 }

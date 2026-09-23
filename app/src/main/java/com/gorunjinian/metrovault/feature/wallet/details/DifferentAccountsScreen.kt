@@ -22,8 +22,8 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
-import com.gorunjinian.metrovault.core.ui.dialogs.VerifyPasswordDialog
-import com.gorunjinian.metrovault.core.ui.dialogs.RenameAccountDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.RenameDialog
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
@@ -65,10 +65,16 @@ fun DifferentAccountsScreen(
     
     // Delete dialog states
     var accountToDelete by remember { mutableStateOf<Int?>(null) }
-    var showDeleteWarning by remember { mutableStateOf(false) }
-    var showPasswordDialog by remember { mutableStateOf(false) }
+    var skipDeleteWarning by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf("") }
     var isDeleting by remember { mutableStateOf(false) }
+
+    // Edit mode skips the warning and goes directly to the password dialog
+    fun requestDelete(accountNum: Int, fromEditMode: Boolean) {
+        skipDeleteWarning = fromEditMode
+        passwordError = ""
+        accountToDelete = accountNum
+    }
     
     // Edit mode state
     var isEditMode by remember { mutableStateOf(false) }
@@ -171,8 +177,7 @@ fun DifferentAccountsScreen(
                                 // Long-press delete only in normal mode
                                 if (!isEditMode && canDelete) {
                                     view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                                    accountToDelete = accountNum
-                                    showDeleteWarning = true
+                                    requestDelete(accountNum, fromEditMode = false)
                                 }
                             }
                         ),
@@ -224,10 +229,7 @@ fun DifferentAccountsScreen(
                             IconButton(
                                 onClick = {
                                     view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                                    accountToDelete = accountNum
-                                    // In edit mode, skip warning and go directly to password dialog
-                                    passwordError = ""
-                                    showPasswordDialog = true
+                                    requestDelete(accountNum, fromEditMode = true)
                                 }
                             ) {
                                 Icon(
@@ -249,78 +251,39 @@ fun DifferentAccountsScreen(
         }
     }
     
-    // Delete Warning Dialog
-    if (showDeleteWarning && accountToDelete != null) {
-        val deleteDisplayName = activeWalletMetadata?.getAccountDisplayName(accountToDelete!!) ?: "Account ${accountToDelete!!}"
-        AlertDialog(
-            onDismissRequest = { 
-                showDeleteWarning = false
-                accountToDelete = null
-            },
-            icon = { 
-                Icon(
-                    painter = painterResource(R.drawable.ic_warning), 
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                ) 
-            },
-            title = { Text("Remove $deleteDisplayName?") },
-            text = {
-                Text(
-                    "This will remove \"$deleteDisplayName\" from this wallet.\n\n" +
-                    "The account can be re-added later using the same account number. " +
-                    "Any funds on this account will still be accessible by re-adding it."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteWarning = false
-                        passwordError = ""
-                        showPasswordDialog = true
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showDeleteWarning = false
-                    accountToDelete = null
-                }) { Text("Cancel") }
-            }
-        )
-    }
-    
-    // Password Confirmation Dialog
-    if (showPasswordDialog && accountToDelete != null) {
-        VerifyPasswordDialog(
+    // Remove Account: warning (skipped from edit mode), then password
+    accountToDelete?.let { accountNum ->
+        val deleteDisplayName = activeWalletMetadata?.getAccountDisplayName(accountNum) ?: "Account $accountNum"
+        PasswordGatedWarningDialog(
+            title = "Remove $deleteDisplayName?",
+            confirmLabel = "Delete",
             secureStorage = secureStorage,
             isDecoyMode = wallet.isDecoyMode,
-            onDismiss = {
-                showPasswordDialog = false
-                accountToDelete = null
-                passwordError = ""
-            },
+            onDismiss = { accountToDelete = null },
             onVerified = {
                 isDeleting = true
                 scope.launch {
                     val success = walletId?.let {
-                        wallet.removeAccountFromWallet(it, accountToDelete!!)
+                        wallet.removeAccountFromWallet(it, accountNum)
                     } ?: false
                     isDeleting = false
                     if (success) {
-                        showPasswordDialog = false
                         accountToDelete = null
                     } else {
                         passwordError = "Failed to delete account"
                     }
                 }
             },
+            skipWarning = skipDeleteWarning,
             isLoading = isDeleting,
             errorMessage = passwordError
-        )
+        ) {
+            Text(
+                "This will remove \"$deleteDisplayName\" from this wallet.\n\n" +
+                "The account can be re-added later using the same account number. " +
+                "Any funds on this account will still be accessible by re-adding it."
+            )
+        }
     }
     
     // Add Account Dialog
@@ -402,7 +365,9 @@ fun DifferentAccountsScreen(
     // Rename Account Dialog
     if (accountToRename != null) {
         val currentName = activeWalletMetadata?.getAccountDisplayName(accountToRename!!) ?: "Account ${accountToRename!!}"
-        RenameAccountDialog(
+        RenameDialog(
+            title = "Rename Account",
+            label = "Account Name",
             currentName = currentName,
             onDismiss = { accountToRename = null },
             onConfirm = { newName ->

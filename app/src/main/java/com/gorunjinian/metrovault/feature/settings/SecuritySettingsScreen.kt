@@ -25,7 +25,9 @@ import com.gorunjinian.metrovault.core.ui.components.SettingsItem
 import com.gorunjinian.metrovault.core.ui.dialogs.AddDecoyPasswordDialog
 import com.gorunjinian.metrovault.core.ui.dialogs.BiometricSetupDialog
 import com.gorunjinian.metrovault.core.ui.dialogs.ChangePasswordDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.ConfirmPasswordDialog
 import com.gorunjinian.metrovault.core.ui.dialogs.SetDuressPasswordDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.WarningDialog
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 
@@ -357,48 +359,28 @@ fun SecuritySettingsScreen(
 
     // Wipe confirmation dialog
     if (showWipeConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showWipeConfirmDialog = false },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_delete),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
+        WarningDialog(
+            title = "Enable Data Wipe?",
+            confirmLabel = "Enable",
+            onConfirm = {
+                userPreferencesRepository.setWipeOnFailedAttempts(true)
+                showWipeConfirmDialog = false
             },
-            title = { Text("Enable Data Wipe?") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "This is a destructive security feature.",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Text("If someone enters the wrong password 4 times in a row, ALL app data will be permanently deleted:")
-                    Text("• All wallets")
-                    Text("• All passwords")
-                    Text("• All settings")
-                    Text(
-                        "This cannot be undone. Make sure you have backups of your seed phrases!",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        userPreferencesRepository.setWipeOnFailedAttempts(true)
-                        showWipeConfirmDialog = false
-                    }
-                ) {
-                    Text("Enable", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showWipeConfirmDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
+            onDismiss = { showWipeConfirmDialog = false }
+        ) {
+            Text(
+                "This is a destructive security feature.",
+                color = MaterialTheme.colorScheme.error
+            )
+            Text("If someone enters the wrong password 4 times in a row, ALL app data will be permanently deleted:")
+            Text("• All wallets")
+            Text("• All passwords")
+            Text("• All settings")
+            Text(
+                "This cannot be undone. Make sure you have backups of your seed phrases!",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
     }
 
     // Decoy password dialog
@@ -466,52 +448,33 @@ fun SecuritySettingsScreen(
 
     // Remove duress password confirmation
     if (showRemoveDuressDialog) {
-        AlertDialog(
-            onDismissRequest = { showRemoveDuressDialog = false },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_security),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            },
-            title = { Text("Remove Duress Password?") },
-            text = {
-                Text("Entering it on the unlock screen will no longer wipe your data. You can set a new one at any time.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            val removed = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                secureStorage.removeDuressPassword()
-                            }
-                            showRemoveDuressDialog = false
-                            if (removed) {
-                                hasDuressPassword = false
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Duress password removed",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Failed to remove duress password",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
+        WarningDialog(
+            title = "Remove Duress Password?",
+            message = "Entering it on the unlock screen will no longer wipe your data. You can set a new one at any time.",
+            confirmLabel = "Remove",
+            onConfirm = {
+                scope.launch {
+                    val removed = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        secureStorage.removeDuressPassword()
                     }
-                ) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                    showRemoveDuressDialog = false
+                    if (removed) {
+                        hasDuressPassword = false
+                        android.widget.Toast.makeText(
+                            context,
+                            "Duress password removed",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Failed to remove duress password",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showRemoveDuressDialog = false }) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { showRemoveDuressDialog = false }
         )
     }
 
@@ -677,93 +640,73 @@ fun SecuritySettingsScreen(
             showDuressBiometricConfirmDialog = false
             selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
         }
-        AlertDialog(
-            onDismissRequest = dismiss,
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_security),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            },
-            title = { Text("Enable Biometric Duress Wipe?") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "This is a destructive security feature.",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Text("Unlocking with your fingerprint will permanently wipe ALL app data, then open a fresh throwaway wallet so the screen looks normal.")
-                    Text("Your fingerprint will no longer open your real vaults.")
-                    Text(
-                        "This cannot be undone. Make sure you have backups of your seed phrases!",
-                        color = MaterialTheme.colorScheme.error
-                    )
+        WarningDialog(
+            title = "Enable Biometric Duress Wipe?",
+            confirmLabel = "Enable",
+            onConfirm = {
+                showDuressBiometricConfirmDialog = false
+                val target = UserPreferencesRepository.BIOMETRIC_TARGET_DURESS
+                val cipher = try {
+                    biometricPasswordManager.getEncryptCipher(target)
+                } catch (_: Exception) {
+                    null
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDuressBiometricConfirmDialog = false
-                        val target = UserPreferencesRepository.BIOMETRIC_TARGET_DURESS
-                        val cipher = try {
-                            biometricPasswordManager.getEncryptCipher(target)
-                        } catch (_: Exception) {
-                            null
-                        }
-                        if (activity == null || cipher == null) {
-                            android.widget.Toast.makeText(context, "Cannot access biometric authentication", android.widget.Toast.LENGTH_SHORT).show()
-                            selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
-                        } else {
-                            biometricManager.authenticateWithCrypto(
-                                activity = activity,
-                                cipher = cipher,
-                                title = "Enable Biometric Duress Wipe",
-                                subtitle = "Authenticate to enable fingerprint duress wipe",
-                                onSuccess = { cryptoObject ->
-                                    scope.launch {
-                                        val success = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                            // The slot holds a random token: a successful
-                                            // biometric decrypt of it is the trigger.
-                                            val token = ByteArray(32).also { SecureRandom().nextBytes(it) }
-                                            val stored = biometricPasswordManager.storeEncryptedPassword(
-                                                Base64.encodeToString(token, Base64.NO_WRAP),
-                                                target,
-                                                cryptoObject.cipher!!
-                                            )
-                                            if (stored) biometricPasswordManager.removeAllExcept(target)
-                                            stored
-                                        }
-                                        if (success) {
-                                            userPreferencesRepository.setBiometricsEnabled(true)
-                                            userPreferencesRepository.setBiometricTarget(target)
-                                            android.widget.Toast.makeText(context, "Biometric duress wipe enabled", android.widget.Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            android.widget.Toast.makeText(context, "Failed to enable biometric duress wipe", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                        selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
-                                    }
-                                },
-                                onError = { error ->
-                                    android.widget.Toast.makeText(context, "Failed to enable biometric: $error", android.widget.Toast.LENGTH_SHORT).show()
-                                    selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
-                                },
-                                onCancel = {
-                                    selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
+                if (activity == null || cipher == null) {
+                    android.widget.Toast.makeText(context, "Cannot access biometric authentication", android.widget.Toast.LENGTH_SHORT).show()
+                    selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
+                } else {
+                    biometricManager.authenticateWithCrypto(
+                        activity = activity,
+                        cipher = cipher,
+                        title = "Enable Biometric Duress Wipe",
+                        subtitle = "Authenticate to enable fingerprint duress wipe",
+                        onSuccess = { cryptoObject ->
+                            scope.launch {
+                                val success = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    // The slot holds a random token: a successful
+                                    // biometric decrypt of it is the trigger.
+                                    val token = ByteArray(32).also { SecureRandom().nextBytes(it) }
+                                    val stored = biometricPasswordManager.storeEncryptedPassword(
+                                        Base64.encodeToString(token, Base64.NO_WRAP),
+                                        target,
+                                        cryptoObject.cipher!!
+                                    )
+                                    if (stored) biometricPasswordManager.removeAllExcept(target)
+                                    stored
                                 }
-                            )
+                                if (success) {
+                                    userPreferencesRepository.setBiometricsEnabled(true)
+                                    userPreferencesRepository.setBiometricTarget(target)
+                                    android.widget.Toast.makeText(context, "Biometric duress wipe enabled", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    android.widget.Toast.makeText(context, "Failed to enable biometric duress wipe", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
+                            }
+                        },
+                        onError = { error ->
+                            android.widget.Toast.makeText(context, "Failed to enable biometric: $error", android.widget.Toast.LENGTH_SHORT).show()
+                            selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
+                        },
+                        onCancel = {
+                            selectedBiometricTarget = UserPreferencesRepository.BIOMETRIC_TARGET_NONE
                         }
-                    }
-                ) {
-                    Text("Enable", color = MaterialTheme.colorScheme.error)
+                    )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = dismiss) {
-                    Text("Cancel")
-                }
-            }
-        )
+            onDismiss = dismiss
+        ) {
+            Text(
+                "This is a destructive security feature.",
+                color = MaterialTheme.colorScheme.error
+            )
+            Text("Unlocking with your fingerprint will permanently wipe ALL app data, then open a fresh throwaway wallet so the screen looks normal.")
+            Text("Your fingerprint will no longer open your real vaults.")
+            Text(
+                "This cannot be undone. Make sure you have backups of your seed phrases!",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
     }
 
     // Password prompt for biometric setup
@@ -778,7 +721,7 @@ fun SecuritySettingsScreen(
             "Enter the password for the vault you want to unlock with biometric authentication"
         }
 
-        BiometricPasswordDialog(
+        ConfirmPasswordDialog(
             title = dialogTitle,
             message = dialogMessage,
             onDismiss = {

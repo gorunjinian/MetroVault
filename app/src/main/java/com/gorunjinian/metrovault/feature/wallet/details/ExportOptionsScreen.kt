@@ -6,23 +6,32 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.ActionCard
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
-import com.gorunjinian.metrovault.core.ui.dialogs.VerifyPasswordDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 /**
  * Recovery-material view requiring the warning + password gate before navigating.
- * [noun] fills the shared security-warning text.
+ * [risk] explains what exposing this particular material gives away.
  */
-private enum class SensitiveViewTarget(val noun: String) {
-    SEED_PHRASE("seed phrase"),
-    ROOT_KEY("BIP32 root key")
+private enum class SensitiveViewTarget(val title: String, val confirmLabel: String, val risk: String) {
+    SEED_PHRASE(
+        title = "Show Seed Phrase?",
+        confirmLabel = "Show Seed Phrase",
+        risk = "Your seed phrase is the master backup of this wallet. Anyone who sees it or scans " +
+            "its SeedQR can take your funds, together with your passphrase if you use one."
+    ),
+    ROOT_KEY(
+        title = "Show Root Key?",
+        confirmLabel = "Show Root Key",
+        risk = "Your BIP32 root key controls every account and address in this wallet, with any " +
+            "passphrase already applied. Anyone who sees it can take your funds."
+    )
 }
 
 /**
@@ -61,7 +70,6 @@ fun ExportOptionsScreen(
 
     // Sensitive-view gate: pick a target, acknowledge the warning, then confirm the password.
     var pendingTarget by remember { mutableStateOf<SensitiveViewTarget?>(null) }
-    var warningAcknowledged by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -133,10 +141,7 @@ fun ExportOptionsScreen(
                 icon = R.drawable.ic_root,
                 title = "View BIP32 Root Key",
                 description = "Show your wallet's main BIP32 root key",
-                onClick = {
-                    pendingTarget = SensitiveViewTarget.ROOT_KEY
-                    warningAcknowledged = false
-                },
+                onClick = { pendingTarget = SensitiveViewTarget.ROOT_KEY },
                 iconTint = MaterialTheme.colorScheme.error,
                 descriptionColor = MaterialTheme.colorScheme.error
             )
@@ -147,10 +152,7 @@ fun ExportOptionsScreen(
                     icon = R.drawable.ic_privacy_tip,
                     title = "View Seed Phrase",
                     description = "Show your recovery seed phrase or SeedQR",
-                    onClick = {
-                        pendingTarget = SensitiveViewTarget.SEED_PHRASE
-                        warningAcknowledged = false
-                    },
+                    onClick = { pendingTarget = SensitiveViewTarget.SEED_PHRASE },
                     iconTint = MaterialTheme.colorScheme.error,
                     descriptionColor = MaterialTheme.colorScheme.error
                 )
@@ -160,39 +162,10 @@ fun ExportOptionsScreen(
         }
     }
 
-    val target = pendingTarget
-    if (target != null && !warningAcknowledged) {
-        AlertDialog(
-            onDismissRequest = { pendingTarget = null },
-            title = { Text("Security Warning") },
-            text = {
-                Text(
-                    "Your ${target.noun} is the master key to your funds. Never share it with " +
-                        "anyone.\n\nEnsure you are in a private location and no one is watching " +
-                        "your screen."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { warningAcknowledged = true }) {
-                    Text("I Understand")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingTarget = null }) {
-                    Text("Cancel")
-                }
-            },
-            icon = {
-                Icon(painter = painterResource(R.drawable.ic_warning),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error)
-            }
-        )
-    }
-
-    // Password confirmation dialog for sensitive views
-    if (target != null && warningAcknowledged) {
-        VerifyPasswordDialog(
+    pendingTarget?.let { target ->
+        PasswordGatedWarningDialog(
+            title = target.title,
+            confirmLabel = target.confirmLabel,
             secureStorage = secureStorage,
             isDecoyMode = wallet.isDecoyMode,
             onDismiss = { pendingTarget = null },
@@ -202,7 +175,11 @@ fun ExportOptionsScreen(
                     SensitiveViewTarget.SEED_PHRASE -> onViewSeedPhrase()
                     SensitiveViewTarget.ROOT_KEY -> onViewRootKey()
                 }
-            }
-        )
+            },
+            destructive = false
+        ) {
+            Text(target.risk)
+            Text("Never share it or enter it into a website or online device. Make sure you're somewhere private and no one can see your screen.")
+        }
     }
 }

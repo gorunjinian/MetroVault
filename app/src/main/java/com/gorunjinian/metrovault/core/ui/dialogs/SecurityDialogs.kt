@@ -20,6 +20,69 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * AlertDialog for password work that must not be interrupted (it runs PBKDF2): while
+ * [isLoading] the body is a spinner with [loadingText] (and [loadingDetail] below it), the
+ * buttons are hidden, and the dialog can't be dismissed.
+ */
+@Composable
+private fun BusyAlertDialog(
+    title: String,
+    isLoading: Boolean,
+    loadingText: String,
+    confirmText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    confirmEnabled: Boolean = true,
+    loadingDetail: String? = null,
+    content: @Composable () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isLoading) onDismiss() },
+        title = { Text(title) },
+        text = {
+            if (isLoading) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = loadingText,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (loadingDetail != null) {
+                        Text(
+                            text = loadingDetail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                content()
+            }
+        },
+        confirmButton = {
+            if (!isLoading) {
+                TextButton(onClick = onConfirm, enabled = confirmEnabled) {
+                    Text(confirmText)
+                }
+            }
+        },
+        dismissButton = {
+            if (!isLoading) {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        }
+    )
+}
+
 @Composable
 fun ChangePasswordDialog(
     title: String,
@@ -37,100 +100,65 @@ fun ChangePasswordDialog(
     val confirmPasswordFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    AlertDialog(
-        onDismissRequest = { if (!isLoading) onDismiss() },
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (isLoading) {
-                    // Loading state
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator()
-                        Text(
-                            text = "Changing password...",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "This may take a moment",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    // Input state
-                    SecurePasswordTextField(
-                        value = oldPassword,
-                        onValueChange = { oldPassword = it },
-                        label = { Text("Current Password") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(
-                            onNext = { newPasswordFocusRequester.requestFocus() }
-                        )
-                    )
-                    SecurePasswordTextField(
-                        value = newPassword,
-                        onValueChange = { newPassword = it },
-                        label = { Text("New Password") },
-                        singleLine = true,
-                        modifier = Modifier.focusRequester(newPasswordFocusRequester),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(
-                            onNext = { confirmPasswordFocusRequester.requestFocus() }
-                        )
-                    )
-                    SecurePasswordTextField(
-                        value = confirmPassword,
-                        onValueChange = { confirmPassword = it },
-                        label = { Text("Confirm New Password") },
-                        singleLine = true,
-                        modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = { keyboardController?.hide() }
-                        )
-                    )
-                    if (errorMessage.isNotEmpty()) {
-                        Text(
-                            text = errorMessage,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+    BusyAlertDialog(
+        title = title,
+        isLoading = isLoading,
+        loadingText = "Changing password...",
+        loadingDetail = "This may take a moment",
+        confirmText = "Change",
+        onConfirm = {
+            if (newPassword.length < 8) {
+                errorMessage = "New password must be at least 8 characters"
+            } else if (newPassword != confirmPassword) {
+                errorMessage = "New passwords do not match"
+            } else {
+                onConfirm(oldPassword, newPassword)
             }
         },
-        confirmButton = {
-            if (!isLoading) {
-                TextButton(
-                    onClick = {
-                        if (newPassword.length < 8) {
-                            errorMessage = "New password must be at least 8 characters"
-                        } else if (newPassword != confirmPassword) {
-                            errorMessage = "New passwords do not match"
-                        } else {
-                            onConfirm(oldPassword, newPassword)
-                        }
-                    }
-                ) {
-                    Text("Change")
-                }
-            }
-        },
-        dismissButton = {
-            if (!isLoading) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
+        onDismiss = onDismiss
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SecurePasswordTextField(
+                value = oldPassword,
+                onValueChange = { oldPassword = it },
+                label = { Text("Current Password") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(
+                    onNext = { newPasswordFocusRequester.requestFocus() }
+                )
+            )
+            SecurePasswordTextField(
+                value = newPassword,
+                onValueChange = { newPassword = it },
+                label = { Text("New Password") },
+                singleLine = true,
+                modifier = Modifier.focusRequester(newPasswordFocusRequester),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(
+                    onNext = { confirmPasswordFocusRequester.requestFocus() }
+                )
+            )
+            SecurePasswordTextField(
+                value = confirmPassword,
+                onValueChange = { confirmPassword = it },
+                label = { Text("Confirm New Password") },
+                singleLine = true,
+                modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = { keyboardController?.hide() }
+                )
+            )
+            if (errorMessage.isNotEmpty()) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
-    )
+    }
 }
 
 /**
@@ -176,87 +204,60 @@ fun SetPasswordDialog(
         }
     }
 
-    AlertDialog(
-        onDismissRequest = { if (!isLoading) onDismiss() },
-        title = { Text(title) },
-        text = {
-            Column {
-                if (isLoading) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator()
-                        Text(
-                            text = "Saving password...",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                } else {
-                    Text(description)
-                    if (warning != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = warning,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    SecurePasswordTextField(
-                        value = password,
-                        onValueChange = { password = it; validationError = "" },
-                        label = { Text(passwordLabel) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(
-                            onNext = { confirmPasswordFocusRequester.requestFocus() }
-                        )
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SecurePasswordTextField(
-                        value = confirmPassword,
-                        onValueChange = { confirmPassword = it; validationError = "" },
-                        label = { Text("Confirm Password") },
-                        singleLine = true,
-                        modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                keyboardController?.hide()
-                                submit()
-                            }
-                        )
-                    )
-                    val shownError = validationError.ifEmpty { errorMessage }
-                    if (shownError.isNotEmpty()) {
-                        Text(
-                            text = shownError,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+    BusyAlertDialog(
+        title = title,
+        isLoading = isLoading,
+        loadingText = "Saving password...",
+        confirmText = confirmText,
+        onConfirm = { submit() },
+        onDismiss = onDismiss
+    ) {
+        Column {
+            Text(description)
+            if (warning != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = warning,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
-        },
-        confirmButton = {
-            if (!isLoading) {
-                TextButton(onClick = { submit() }) {
-                    Text(confirmText)
-                }
-            }
-        },
-        dismissButton = {
-            if (!isLoading) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
+            Spacer(modifier = Modifier.height(16.dp))
+            SecurePasswordTextField(
+                value = password,
+                onValueChange = { password = it; validationError = "" },
+                label = { Text(passwordLabel) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(
+                    onNext = { confirmPasswordFocusRequester.requestFocus() }
+                )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            SecurePasswordTextField(
+                value = confirmPassword,
+                onValueChange = { confirmPassword = it; validationError = "" },
+                label = { Text("Confirm Password") },
+                singleLine = true,
+                modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        keyboardController?.hide()
+                        submit()
+                    }
+                )
+            )
+            val shownError = validationError.ifEmpty { errorMessage }
+            if (shownError.isNotEmpty()) {
+                Text(
+                    text = shownError,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -317,61 +318,33 @@ fun BiometricSetupDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Choose what your fingerprint does on the unlock screen:")
-                
-                // Main wallet option
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedTarget = UserPreferencesRepository.BIOMETRIC_TARGET_MAIN },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = selectedTarget == UserPreferencesRepository.BIOMETRIC_TARGET_MAIN,
-                        onClick = { selectedTarget = UserPreferencesRepository.BIOMETRIC_TARGET_MAIN }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Main Wallets")
-                }
-                
+
+                BiometricTargetOption(
+                    target = UserPreferencesRepository.BIOMETRIC_TARGET_MAIN,
+                    label = "Main Wallets",
+                    selectedTarget = selectedTarget,
+                    onSelect = { selectedTarget = it }
+                )
+
                 // Decoy wallet option (only if decoy password exists)
                 if (hasDecoyPassword) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedTarget = UserPreferencesRepository.BIOMETRIC_TARGET_DECOY },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = selectedTarget == UserPreferencesRepository.BIOMETRIC_TARGET_DECOY,
-                            onClick = { selectedTarget = UserPreferencesRepository.BIOMETRIC_TARGET_DECOY }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Decoy Wallets")
-                    }
+                    BiometricTargetOption(
+                        target = UserPreferencesRepository.BIOMETRIC_TARGET_DECOY,
+                        label = "Decoy Wallets",
+                        selectedTarget = selectedTarget,
+                        onSelect = { selectedTarget = it }
+                    )
                 }
 
                 // Duress wipe option: the fingerprint destroys everything and
                 // opens a throwaway wallet instead of a vault
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { selectedTarget = UserPreferencesRepository.BIOMETRIC_TARGET_DURESS },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = selectedTarget == UserPreferencesRepository.BIOMETRIC_TARGET_DURESS,
-                        onClick = { selectedTarget = UserPreferencesRepository.BIOMETRIC_TARGET_DURESS }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text("Duress Wipe")
-                        Text(
-                            text = "Erases all data instead of unlocking",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                BiometricTargetOption(
+                    target = UserPreferencesRepository.BIOMETRIC_TARGET_DURESS,
+                    label = "Duress Wipe",
+                    description = "Erases all data instead of unlocking",
+                    selectedTarget = selectedTarget,
+                    onSelect = { selectedTarget = it }
+                )
             }
         },
         confirmButton = {
@@ -387,6 +360,41 @@ fun BiometricSetupDialog(
             }
         }
     )
+}
+
+/** One radio row of [BiometricSetupDialog]; tapping anywhere on the row selects [target]. */
+@Composable
+private fun BiometricTargetOption(
+    target: String,
+    label: String,
+    selectedTarget: String,
+    onSelect: (String) -> Unit,
+    description: String? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect(target) },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selectedTarget == target,
+            onClick = { onSelect(target) }
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        if (description == null) {
+            Text(label)
+        } else {
+            Column {
+                Text(label)
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -453,6 +461,8 @@ fun VerifyPasswordDialog(
  *
  * @param onDismiss Called when user cancels the dialog
  * @param onConfirm Called with the entered password when user confirms
+ * @param title Dialog title
+ * @param message Prompt shown above the password field
  * @param isLoading Show loading state (disables inputs and shows spinner)
  * @param errorMessage Error message to display (e.g., "Incorrect password")
  */
@@ -460,76 +470,48 @@ fun VerifyPasswordDialog(
 fun ConfirmPasswordDialog(
     onDismiss: () -> Unit,
     onConfirm: (password: String) -> Unit,
+    title: String = "Confirm Password",
+    message: String = "Enter password to continue",
     isLoading: Boolean = false,
     errorMessage: String = ""
 ) {
     var password by remember { mutableStateOf("") }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    AlertDialog(
-        onDismissRequest = { if (!isLoading) onDismiss() },
-        title = { Text("Confirm Password") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (isLoading) {
-                    // Loading state
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator()
-                        Text(
-                            text = "Please wait...",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+    BusyAlertDialog(
+        title = title,
+        isLoading = isLoading,
+        loadingText = "Please wait...",
+        confirmText = "Confirm",
+        confirmEnabled = password.isNotEmpty(),
+        onConfirm = { onConfirm(password) },
+        onDismiss = onDismiss
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(message)
+            SecurePasswordTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                singleLine = true,
+                isError = errorMessage.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        keyboardController?.hide()
+                        if (password.isNotEmpty()) onConfirm(password)
                     }
-                } else {
-                    Text("Enter password to continue")
-                    SecurePasswordTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password") },
-                        singleLine = true,
-                        isError = errorMessage.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                keyboardController?.hide()
-                                if (password.isNotEmpty()) onConfirm(password)
-                            }
-                        )
-                    )
-                    if (errorMessage.isNotEmpty()) {
-                        Text(
-                            text = errorMessage,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (!isLoading) {
-                TextButton(
-                    onClick = { onConfirm(password) },
-                    enabled = password.isNotEmpty()
-                ) {
-                    Text("Confirm")
-                }
-            }
-        },
-        dismissButton = {
-            if (!isLoading) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
+                )
+            )
+            if (errorMessage.isNotEmpty()) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
         }
-    )
+    }
 }

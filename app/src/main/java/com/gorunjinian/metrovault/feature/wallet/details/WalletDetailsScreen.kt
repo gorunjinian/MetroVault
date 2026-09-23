@@ -23,6 +23,7 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.DeleteWalletDialogs
+import com.gorunjinian.metrovault.core.ui.dialogs.InfoDialog
 import com.gorunjinian.metrovault.data.model.AddressFormat
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
@@ -79,22 +80,17 @@ fun WalletDetailsScreen(
     // One-time explainer for users whose existing multisig wallets became unverified after upgrade
     val explainerShown by userPreferencesRepository.multisigVerificationExplainerShown.collectAsState()
     if (isMultisig && !multisigRegistered && !explainerShown) {
-        AlertDialog(
-            onDismissRequest = { userPreferencesRepository.setMultisigVerificationExplainerShown(true) },
-            title = { Text("Verify your multisig wallet") },
-            text = {
-                Text(
-                    "MetroVault asks you to register multisig wallets before signing. Registering lets " +
-                        "the device verify that change outputs really belong to your wallet, protecting you from " +
-                        "a tampered descriptor or a malicious coordinator. Review the cosigners and confirm once."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { userPreferencesRepository.setMultisigVerificationExplainerShown(true) }) {
-                    Text("Got it")
-                }
-            }
-        )
+        InfoDialog(
+            title = "Verify your multisig wallet",
+            onDismiss = { userPreferencesRepository.setMultisigVerificationExplainerShown(true) },
+            buttonLabel = "Got it"
+        ) {
+            Text(
+                "MetroVault asks you to register multisig wallets before signing. Registering lets " +
+                    "the device verify that change outputs really belong to your wallet, protecting you from " +
+                    "a tampered descriptor or a malicious coordinator. Review the cosigners and confirm once."
+            )
+        }
     }
 
     // Check if this is a BIP-352 silent-payment wallet

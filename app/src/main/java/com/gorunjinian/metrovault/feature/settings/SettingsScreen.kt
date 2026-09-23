@@ -2,12 +2,10 @@ package com.gorunjinian.metrovault.feature.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.core.ui.components.SecurePasswordTextField
 import com.gorunjinian.metrovault.core.ui.components.SettingsSectionCard
 
 /**
@@ -73,47 +71,4 @@ fun SettingsContent(
             )
         }
     }
-}
-
-/**
- * Dialog for entering password to set up biometric authentication.
- */
-@Composable
-fun BiometricPasswordDialog(
-    title: String,
-    message: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
-) {
-    var password by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(message)
-                SecurePasswordTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(password) },
-                enabled = password.isNotEmpty()
-            ) {
-                Text("Confirm")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
 }
