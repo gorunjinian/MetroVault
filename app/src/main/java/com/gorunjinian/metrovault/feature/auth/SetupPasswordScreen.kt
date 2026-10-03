@@ -133,94 +133,80 @@ fun SetupPasswordScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             // Card container for the setup form
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Column(
+            AuthFormCard {
+                // Password field with shake animation
+                SecurePasswordTextField(
+                    value = uiState.password,
+                    onValueChange = { viewModel.updateSetupPassword(it) },
+                    label = { Text("Password") },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(
+                        onNext = { confirmPasswordFocusRequester.requestFocus() }
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Confirm password field with shake animation
+                SecurePasswordTextField(
+                    value = uiState.confirmPassword,
+                    onValueChange = { viewModel.updateConfirmPassword(it) },
+                    label = { Text("Confirm Password") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(confirmPasswordFocusRequester)
+                        .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(
+                        onDone = { keyboardController?.hide() }
+                    )
+                )
+
+                if (uiState.errorMessage.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = uiState.errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Enhanced setup button
+                Button(
+                    onClick = { viewModel.setupPassword() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    enabled = !uiState.isProcessing,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
                 ) {
-                    // Password field with shake animation
-                    SecurePasswordTextField(
-                        value = uiState.password,
-                        onValueChange = { viewModel.updateSetupPassword(it) },
-                        label = { Text("Password") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        keyboardActions = KeyboardActions(
-                            onNext = { confirmPasswordFocusRequester.requestFocus() }
+                    if (uiState.isProcessing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
                         )
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Confirm password field with shake animation
-                    SecurePasswordTextField(
-                        value = uiState.confirmPassword,
-                        onValueChange = { viewModel.updateConfirmPassword(it) },
-                        label = { Text("Confirm Password") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(confirmPasswordFocusRequester)
-                            .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = { keyboardController?.hide() }
+                    } else {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_shield_lock),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
                         )
-                    )
-
-                    if (uiState.errorMessage.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = uiState.errorMessage,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
+                            text = "Set Password",
+                            fontWeight = FontWeight.SemiBold
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Enhanced setup button
-                    Button(
-                        onClick = { viewModel.setupPassword() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        enabled = !uiState.isProcessing,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        if (uiState.isProcessing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_shield_lock),
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Set Password",
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
                     }
                 }
             }
