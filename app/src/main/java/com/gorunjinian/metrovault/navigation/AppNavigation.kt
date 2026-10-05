@@ -373,23 +373,8 @@ fun AppNavigation(
                 wallet = wallet,
                 secureStorage = secureStorage,
                 userPreferencesRepository = userPreferencesRepository,
-                onViewAddresses = {
-                    val target = if (wallet.isActiveSilentPayment()) {
-                        Screen.SPAddress.route
-                    } else {
-                        Screen.Addresses.createRoute()
-                    }
-                    navController.navigate(target)
-                },
-                onScanPSBT = { navController.navigate(Screen.ScanPSBT.route) },
-                onExport = { navController.navigate(Screen.ExportOptions.route) },
-                onExportMultiSig = { navController.navigate(Screen.ExportMultiSig.route) },
+                onOpenFeature = { feature -> navController.openWalletFeature(wallet, feature) },
                 onVerifyMultisig = { walletId -> navController.navigate(Screen.VerifyMultisig.createRoute(walletId)) },
-                onBIP85 = { navController.navigate(Screen.BIP85Derive.route) },
-                onSignMessage = { navController.navigate(Screen.SignMessage.createRoute()) },
-                onCheckAddress = { navController.navigate(Screen.CheckAddress.route) },
-                onDifferentAccounts = { navController.navigate(Screen.DifferentAccounts.route) },
-                onChangeAddressType = { navController.navigate(Screen.AddressType.route) },
                 onLock = {
                     navController.navigate(Screen.Unlock.route) {
                         popUpTo(0) { inclusive = true }
@@ -480,7 +465,6 @@ fun AppNavigation(
                 wallet = wallet,
                 secureStorage = secureStorage,
                 userPreferencesRepository = userPreferencesRepository,
-                isStatelessWallet = wallet.hasStatelessWallet(),
                 onBack = { navController.navigateBackOr(Screen.Home) },
                 onExportCoordinator = { navController.navigate(Screen.CoordinatorExport.route) },
                 onViewAccountKeys = { navController.navigate(Screen.AccountKeys.route) },

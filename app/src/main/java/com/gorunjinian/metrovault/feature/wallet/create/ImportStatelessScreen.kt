@@ -64,7 +64,6 @@ fun ImportStatelessScreen(
                 selectedDerivationPath = uiState.selectedDerivationPath,
                 accountNumber = uiState.accountNumber,
                 isTestnet = uiState.isTestnet,
-                includeSilentPayments = false,
                 onDerivationPathChange = { viewModel.setDerivationPath(it) },
                 onAccountNumberChange = { viewModel.setAccountNumber(it) },
                 onTestnetChange = { viewModel.setTestnetMode(it) },

@@ -18,10 +18,6 @@ import com.gorunjinian.vaultovich.DeterministicWallet
  */
 class SilentPaymentManager {
 
-    /** True if the wallet is flagged as a dedicated silent-payment wallet. */
-    fun isSilentPaymentWallet(metadata: WalletMetadata?): Boolean =
-        metadata?.isSilentPayment == true
-
     /**
      * True if the SP scan-key export can be offered for this wallet — single-sig with the master
      * key currently in memory. Multisig wallets are excluded (no single seed). Stateless wallets

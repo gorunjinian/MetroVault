@@ -56,7 +56,6 @@ import com.journeyapps.barcodescanner.CompoundBarcodeView
  *
  * @param wordCount when null the word-count picker (and the separate
  *   "Address Type" section title) is omitted.
- * @param includeSilentPayments whether Silent Payments appears as an address type.
  * @param topContent optional content rendered above the title row.
  */
 @Composable
@@ -65,7 +64,6 @@ internal fun WalletConfigurationStep(
     selectedDerivationPath: String,
     accountNumber: Int,
     isTestnet: Boolean,
-    includeSilentPayments: Boolean,
     onDerivationPathChange: (String) -> Unit,
     onAccountNumberChange: (Int) -> Unit,
     onTestnetChange: (Boolean) -> Unit,
@@ -132,7 +130,6 @@ internal fun WalletConfigurationStep(
             AddressTypeCard(
                 selectedDerivationPath = selectedDerivationPath,
                 isTestnet = isTestnet,
-                includeSilentPayments = includeSilentPayments,
                 onDerivationPathChange = onDerivationPathChange
             )
 
@@ -160,39 +157,30 @@ internal fun WalletConfigurationStep(
     }
 }
 
-private fun addressTypeOptions(
-    isTestnet: Boolean,
-    includeSilentPayments: Boolean
-): List<Triple<String, String, String>> {
-    val base = if (isTestnet) {
+private fun addressTypeOptions(isTestnet: Boolean): List<Triple<String, String, String>> =
+    if (isTestnet) {
         listOf(
             Triple("Taproot", "tb1p...", DerivationPaths.TAPROOT_TESTNET),
             Triple("Native SegWit", "tb1q...", DerivationPaths.NATIVE_SEGWIT_TESTNET),
             Triple("Nested SegWit", "2...", DerivationPaths.NESTED_SEGWIT_TESTNET),
-            Triple("Legacy", "m/n...", DerivationPaths.LEGACY_TESTNET)
+            Triple("Legacy", "m/n...", DerivationPaths.LEGACY_TESTNET),
+            Triple("Silent Payments", "tsp1q...", DerivationPaths.SILENT_PAYMENT_TESTNET)
         )
     } else {
         listOf(
             Triple("Taproot", "bc1p...", DerivationPaths.TAPROOT),
             Triple("Native SegWit", "bc1q...", DerivationPaths.NATIVE_SEGWIT),
             Triple("Nested SegWit", "3...", DerivationPaths.NESTED_SEGWIT),
-            Triple("Legacy", "1...", DerivationPaths.LEGACY)
+            Triple("Legacy", "1...", DerivationPaths.LEGACY),
+            Triple("Silent Payments", "sp1q...", DerivationPaths.SILENT_PAYMENT)
         )
     }
-    if (!includeSilentPayments) return base
-    return base + if (isTestnet) {
-        Triple("Silent Payments", "tsp1q...", DerivationPaths.SILENT_PAYMENT_TESTNET)
-    } else {
-        Triple("Silent Payments", "sp1q...", DerivationPaths.SILENT_PAYMENT)
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddressTypeCard(
     selectedDerivationPath: String,
     isTestnet: Boolean,
-    includeSilentPayments: Boolean,
     onDerivationPathChange: (String) -> Unit
 ) {
     Card(
@@ -211,7 +199,7 @@ private fun AddressTypeCard(
 
             var addressTypeExpanded by remember { mutableStateOf(false) }
 
-            val options = addressTypeOptions(isTestnet, includeSilentPayments)
+            val options = addressTypeOptions(isTestnet)
             val currentPurpose = DerivationPaths.getPurpose(selectedDerivationPath)
             val selectedOption = options.find { DerivationPaths.getPurpose(it.third) == currentPurpose } ?: options[1]
             val isDefaultAddressType = currentPurpose == 84 // Native SegWit is the default

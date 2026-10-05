@@ -13,6 +13,8 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
+import com.gorunjinian.metrovault.data.model.WalletFeature
+import com.gorunjinian.metrovault.data.model.WalletKind
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 /**
@@ -48,7 +50,6 @@ fun ExportOptionsScreen(
     wallet: Wallet,
     secureStorage: SecureStorage,
     userPreferencesRepository: UserPreferencesRepository,
-    isStatelessWallet: Boolean = false,
     onBack: () -> Unit,
     onExportCoordinator: () -> Unit,
     onViewAccountKeys: () -> Unit,
@@ -57,16 +58,18 @@ fun ExportOptionsScreen(
     onViewSeedPhrase: () -> Unit,
     onViewSilentPayments: () -> Unit = {}
 ) {
-    // BIP-352 silent-payment export visibility = (toggle ON OR SP-flagged wallet) AND seed loaded.
-    // SP-flagged wallets always show the export; regular wallets only show it when the user has
+    // Cards the wallet doesn't support are hidden rather than leading to an "Unsupported wallet"
+    // screen. Multisig wallets export from their own screen and never reach this one.
+    val profile = remember { wallet.getActiveWalletProfile() }
+    fun supports(feature: WalletFeature) = profile?.supports(feature) == true
+
+    // BIP-352 silent-payment export visibility = (toggle ON OR SP wallet) AND seed loaded.
+    // SP wallets always show the export; regular wallets only show it when the user has
     // opted in via Advanced Settings.
     val silentPaymentsEnabled by userPreferencesRepository.silentPaymentsEnabled.collectAsState()
-    val isSpFlaggedWallet = remember { wallet.isActiveSilentPayment() }
+    val isSilentPaymentWallet = profile?.kind == WalletKind.SILENT_PAYMENT
     val canDeriveSilentPayments = remember { wallet.canExportSilentPaymentForActiveWallet() }
-    val canExportSilentPayments = canDeriveSilentPayments && (silentPaymentsEnabled || isSpFlaggedWallet)
-    // Coordinator export is single-sig only. Hide the card rather than letting the user tap
-    // through to an "Unsupported wallet" screen, matching how the cards below are gated.
-    val canExportToCoordinator = remember { !wallet.isActiveMultisig() && !wallet.isActiveSilentPayment() }
+    val canExportSilentPayments = canDeriveSilentPayments && (silentPaymentsEnabled || isSilentPaymentWallet)
 
     // Sensitive-view gate: pick a target, acknowledge the warning, then confirm the password.
     var pendingTarget by remember { mutableStateOf<SensitiveViewTarget?>(null) }
@@ -94,7 +97,7 @@ fun ExportOptionsScreen(
                 style = MaterialTheme.typography.headlineSmall
             )
 
-            if (canExportToCoordinator) {
+            if (supports(WalletFeature.COORDINATOR_EXPORT)) {
                 ActionCard(
                     icon = R.drawable.ic_qr_code_scanner,
                     title = "Export to Wallet Coordinator",
@@ -104,10 +107,10 @@ fun ExportOptionsScreen(
             }
 
             // Cards 1 & 2: View Account Extended Keys and View Output Descriptors.
-            // Hidden for SP-flagged wallets — BIP-352 wallets have no meaningful xpub or wpkh/tr
+            // Hidden for SP wallets — BIP-352 wallets have no meaningful xpub or wpkh/tr
             // descriptor; the SP-equivalent export is the spscan/descriptor inside the Silent
             // Payments card. Root Key and Seed Phrase still expose the underlying master.
-            if (!isSpFlaggedWallet) {
+            if (supports(WalletFeature.ACCOUNT_KEYS_AND_DESCRIPTORS)) {
                 ActionCard(
                     icon = R.drawable.ic_key,
                     title = "View Account Extended Keys",
@@ -147,7 +150,7 @@ fun ExportOptionsScreen(
             )
 
             // Card 4: View Seed Phrase (hidden for stateless wallets)
-            if (!isStatelessWallet) {
+            if (supports(WalletFeature.SEED_PHRASE)) {
                 ActionCard(
                     icon = R.drawable.ic_privacy_tip,
                     title = "View Seed Phrase",

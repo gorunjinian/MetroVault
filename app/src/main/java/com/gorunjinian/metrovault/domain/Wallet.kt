@@ -13,6 +13,8 @@ import com.gorunjinian.metrovault.data.model.WalletCreationError
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
 import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
+import com.gorunjinian.metrovault.data.model.WalletKind
+import com.gorunjinian.metrovault.data.model.WalletProfile
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletState
@@ -701,9 +703,14 @@ class   Wallet(context: Context) {
         }
     }
 
-    /** Get active account number for active wallet */
-    fun getActiveAccountNumber(): Int =
-        accountManager.getActiveAccountNumber(activeWalletId, _walletMetadataList, walletListLock)
+    /**
+     * Get active account number for active wallet. A stateless wallet has no metadata, so its
+     * account comes from its derivation path.
+     */
+    fun getActiveAccountNumber(): Int {
+        statelessWalletManager.get()?.let { return DerivationPaths.getAccountNumber(it.derivationPath) }
+        return accountManager.getActiveAccountNumber(activeWalletId, _walletMetadataList, walletListLock)
+    }
 
     /**
      * Rename an account's display name.
@@ -797,9 +804,6 @@ class   Wallet(context: Context) {
     /** Wipes the stateless wallet from memory. */
     fun wipeStatelessWallet() = statelessWalletManager.wipe()
     
-    /** Checks if a stateless wallet is currently active. */
-    fun hasStatelessWallet(): Boolean = statelessWalletManager.hasWallet()
-    
     /** Gets unified wallet info for the currently active wallet. */
     fun getActiveWalletInfo(metadata: WalletMetadata?): StatelessWalletManager.ActiveWalletInfo =
         statelessWalletManager.getActiveWalletInfo(metadata)
@@ -826,13 +830,6 @@ class   Wallet(context: Context) {
         // For single-sig wallets, check derivation path
         val path = getActiveWalletDerivationPath()
         return DerivationPaths.isTestnet(path)
-    }
-
-    /** Check if the active wallet is a multisig wallet */
-    fun isActiveWalletMultisig(): Boolean {
-        val walletId = activeWalletId ?: return false
-        val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return false
-        return metadata.isMultisig
     }
 
     /**
@@ -1023,6 +1020,9 @@ class   Wallet(context: Context) {
         offset: Int = 0,
         isChange: Boolean = false
     ): List<BitcoinAddress>? {
+        // An SP wallet has no address chain: each received output is tweaked per payment
+        if (isActiveSilentPayment()) return null
+
         // Check for stateless wallet first (no activeWalletId needed)
         val statelessState = statelessWalletManager.get()
         if (statelessState != null) {
@@ -1064,6 +1064,9 @@ class   Wallet(context: Context) {
     }
 
     fun checkAddressBelongsToWallet(address: String): AddressCheckResult? {
+        // An SP wallet has no address chain to scan, so it can't say either way
+        if (isActiveSilentPayment()) return null
+
         // Check for stateless wallet first
         val statelessState = statelessWalletManager.get()
         if (statelessState != null) {
@@ -1439,17 +1442,21 @@ class   Wallet(context: Context) {
         return metadata?.derivationPath
     }
 
-    /** True if the active wallet is a dedicated silent-payment wallet (flagged in metadata). */
-    fun isActiveSilentPayment(): Boolean {
-        val meta = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
-        return silentPaymentManager.isSilentPaymentWallet(meta)
+    /**
+     * What the active wallet is and which features it offers, or null when no wallet is open.
+     * Stateless first, like [isActiveWalletTestnet]: a stateless wallet has no metadata.
+     */
+    fun getActiveWalletProfile(): WalletProfile? {
+        statelessWalletManager.get()?.let { return WalletProfile.stateless(it.derivationPath) }
+        val metadata = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) } ?: return null
+        return WalletProfile.of(metadata)
     }
 
+    /** True if the active wallet is a silent-payment wallet, stored or stateless. */
+    fun isActiveSilentPayment(): Boolean = getActiveWalletProfile()?.kind == WalletKind.SILENT_PAYMENT
+
     /** True if the active wallet is a multisig wallet. */
-    fun isActiveMultisig(): Boolean {
-        val meta = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
-        return meta?.isMultisig ?: false
-    }
+    fun isActiveMultisig(): Boolean = getActiveWalletProfile()?.kind == WalletKind.MULTISIG
 
     /** True if the BIP-352 scan-key export can be offered for the active wallet (single-sig with seed). */
     fun canExportSilentPaymentForActiveWallet(): Boolean {

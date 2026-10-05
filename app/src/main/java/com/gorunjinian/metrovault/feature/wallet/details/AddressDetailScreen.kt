@@ -28,6 +28,7 @@ import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
 import com.gorunjinian.metrovault.core.ui.dialogs.RevealedKeysDialog
 import com.gorunjinian.metrovault.core.util.SecurityUtils
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
+import com.gorunjinian.metrovault.data.model.WalletFeature
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,7 +52,9 @@ fun AddressDetailScreen(
     val context = LocalContext.current
     val secureStorage = remember { SecureStorage(context) }
     val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
-
+    val canSignMessage = remember {
+        wallet.getActiveWalletProfile()?.supports(WalletFeature.SIGN_MESSAGE) == true
+    }
 
 
     // Generate QR code on background thread to avoid blocking UI animation
@@ -140,8 +143,7 @@ fun AddressDetailScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Sign Message button - hidden for Multisig
-            if (!wallet.isActiveWalletMultisig()) {
+            if (canSignMessage) {
                 Button(
                     onClick = { onSignMessage(address) },
                     modifier = Modifier.fillMaxWidth()

@@ -27,7 +27,10 @@ import com.gorunjinian.metrovault.core.ui.dialogs.InfoDialog
 import com.gorunjinian.metrovault.data.model.AddressFormat
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
+import com.gorunjinian.metrovault.data.model.WalletFeature
+import com.gorunjinian.metrovault.data.model.WalletKind
 import com.gorunjinian.metrovault.data.model.WalletMetadata
+import com.gorunjinian.metrovault.data.model.WalletProfile
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,16 +39,8 @@ fun WalletDetailsScreen(
     wallet: Wallet,
     secureStorage: SecureStorage,
     userPreferencesRepository: UserPreferencesRepository,
-    onViewAddresses: () -> Unit,
-    onScanPSBT: () -> Unit,
-    onExport: () -> Unit,
-    onExportMultiSig: () -> Unit,
+    onOpenFeature: (WalletFeature) -> Unit,
     onVerifyMultisig: (walletId: String) -> Unit,
-    onBIP85: () -> Unit,
-    onSignMessage: () -> Unit,
-    onCheckAddress: () -> Unit,
-    onDifferentAccounts: () -> Unit,
-    onChangeAddressType: () -> Unit,
     onLock: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -68,8 +63,14 @@ fun WalletDetailsScreen(
     val derivationPath = wallet.getActiveWalletDerivationPath()
     val isTestnet = DerivationPaths.isTestnet(derivationPath)
 
+    // What this wallet is and which features it offers. A stored wallet's profile follows the
+    // observed list, so an address-type switch re-renders this screen; a stateless one has no
+    // metadata and never changes kind while open. Null only if the wallet was closed underneath us.
+    val profile = activeWalletMetadata?.let { WalletProfile.of(it) } ?: wallet.getActiveWalletProfile()
+    fun supports(feature: WalletFeature) = profile?.supports(feature) == true
+
     // Check if multisig wallet
-    val isMultisig = activeWalletMetadata?.isMultisig ?: false
+    val isMultisig = profile?.kind == WalletKind.MULTISIG
 
     // Whether this multisig wallet has been verified/registered (bound to its current descriptor).
     // isMultisigRegistered returns false for non-multisig wallets, so the null-check suffices.
@@ -94,11 +95,9 @@ fun WalletDetailsScreen(
     }
 
     // Check if this is a BIP-352 silent-payment wallet
-    val isSilentPayment = activeWalletMetadata?.isSilentPayment ?: false
+    val isSilentPayment = profile?.kind == WalletKind.SILENT_PAYMENT
 
-    // Check if currently viewing a stateless wallet (not just if one exists in memory)
-    // Stateless wallet is active only if no persistent wallet is loaded (activeWalletMetadata == null)
-    val isStatelessWallet = activeWalletMetadata == null && wallet.hasStatelessWallet()
+    val isStatelessWallet = profile?.isStateless == true
 
     // Calculated fingerprints for multi-sig local keys (reflects passphrase if entered)
     var calculatedKeyFingerprints by remember { mutableStateOf<List<com.gorunjinian.metrovault.domain.manager.PassphraseManager.CalculatedKeyFingerprint>>(emptyList()) }
@@ -228,7 +227,7 @@ fun WalletDetailsScreen(
             // For multisig the stored path is "multisig/MofN" (no BIP purpose), so the address type
             // comes from the descriptor's script type, not from getPurpose().
             val walletType = if (isMultisig) {
-                when (activeWalletMetadata.multisigConfig?.scriptType) {
+                when (activeWalletMetadata?.multisigConfig?.scriptType) {
                     MultisigScriptType.P2WSH -> if (isTestnet) "Native SegWit (tb1q...)" else "Native SegWit (bc1q...)"
                     MultisigScriptType.P2SH_P2WSH -> if (isTestnet) "Nested SegWit (2...)" else "Nested SegWit (3...)"
                     MultisigScriptType.P2SH -> if (isTestnet) "Legacy (2...)" else "Legacy (3...)"
@@ -293,7 +292,7 @@ fun WalletDetailsScreen(
                         // For multisig: show local cosigner derivation paths (max 2)
                         // For single-sig: show the regular derivation path
                         val displayPath = if (isMultisig) {
-                            val localCosignerPaths = activeWalletMetadata.multisigConfig?.cosigners
+                            val localCosignerPaths = activeWalletMetadata?.multisigConfig?.cosigners
                                 ?.filter { it.isLocal }
                                 ?.map { "m/${it.derivationPath}" }
                                 ?: emptyList()
@@ -333,7 +332,7 @@ fun WalletDetailsScreen(
                         val displayFingerprints = if (calculatedKeyFingerprints.isNotEmpty()) {
                             calculatedKeyFingerprints.map { it.calculatedFingerprint }
                         } else {
-                            activeWalletMetadata.multisigConfig?.localKeyFingerprints ?: emptyList()
+                            activeWalletMetadata?.multisigConfig?.localKeyFingerprints ?: emptyList()
                         }
                         val hasAnyMismatch = calculatedKeyFingerprints.any { it.isMismatch }
 
@@ -422,41 +421,45 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // View Addresses
-            ActionCard(
-                icon = R.drawable.ic_addresses,
-                title = if (isSilentPayment) "View SP Address" else "View Addresses",
-                description = if (isSilentPayment) "Show your silent-payment address"
-                else "Generate and view public addresses",
-                onClick = onViewAddresses
-            )
+            // Which cards appear is decided by WalletProfile.supports; the settings toggles
+            // (BIP-85, Different Accounts) are user preferences layered on top.
+            if (supports(WalletFeature.VIEW_ADDRESSES)) {
+                ActionCard(
+                    icon = R.drawable.ic_addresses,
+                    title = if (isSilentPayment) "View SP Address" else "View Addresses",
+                    description = if (isSilentPayment) "Show your silent-payment address"
+                    else "Generate and view public addresses",
+                    onClick = { onOpenFeature(WalletFeature.VIEW_ADDRESSES) }
+                )
+            }
 
-            // Sign PSBT
-            ActionCard(
-                icon = R.drawable.ic_qr_code_scanner,
-                title = "Sign PSBT",
-                description = "Scan and sign a transaction",
-                onClick = onScanPSBT
-            )
+            if (supports(WalletFeature.SIGN_PSBT)) {
+                ActionCard(
+                    icon = R.drawable.ic_qr_code_scanner,
+                    title = "Sign PSBT",
+                    description = "Scan and sign a transaction",
+                    onClick = { onOpenFeature(WalletFeature.SIGN_PSBT) }
+                )
+            }
 
-            // Check Address (not for SP wallets — no enumerable address tree to check against)
-            if (!isSilentPayment) {
+            if (supports(WalletFeature.CHECK_ADDRESS)) {
                 ActionCard(
                     icon = R.drawable.ic_search,
                     title = "Check Address",
                     description = "Verify if an address belongs to this wallet",
-                    onClick = onCheckAddress
+                    onClick = { onOpenFeature(WalletFeature.CHECK_ADDRESS) }
                 )
             }
 
-            // Export Options (moved up from Advanced)
-            ActionCard(
-                icon = R.drawable.ic_upload,
-                title = "Export",
-                description = if (isMultisig) "Export multisig wallet descriptor"
-                       else "Export keys, descriptors or seed phrase",
-                onClick = { if (isMultisig) onExportMultiSig() else onExport() }
-            )
+            if (supports(WalletFeature.EXPORT)) {
+                ActionCard(
+                    icon = R.drawable.ic_upload,
+                    title = "Export",
+                    description = if (isMultisig) "Export multisig wallet descriptor"
+                           else "Export keys, descriptors or seed phrase",
+                    onClick = { onOpenFeature(WalletFeature.EXPORT) }
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -465,52 +468,48 @@ fun WalletDetailsScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Sign/Verify Message (not for multisig). Stateless wallets get it exactly like
-            // persisted ones. SP wallets use the BIP-322 protocol: verification works
-            // on-device, and signing goes through message-signing PSBT QR.
-            if (!isMultisig) {
+            // SP wallets use the BIP-322 protocol: verification works on-device, and signing
+            // goes through message-signing PSBT QR.
+            if (supports(WalletFeature.SIGN_MESSAGE)) {
                 ActionCard(
                     icon = R.drawable.ic_signature,
                     title = "Sign/Verify Message",
                     description = "Sign messages or verify signatures",
-                    onClick = onSignMessage
+                    onClick = { onOpenFeature(WalletFeature.SIGN_MESSAGE) }
                 )
             }
 
-            // BIP-85 Derivation (only if enabled in settings and not multisig/stateless)
-            if (bip85Enabled && !isMultisig && !isStatelessWallet) {
+            if (bip85Enabled && supports(WalletFeature.BIP85)) {
                 ActionCard(
                     icon = R.drawable.ic_account_tree,
                     title = "BIP-85 Derivation",
                     description = "Derive child seed phrases or passwords",
-                    onClick = onBIP85
+                    onClick = { onOpenFeature(WalletFeature.BIP85) }
                 )
             }
 
-            // Different Accounts (only if enabled in settings and not multisig/stateless)
-            if (differentAccountsEnabled && !isMultisig && !isStatelessWallet) {
+            if (differentAccountsEnabled && supports(WalletFeature.DIFFERENT_ACCOUNTS)) {
                 ActionCard(
                     icon = R.drawable.ic_accounts,
                     title = "Different Accounts",
                     description = "Manage BIP44 account numbers (current: $activeAccountNumber)",
-                    onClick = onDifferentAccounts
+                    onClick = { onOpenFeature(WalletFeature.DIFFERENT_ACCOUNTS) }
                 )
             }
 
-            // Address Type & Network (hidden for multisig and stateless). Any persisted single-seed
-            // wallet can move between the five address formats (incl. Silent Payments) and between
-            // mainnet and testnet. The same seed backs every choice — only the address tree changes.
-            if (!isMultisig && !isStatelessWallet) {
+            // Any stored single-seed wallet can move between the five address formats (incl.
+            // Silent Payments) and between mainnet and testnet. The same seed backs every
+            // choice — only the address tree changes.
+            if (supports(WalletFeature.CHANGE_ADDRESS_TYPE)) {
                 ActionCard(
                     icon = R.drawable.ic_tune,
                     title = "Address Type & Network",
                     description = "Currently: ${AddressFormat.fromPath(derivationPath).label(isTestnet)}",
-                    onClick = onChangeAddressType
+                    onClick = { onOpenFeature(WalletFeature.CHANGE_ADDRESS_TYPE) }
                 )
             }
 
-            // Delete Wallet (not for stateless wallets - nothing to delete)
-            if (!isStatelessWallet) {
+            if (supports(WalletFeature.DELETE)) {
                 ActionCard(
                     icon = R.drawable.ic_delete,
                     title = "Delete Wallet",

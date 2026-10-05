@@ -35,6 +35,7 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.model.WalletMetadata
+import com.gorunjinian.metrovault.data.model.WalletProfile
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -46,12 +47,7 @@ fun WalletsListContent(
     autoExpandSingleWallet: Boolean = false,
     quickShortcuts: List<QuickShortcut> = QuickShortcut.DEFAULT,
     onWalletClick: (String) -> Unit,
-    onViewAddresses: (String) -> Unit,
-    onScanPSBT: (String) -> Unit,
-    onCheckAddress: (String) -> Unit,
-    onExport: (String) -> Unit,
-    onBIP85: (String) -> Unit,
-    onSignMessage: (String) -> Unit
+    onShortcut: (walletId: String, shortcut: QuickShortcut) -> Unit
 ) {
     val wallets by wallet.wallets.collectAsState()
     val view = LocalView.current
@@ -154,13 +150,7 @@ fun WalletsListContent(
                             elevation = shadow,
                             isEditMode = isEditMode,
                             isExpanded = if (isEditMode) false else expandedWalletId == walletItem.id,
-                            // For multisig wallets, use only allowed shortcuts: Addresses, Sign PSBT, Check Address.
-                            // SP wallets drop Check Address — no enumerable address tree to check against.
-                            quickShortcuts = when {
-                                walletItem.isMultisig -> QuickShortcut.DEFAULT
-                                walletItem.isSilentPayment -> quickShortcuts - QuickShortcut.CHECK_ADDRESS
-                                else -> quickShortcuts
-                            },
+                            quickShortcuts = QuickShortcut.forProfile(quickShortcuts, WalletProfile.of(walletItem)),
                             onClick = {
                                 if (!isDragging) {
                                     if (isEditMode) {
@@ -215,28 +205,14 @@ fun WalletsListContent(
                                             currentKeyPassphraseIndex = 0
                                             pendingMultisigWalletId = walletItem.id
                                         } else {
-                                            when (shortcut) {
-                                                QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
-                                                QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
-                                                QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
-                                                QuickShortcut.EXPORT -> onExport(walletItem.id)
-                                                QuickShortcut.BIP85 -> onBIP85(walletItem.id)
-                                                QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
-                                            }
+                                            onShortcut(walletItem.id, shortcut)
                                         }
                                     }
                                 } else if (wallet.needsPassphraseInput(walletItem.id)) {
                                     pendingShortcut = shortcut
                                     showPassphraseDialog = walletItem
                                 } else {
-                                    when (shortcut) {
-                                        QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletItem.id)
-                                        QuickShortcut.SIGN_PSBT -> onScanPSBT(walletItem.id)
-                                        QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletItem.id)
-                                        QuickShortcut.EXPORT -> onExport(walletItem.id)
-                                        QuickShortcut.BIP85 -> onBIP85(walletItem.id)
-                                        QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletItem.id)
-                                    }
+                                    onShortcut(walletItem.id, shortcut)
                                 }
                             },
                             modifier = if (isEditMode) {
@@ -304,14 +280,7 @@ fun WalletsListContent(
 
                         // Execute pending shortcut action or open wallet
                         if (shortcut != null) {
-                            when (shortcut) {
-                                QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletMeta.id)
-                                QuickShortcut.SIGN_PSBT -> onScanPSBT(walletMeta.id)
-                                QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletMeta.id)
-                                QuickShortcut.EXPORT -> onExport(walletMeta.id)
-                                QuickShortcut.BIP85 -> onBIP85(walletMeta.id)
-                                QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletMeta.id)
-                            }
+                            onShortcut(walletMeta.id, shortcut)
                         } else {
                             onWalletClick(walletMeta.id)
                         }
@@ -360,14 +329,7 @@ fun WalletsListContent(
 
                         if (walletId != null) {
                             if (shortcut != null) {
-                                when (shortcut) {
-                                    QuickShortcut.VIEW_ADDRESSES -> onViewAddresses(walletId)
-                                    QuickShortcut.SIGN_PSBT -> onScanPSBT(walletId)
-                                    QuickShortcut.CHECK_ADDRESS -> onCheckAddress(walletId)
-                                    QuickShortcut.EXPORT -> onExport(walletId)
-                                    QuickShortcut.BIP85 -> onBIP85(walletId)
-                                    QuickShortcut.SIGN_MESSAGE -> onSignMessage(walletId)
-                                }
+                                onShortcut(walletId, shortcut)
                             } else {
                                 onWalletClick(walletId)
                             }

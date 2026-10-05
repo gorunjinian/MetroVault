@@ -10,7 +10,6 @@ import com.gorunjinian.metrovault.core.qr.AnimatedQRScanner
 import com.gorunjinian.metrovault.core.qr.OutputFormat
 import com.gorunjinian.metrovault.core.qr.QRCodeUtils
 import com.gorunjinian.metrovault.core.qr.QRDensity
-import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletMessageSigner
 import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
@@ -97,11 +96,9 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
     private var prefillApplied = false
 
     init {
-        // The active wallet's derivation path comes from storage — resolve it off the main thread
+        // The active wallet's kind comes from storage — resolve it off the main thread
         viewModelScope.launch {
-            val isSilentPayment = withContext(Dispatchers.IO) {
-                DerivationPaths.getPurpose(wallet.getActiveWalletDerivationPath()) == 352
-            }
+            val isSilentPayment = withContext(Dispatchers.IO) { wallet.isActiveSilentPayment() }
             if (isSilentPayment) {
                 _uiState.update {
                     it.copy(

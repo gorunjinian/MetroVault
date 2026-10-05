@@ -29,8 +29,10 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.navigation.Screen
+import com.gorunjinian.metrovault.navigation.openWalletFeature
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.feature.settings.SettingsContent
 import com.gorunjinian.metrovault.feature.wallet.list.WalletsListContent
@@ -98,73 +100,12 @@ fun HomeScreen(
         }
     }
 
-    val onViewAddressesCallback = remember<(String) -> Unit>(wallet, navController, scope) {
-        { walletId ->
+    val onShortcutCallback = remember<(String, QuickShortcut) -> Unit>(wallet, navController, scope) {
+        { walletId, shortcut ->
             scope.launch {
                 val loaded = wallet.openWallet(walletId)
                 if (loaded) {
-                    val target = if (wallet.isActiveSilentPayment()) {
-                        Screen.SPAddress.route
-                    } else {
-                        Screen.Addresses.createRoute()
-                    }
-                    navController.navigate(target)
-                }
-            }
-        }
-    }
-
-    val onScanPSBTCallback = remember<(String) -> Unit>(wallet, navController, scope) {
-        { walletId ->
-            scope.launch {
-                val loaded = wallet.openWallet(walletId)
-                if (loaded) {
-                    navController.navigate(Screen.ScanPSBT.route)
-                }
-            }
-        }
-    }
-
-    val onCheckAddressCallback = remember<(String) -> Unit>(wallet, navController, scope) {
-        { walletId ->
-            scope.launch {
-                val loaded = wallet.openWallet(walletId)
-                // SP wallets have no enumerable address tree to check against
-                if (loaded && !wallet.isActiveSilentPayment()) {
-                    navController.navigate(Screen.CheckAddress.route)
-                }
-            }
-        }
-    }
-
-    val onExportCallback = remember<(String) -> Unit>(wallet, navController, scope) {
-        { walletId ->
-            scope.launch {
-                val loaded = wallet.openWallet(walletId)
-                if (loaded) {
-                    navController.navigate(Screen.ExportOptions.route)
-                }
-            }
-        }
-    }
-
-    val onBIP85Callback = remember<(String) -> Unit>(wallet, navController, scope) {
-        { walletId ->
-            scope.launch {
-                val loaded = wallet.openWallet(walletId)
-                if (loaded) {
-                    navController.navigate(Screen.BIP85Derive.route)
-                }
-            }
-        }
-    }
-
-    val onSignMessageCallback = remember<(String) -> Unit>(wallet, navController, scope) {
-        { walletId ->
-            scope.launch {
-                val loaded = wallet.openWallet(walletId)
-                if (loaded) {
-                    navController.navigate(Screen.SignMessage.createRoute())
+                    navController.openWalletFeature(wallet, shortcut.feature)
                 }
             }
         }
@@ -307,7 +248,7 @@ fun HomeScreen(
                             // Filter out BIP85 from shortcuts if disabled
                             val bip85Enabled = userPreferencesRepository.bip85Enabled.collectAsState().value
                             val filteredShortcuts = userPreferencesRepository.quickShortcuts.collectAsState().value
-                                .filter { bip85Enabled || it != com.gorunjinian.metrovault.data.model.QuickShortcut.BIP85 }
+                                .filter { bip85Enabled || it != QuickShortcut.BIP85 }
                             
                             WalletsListContent(
                                 wallet = wallet,
@@ -316,12 +257,7 @@ fun HomeScreen(
                                 autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
                                 quickShortcuts = filteredShortcuts,
                                 onWalletClick = onWalletClickCallback,
-                                onViewAddresses = onViewAddressesCallback,
-                                onScanPSBT = onScanPSBTCallback,
-                                onCheckAddress = onCheckAddressCallback,
-                                onExport = onExportCallback,
-                                onBIP85 = onBIP85Callback,
-                                onSignMessage = onSignMessageCallback
+                                onShortcut = onShortcutCallback
                             )
                         }
                         1 -> SettingsContent(

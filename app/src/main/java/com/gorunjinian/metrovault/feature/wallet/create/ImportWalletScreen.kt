@@ -54,7 +54,6 @@ fun ImportWalletScreen(
                     selectedDerivationPath = uiState.selectedDerivationPath,
                     accountNumber = uiState.accountNumber,
                     isTestnet = uiState.isTestnet,
-                    includeSilentPayments = true,
                     onDerivationPathChange = { viewModel.setDerivationPath(it) },
                     onAccountNumberChange = { viewModel.setAccountNumber(it) },
                     onTestnetChange = { viewModel.setTestnetMode(it) },
