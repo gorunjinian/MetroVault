@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -22,7 +23,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.BuildConfig
 import com.gorunjinian.metrovault.R
@@ -37,6 +42,7 @@ import kotlin.time.Duration.Companion.milliseconds
 fun UnlockScreen(
     viewModel: AuthViewModel = viewModel(),
     userPreferencesRepository: UserPreferencesRepository,
+    lockedManually: Boolean = false,
     onUnlockSuccess: (autoOpenRequested: Boolean) -> Unit,
     onDataWiped: () -> Unit = {}
 ) {
@@ -45,7 +51,10 @@ fun UnlockScreen(
     val biometricManager = remember { BiometricAuthManager(context) }
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateAsState()
     val customUnlockTitle by userPreferencesRepository.customUnlockTitle.collectAsState()
+    val biometricAutoPrompt by userPreferencesRepository.biometricAutoPrompt.collectAsState()
 
     // Collect state from ViewModel
     val uiState by viewModel.unlockState.collectAsStateWithLifecycle()
@@ -94,6 +103,10 @@ fun UnlockScreen(
     }
 
     val isBiometricAvailable = remember(biometricManager) { biometricManager.isBiometricAvailable() }
+    val canUnlockWithBiometrics = uiState.biometricsEnabled &&
+        isBiometricAvailable &&
+        uiState.hasBiometricPassword &&
+        uiState.biometricTarget != UserPreferencesRepository.BIOMETRIC_TARGET_NONE
 
     fun unlockWithBiometrics() {
         activity?.let { act ->
@@ -111,8 +124,12 @@ fun UnlockScreen(
                         }
                     },
                     onError = { error ->
-                        scope.launch {
-                            viewModel.setBiometricError(error)
+                        // Leaving the app cancels the prompt; that is not an error
+                        // worth showing when the user comes back
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                            scope.launch {
+                                viewModel.setBiometricError(error)
+                            }
                         }
                     },
                     onFailed = {
@@ -124,6 +141,28 @@ fun UnlockScreen(
             }
         } ?: run {
             viewModel.setBiometricError("Cannot access biometric authentication")
+        }
+    }
+
+    // Auto-open: the prompt opens by itself once each time the app comes to the
+    // foreground on this screen; cancelling it leaves the button. Not straight after
+    // an in-app lock, and never for the duress target, where a finger resting on the
+    // sensor would wipe everything.
+    var autoPromptArmed by rememberSaveable { mutableStateOf(!lockedManually) }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        // A rotation stops the activity too, but the user never left the app
+        if (activity?.isChangingConfigurations != true) autoPromptArmed = true
+    }
+    val shouldAutoPrompt = autoPromptArmed &&
+        biometricAutoPrompt &&
+        canUnlockWithBiometrics &&
+        uiState.biometricTarget != UserPreferencesRepository.BIOMETRIC_TARGET_DURESS &&
+        !uiState.isAuthenticating &&
+        lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    LaunchedEffect(shouldAutoPrompt) {
+        if (shouldAutoPrompt) {
+            autoPromptArmed = false
+            unlockWithBiometrics()
         }
     }
 
@@ -251,12 +290,7 @@ fun UnlockScreen(
             }
 
             // Biometric section outside the card
-            if (!uiState.isAuthenticating &&
-                uiState.biometricsEnabled && 
-                isBiometricAvailable && 
-                uiState.hasBiometricPassword &&
-                uiState.biometricTarget != UserPreferencesRepository.BIOMETRIC_TARGET_NONE
-            ) {
+            if (!uiState.isAuthenticating && canUnlockWithBiometrics) {
                 Spacer(modifier = Modifier.height(32.dp))
 
                 // Fingerprint button with background circle

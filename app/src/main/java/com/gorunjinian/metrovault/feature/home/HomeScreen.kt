@@ -32,6 +32,7 @@ import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.navigation.Screen
+import com.gorunjinian.metrovault.navigation.navigateToUnlockAfterManualLock
 import com.gorunjinian.metrovault.navigation.openWalletFeature
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.feature.settings.SettingsContent
@@ -460,9 +461,7 @@ fun HomeScreen(
                                         if (!quoteTriggered) {
                                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                             wallet.emergencyWipe()
-                                            navController.navigate(Screen.Unlock.route) {
-                                                popUpTo(0) { inclusive = true }
-                                            }
+                                            navController.navigateToUnlockAfterManualLock()
                                         }
                                         quoteTriggered = false
                                     },

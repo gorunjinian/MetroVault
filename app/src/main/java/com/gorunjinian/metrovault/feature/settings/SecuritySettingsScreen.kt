@@ -49,6 +49,7 @@ fun SecuritySettingsScreen(
     val biometricTarget by userPreferencesRepository.biometricTarget.collectAsState()
     val wipeOnFailedAttempts by userPreferencesRepository.wipeOnFailedAttempts.collectAsState()
     val tapToCopyEnabled by userPreferencesRepository.tapToCopyEnabled.collectAsState()
+    val biometricAutoPrompt by userPreferencesRepository.biometricAutoPrompt.collectAsState()
 
     var showBiometricSetupDialog by remember { mutableStateOf(false) }
     var showBiometricPasswordDialog by remember { mutableStateOf(false) }
@@ -268,6 +269,52 @@ fun SecuritySettingsScreen(
                         userPreferencesRepository.setTapToCopyEnabled(enabled)
                     }
                 )
+            }
+
+            // Auto-Open Fingerprint Toggle - only while fingerprint opens the vault in
+            // use, so a decoy session can't change the main vault's prompt. Never for
+            // the duress target: a prompt that opens by itself lets a finger resting on
+            // the sensor wipe everything.
+            if (isBiometricEnabledForCurrentVault &&
+                biometricTarget != UserPreferencesRepository.BIOMETRIC_TARGET_DURESS
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_mobile_unlock),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column {
+                            Text(
+                                text = "Auto-Open Fingerprint",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Skip tapping the fingerprint button to unlock",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = biometricAutoPrompt,
+                        onCheckedChange = { enabled ->
+                            userPreferencesRepository.setBiometricAutoPrompt(enabled)
+                        }
+                    )
+                }
             }
 
             // Duress Password - Only visible in Main Mode. Destructive, so it

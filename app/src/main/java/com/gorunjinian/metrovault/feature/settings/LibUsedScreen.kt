@@ -32,6 +32,7 @@ fun LibUsedScreen(
 ) {
     val libraries = listOf(
         // Core Android
+        Library("Kotlin Standard Library", "Language", "Core Kotlin runtime, collections & utilities", "2.4.20"),
         Library("AndroidX Core KTX", "Core Android", "Kotlin extensions for Android core", "1.19.0"),
         Library("AndroidX AppCompat", "Core Android", "Backward-compatible Android components", "1.8.0"),
         Library("AndroidX Activity KTX", "Core Android", "Kotlin extensions for Activity", "1.13.0"),
@@ -41,13 +42,13 @@ fun LibUsedScreen(
         // UI & Design
         Library("Compose Material 3", "UI & Design", "Material Design 3 components for Compose", "1.4.0"),
         Library("Jetpack Compose", "UI & Design", "Modern declarative UI toolkit", "BOM 2026.09.00"),
-        Library("Compose Material Icons", "UI & Design", "Extended Material Design icons"),
-        Library("Navigation Compose", "UI & Design", "Navigation for Compose apps", "2.10.0"),
+        Library("Navigation Compose", "UI & Design", "Navigation for Compose apps", "2.10.1"),
         Library("Reorderable", "UI & Design", "Drag-and-drop reordering for Compose lists", "3.1.0"),
 
         // Security & Crypto
         Library("AndroidX Security Crypto", "Security", "Encrypted SharedPreferences", "1.1.0"),
         Library("AndroidX Biometric", "Security", "Fingerprint & face authentication", "1.4.0-α07"),
+        Library("Vaultovich", "Bitcoin", "Bitcoin keys, PSBT, descriptors & transaction signing", "0.2.0"),
         Library("Secp256k1 KMP", "Cryptography", "Bitcoin elliptic curve cryptography", "0.24.0"),
 
         // QR Code

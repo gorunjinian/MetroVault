@@ -88,6 +88,14 @@ class UserPreferencesRepository(context: Context) {
     val tapToCopyEnabled: StateFlow<Boolean> = _tapToCopyEnabled.asStateFlow()
 
     /**
+     * Whether the unlock screen opens the fingerprint prompt by itself instead of waiting for the
+     * fingerprint button. Off by default: fingerprint opens only one vault, so the user normally
+     * chooses between it and the password field. Never honoured for the duress target.
+     */
+    private val _biometricAutoPrompt = preference { getBoolean(KEY_BIOMETRIC_AUTO_PROMPT, false) }
+    val biometricAutoPrompt: StateFlow<Boolean> = _biometricAutoPrompt.asStateFlow()
+
+    /**
      * Whether BIP-352 silent-payment UI is exposed on regular (non-SP-flagged) wallets.
      *
      * Off by default: a missing key on first read after upgrade behaves as if the user explicitly
@@ -212,6 +220,11 @@ class UserPreferencesRepository(context: Context) {
         _tapToCopyEnabled.value = enabled
     }
 
+    fun setBiometricAutoPrompt(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_BIOMETRIC_AUTO_PROMPT, enabled) }
+        _biometricAutoPrompt.value = enabled
+    }
+
     fun setSilentPaymentsEnabled(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_SILENT_PAYMENTS_ENABLED, enabled) }
         _silentPaymentsEnabled.value = enabled
@@ -238,6 +251,7 @@ class UserPreferencesRepository(context: Context) {
         private const val KEY_CUSTOM_UNLOCK_TITLE = "custom_unlock_title"
         private const val KEY_BLACK_THEME_ENABLED = "black_theme_enabled"
         private const val KEY_TAP_TO_COPY_ENABLED = "tap_to_copy_enabled"
+        private const val KEY_BIOMETRIC_AUTO_PROMPT = "biometric_auto_prompt"
         private const val KEY_SILENT_PAYMENTS_ENABLED = "silent_payments_enabled"
         private const val KEY_MULTISIG_VERIFICATION_EXPLAINER_SHOWN = "multisig_verification_explainer_shown"
         const val THEME_LIGHT = "light"

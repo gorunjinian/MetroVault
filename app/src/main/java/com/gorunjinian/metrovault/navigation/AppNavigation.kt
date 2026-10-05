@@ -199,8 +199,13 @@ fun AppNavigation(
                     }
                 }
                 AppSessionViewModel.NavigationEvent.ToUnlock -> {
-                    navController.navigate(Screen.Unlock.route) {
-                        popUpTo(0) { inclusive = true }
+                    // An in-app lock ends the session too, so this also arrives just
+                    // after one has opened Unlock. A second Unlock entry would drop
+                    // that entry's manual-lock mark and auto-open the fingerprint prompt.
+                    if (navController.currentDestination?.route != Screen.Unlock.route) {
+                        navController.navigate(Screen.Unlock.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
                     }
                 }
                 AppSessionViewModel.NavigationEvent.ToSetup -> {
@@ -271,9 +276,10 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.Unlock.route) {
+        composable(Screen.Unlock.route) { backStackEntry ->
             UnlockScreen(
                 userPreferencesRepository = userPreferencesRepository,
+                lockedManually = backStackEntry.savedStateHandle.get<Boolean>(LOCKED_MANUALLY) == true,
                 onUnlockSuccess = sessionViewModel::onUnlockSuccess,
                 onDataWiped = {
                     // Data was wiped due to failed login attempts - navigate to setup
@@ -375,11 +381,7 @@ fun AppNavigation(
                 userPreferencesRepository = userPreferencesRepository,
                 onOpenFeature = { feature -> navController.openWalletFeature(wallet, feature) },
                 onVerifyMultisig = { walletId -> navController.navigate(Screen.VerifyMultisig.createRoute(walletId)) },
-                onLock = {
-                    navController.navigate(Screen.Unlock.route) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                },
+                onLock = { navController.navigateToUnlockAfterManualLock() },
                 onBack = {
                     if (navController.previousBackStackEntry != null) {
                         navController.popBackStack()
@@ -696,6 +698,21 @@ fun AppNavigation(
             )
         }
     }
+}
+
+/** Set on the Unlock entry by [navigateToUnlockAfterManualLock]. */
+private const val LOCKED_MANUALLY = "lockedManually"
+
+/**
+ * Lock from inside the app (the lock buttons on Home and Wallet Details). The new Unlock entry is
+ * marked so the unlock screen skips its automatic fingerprint prompt: the user just chose to lock,
+ * perhaps to hand the phone over or to switch vaults.
+ */
+fun NavHostController.navigateToUnlockAfterManualLock() {
+    navigate(Screen.Unlock.route) {
+        popUpTo(0) { inclusive = true }
+    }
+    currentBackStackEntry?.savedStateHandle?.set(LOCKED_MANUALLY, true)
 }
 
 /** Pop the back stack, or navigate to [fallback] when there is nothing to pop. */
