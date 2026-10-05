@@ -129,7 +129,8 @@ fun HomeScreen(
         { walletId ->
             scope.launch {
                 val loaded = wallet.openWallet(walletId)
-                if (loaded) {
+                // SP wallets have no enumerable address tree to check against
+                if (loaded && !wallet.isActiveSilentPayment()) {
                     navController.navigate(Screen.CheckAddress.route)
                 }
             }

@@ -172,6 +172,7 @@ fun UnlockScreen(
             AuthFormCard {
                 if (uiState.isAuthenticating) {
                     Column(
+
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 24.dp),

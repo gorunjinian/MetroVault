@@ -154,11 +154,12 @@ fun WalletsListContent(
                             elevation = shadow,
                             isEditMode = isEditMode,
                             isExpanded = if (isEditMode) false else expandedWalletId == walletItem.id,
-                            // For multisig wallets, use only allowed shortcuts: Addresses, Sign PSBT, Check Address
-                            quickShortcuts = if (walletItem.isMultisig) {
-                                QuickShortcut.DEFAULT
-                            } else {
-                                quickShortcuts
+                            // For multisig wallets, use only allowed shortcuts: Addresses, Sign PSBT, Check Address.
+                            // SP wallets drop Check Address — no enumerable address tree to check against.
+                            quickShortcuts = when {
+                                walletItem.isMultisig -> QuickShortcut.DEFAULT
+                                walletItem.isSilentPayment -> quickShortcuts - QuickShortcut.CHECK_ADDRESS
+                                else -> quickShortcuts
                             },
                             onClick = {
                                 if (!isDragging) {
