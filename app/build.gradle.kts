@@ -6,7 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val targetSdkValue = 36
+val targetSdkValue = 37
 val minSdkValue = 26
 
 android {

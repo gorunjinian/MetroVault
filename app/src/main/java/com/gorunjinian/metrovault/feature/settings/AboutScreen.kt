@@ -335,7 +335,7 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     TechInfoRow(label = "Min Android", value = "8.0 (API 26)")
-                    TechInfoRow(label = "Target Android", value = "16 (API 36)")
+                    TechInfoRow(label = "Target Android", value = "17 (API 37)")
                     
                     HorizontalDivider(
                         modifier = Modifier.padding(vertical = 12.dp),
