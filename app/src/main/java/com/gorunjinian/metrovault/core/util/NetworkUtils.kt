@@ -1,7 +1,5 @@
 package com.gorunjinian.metrovault.core.util
 
-import com.gorunjinian.vaultovich.DeterministicWallet
-
 /**
  * Centralized network (mainnet/testnet) detection utilities.
  *
@@ -19,7 +17,7 @@ object NetworkUtils {
         "uprv",  // BIP49 testnet private
         "vpub",  // BIP84 testnet public (native segwit)
         "vprv"   // BIP84 testnet private
-        // Note: Uppercase Vpub/Upub (BIP48 multisig) are also testnet but handled by prefix int check
+        // Uppercase Vpub/Upub (BIP48 multisig) match too: the comparison is case-insensitive
     )
 
     // ==================== Derivation Path Detection ====================
@@ -58,29 +56,6 @@ object NetworkUtils {
     fun isTestnetXpub(xpub: String): Boolean {
         val lower = xpub.lowercase()
         return TESTNET_XPUB_PREFIXES.any { lower.startsWith(it) }
-    }
-
-    // ==================== Version Prefix Detection ====================
-
-    /**
-     * Check if a version prefix byte (as Int) indicates testnet.
-     * Covers both single-sig (BIP44/49/84) and multisig (BIP48) prefixes.
-     *
-     * @param prefix The 4-byte version prefix as an Int
-     * @return true if the prefix is a testnet prefix
-     */
-    fun isTestnetPrefix(prefix: Int): Boolean {
-        return prefix == DeterministicWallet.tpub ||
-               prefix == DeterministicWallet.tprv ||
-               prefix == DeterministicWallet.upub ||
-               prefix == DeterministicWallet.uprv ||
-               prefix == DeterministicWallet.vpub ||
-               prefix == DeterministicWallet.vprv ||
-               // BIP48 multisig testnet prefixes
-               prefix == Bip48MultisigPrefixes.Vpub ||
-               prefix == Bip48MultisigPrefixes.Vprv ||
-               prefix == Bip48MultisigPrefixes.Upub ||
-               prefix == Bip48MultisigPrefixes.Uprv
     }
 
     // ==================== Convenience Methods ====================

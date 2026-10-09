@@ -6,7 +6,6 @@ import com.gorunjinian.vaultovich.DescriptorExtensions
 import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.vaultovich.ScriptType
-import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 
 /**
@@ -415,10 +414,10 @@ class KeyEncodingService {
     private fun getBip48PublicKeyPrefix(bip48ScriptType: DerivationPaths.Bip48ScriptType, isTestnet: Boolean): Int {
         return when (bip48ScriptType) {
             DerivationPaths.Bip48ScriptType.P2WSH -> {
-                if (isTestnet) Bip48MultisigPrefixes.Vpub else Bip48MultisigPrefixes.Zpub
+                if (isTestnet) DeterministicWallet.Vpub else DeterministicWallet.Zpub
             }
             DerivationPaths.Bip48ScriptType.P2SH_P2WSH -> {
-                if (isTestnet) Bip48MultisigPrefixes.Upub else Bip48MultisigPrefixes.Ypub
+                if (isTestnet) DeterministicWallet.Upub else DeterministicWallet.Ypub
             }
         }
     }
@@ -429,10 +428,10 @@ class KeyEncodingService {
     private fun getBip48PrivateKeyPrefix(bip48ScriptType: DerivationPaths.Bip48ScriptType, isTestnet: Boolean): Int {
         return when (bip48ScriptType) {
             DerivationPaths.Bip48ScriptType.P2WSH -> {
-                if (isTestnet) Bip48MultisigPrefixes.Vprv else Bip48MultisigPrefixes.Zprv
+                if (isTestnet) DeterministicWallet.Vprv else DeterministicWallet.Zprv
             }
             DerivationPaths.Bip48ScriptType.P2SH_P2WSH -> {
-                if (isTestnet) Bip48MultisigPrefixes.Uprv else Bip48MultisigPrefixes.Yprv
+                if (isTestnet) DeterministicWallet.Uprv else DeterministicWallet.Yprv
             }
         }
     }

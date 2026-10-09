@@ -555,12 +555,10 @@ fun ScanPSBTScreen(
                                 val details = wallet.getPsbtDetails(assembledPSBT)
 
                                 // Also pre-compute output types on background thread
-                                // (this involves expensive address scanning)
-                                val computedOutputsWithType = details?.outputs?.map { output ->
-                                    val checkResult = wallet.checkAddressBelongsToWallet(output.address)
-                                    val belongsToWallet = checkResult?.belongs == true
-                                    val isOnChangePath = checkResult?.isChange == true
-                                    OutputWithType(output, belongsToWallet, isOnChangePath)
+                                // (this can involve expensive address scanning)
+                                val computedOutputsWithType = details?.outputs?.let { outputs ->
+                                    val ownership = wallet.classifyPsbtOutputs(assembledPSBT, outputs.map { it.address })
+                                    outputs.zip(ownership) { output, owner -> OutputWithType.of(output, owner) }
                                 }
 
                                 // Switch back to Main thread for state updates

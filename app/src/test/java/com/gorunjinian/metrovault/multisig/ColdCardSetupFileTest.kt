@@ -1,6 +1,5 @@
 package com.gorunjinian.metrovault.multisig
 
-import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.service.multisig.ColdCardSetupFile
@@ -200,8 +199,8 @@ class ColdCardSetupFileTest {
             Name: Slip
             Policy: 1 of 2
             Derivation: m/48'/0'/0'/2'
-            aaaaaaaa: ${slip132(xpub1, Bip48MultisigPrefixes.Zpub)}
-            bbbbbbbb: ${slip132(xpub2, Bip48MultisigPrefixes.Zpub)}
+            aaaaaaaa: ${slip132(xpub1, DeterministicWallet.Zpub)}
+            bbbbbbbb: ${slip132(xpub2, DeterministicWallet.Zpub)}
         """.trimIndent()
 
         val parsed = parseOk(file)
@@ -216,8 +215,8 @@ class ColdCardSetupFileTest {
             Policy: 1 of 2
             Derivation: m/48'/0'/0'/1'
             Format: P2SH-P2WSH
-            aaaaaaaa: ${slip132(xpub1, Bip48MultisigPrefixes.Zpub)}
-            bbbbbbbb: ${slip132(xpub2, Bip48MultisigPrefixes.Zpub)}
+            aaaaaaaa: ${slip132(xpub1, DeterministicWallet.Zpub)}
+            bbbbbbbb: ${slip132(xpub2, DeterministicWallet.Zpub)}
         """.trimIndent()
 
         assertEquals(MultisigScriptType.P2SH_P2WSH, parseOk(file).scriptType)

@@ -38,14 +38,10 @@ class MnemonicService {
      * because system entropy from SecureRandom is always mixed in.
      */
     fun generateMnemonicWithUserEntropy(wordCount: Int = 24, userEntropy: ByteArray?): List<String> {
-        val entropySize = when (wordCount) {
-            12 -> 16  // 128 bits
-            15 -> 20  // 160 bits
-            18 -> 24  // 192 bits
-            21 -> 28  // 224 bits
-            24 -> 32  // 256 bits
-            else -> 32
-        }
+        // Refuse rather than quietly hand back a phrase of a length the caller did not ask for
+        require(wordCount in MnemonicCode.VALID_WORD_COUNTS) { "Unsupported mnemonic word count: $wordCount" }
+        // 32 bits of entropy per 3 words: 12 → 16 bytes (128 bits) … 24 → 32 bytes (256 bits)
+        val entropySize = wordCount * 4 / 3
 
         val systemEntropy = ByteArray(entropySize)
         var combinedEntropy: ByteArray? = null

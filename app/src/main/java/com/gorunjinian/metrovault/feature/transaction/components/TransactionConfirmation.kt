@@ -25,7 +25,8 @@ import com.gorunjinian.metrovault.data.model.PsbtDetails
  *
  * Displays:
  * - Inputs with addresses/UTXOs and amounts
- * - Outputs labeled CHANGE or RECEIVE when the address belongs to this wallet
+ * - Outputs labeled CHANGE or RECEIVE when the address belongs to this wallet, and NOT YOURS when
+ *   the PSBT claims an output for this wallet that does not derive from its keys
  * - Transaction Summary (net amount sent externally, tx size, fee rate, structure)
  * - Network fee
  * - Total amount — excludes any output returning to this wallet (change AND receive self-spends)
@@ -419,6 +420,7 @@ fun TransactionConfirmation(
                                     dimmed = outputWithType.isOurAddress
                                 ) {
                                     when {
+                                        outputWithType.claimMismatch -> ClaimMismatchBadge()
                                         outputWithType.isChangeAddress == true -> OutputBadge(
                                             text = "CHANGE",
                                             textColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -431,6 +433,7 @@ fun TransactionConfirmation(
                                         )
                                     }
                                 }
+                                if (outputWithType.claimMismatch) ClaimMismatchNote()
                             }
                         } else {
                             Row(
@@ -462,6 +465,7 @@ fun TransactionConfirmation(
                                             )
                                         }
                                         when {
+                                            outputWithType.claimMismatch -> ClaimMismatchBadge()
                                             outputWithType.isChangeAddress == true -> {
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
@@ -492,6 +496,7 @@ fun TransactionConfirmation(
                                             }
                                         }
                                     }
+                                    if (outputWithType.claimMismatch) ClaimMismatchNote()
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
@@ -801,6 +806,25 @@ private fun SilentPaymentAddressRow(
         }
         trailingBadge()
     }
+}
+
+/** Flags an output the PSBT claims for this wallet although its script does not derive from it. */
+@Composable
+private fun ClaimMismatchBadge() = OutputBadge(
+    text = "NOT YOURS",
+    textColor = MaterialTheme.colorScheme.onErrorContainer,
+    background = MaterialTheme.colorScheme.errorContainer
+)
+
+/** The line under a [ClaimMismatchBadge] output saying what the badge means. */
+@Composable
+private fun ClaimMismatchNote() {
+    Text(
+        text = "The PSBT marks this output as yours, but it does not pay this wallet.",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier.padding(top = 4.dp)
+    )
 }
 
 /** A small rounded badge (e.g. CHANGE / RECEIVE) shown beside an output address. */

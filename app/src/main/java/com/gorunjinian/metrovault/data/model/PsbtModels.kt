@@ -47,6 +47,25 @@ data class PsbtOutput(
 )
 
 /**
+ * Whether a PSBT output pays the active wallet, established by deriving its script ourselves
+ * rather than by trusting the PSBT's derivation hints.
+ */
+sealed interface PsbtOutputOwnership {
+    /** Pays this wallet, on the change branch when [isChange]. */
+    data class Ours(val isChange: Boolean) : PsbtOutputOwnership
+
+    /** Pays someone else. */
+    data object External : PsbtOutputOwnership
+
+    /**
+     * The PSBT claims this output pays the wallet, but its script does not derive from the wallet's
+     * keys. This is how an attacker's address passed off as change looks, so the output is shown as
+     * a payment with a warning and never folded into change.
+     */
+    data object ClaimMismatch : PsbtOutputOwnership
+}
+
+/**
  * Result of PSBT signing operation.
  * Contains the signed PSBT and information about any alternative paths used.
  *

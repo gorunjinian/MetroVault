@@ -7,9 +7,9 @@ import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.vaultovich.*
+import com.gorunjinian.vaultovich.MultisigScriptType as VaultovichMultisigScriptType
 import com.gorunjinian.vaultovich.io.readNBytes
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
-import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.metrovault.domain.service.util.WalletConstants
 
@@ -154,6 +154,50 @@ class MultisigAddressService {
     }
 
     /**
+     * The registered wallet as vaultovich's [MultisigAccount], the input `Psbt.verifyOutput` checks
+     * outputs against.
+     *
+     * Each cosigner key is rebuilt from its raw public key and chain code, the only fields BIP-32
+     * derivation reads, with depth and path taken from the descriptor's key origin. This is the same
+     * bypass [deriveChildPublicKey] uses for descriptor xpubs whose own depth bytes are inconsistent.
+     *
+     * @return null if any cosigner's fingerprint, derivation path or key cannot be read
+     */
+    fun toMultisigAccount(config: MultisigConfig): MultisigAccount? {
+        return try {
+            val cosigners = config.cosigners.map { cosigner ->
+                val raw = decodeXpubRaw(cosigner.xpub) ?: return null
+                val accountPath = KeyPath(cosigner.derivationPath.replace('H', 'h'))
+                Cosigner(
+                    masterFingerprint = cosigner.fingerprint.toLong(16),
+                    accountPath = accountPath,
+                    accountKey = DeterministicWallet.ExtendedPublicKey(
+                        raw.publicKeyBytes.byteVector(),
+                        raw.chaincode.byteVector32(),
+                        depth = accountPath.path.size,
+                        path = accountPath,
+                        parent = 0L
+                    )
+                )
+            }
+            MultisigAccount(
+                threshold = config.m,
+                cosigners = cosigners,
+                scriptType = when (config.scriptType) {
+                    MultisigScriptType.P2WSH -> VaultovichMultisigScriptType.P2WSH
+                    MultisigScriptType.P2SH_P2WSH -> VaultovichMultisigScriptType.P2SH_P2WSH
+                    MultisigScriptType.P2SH -> VaultovichMultisigScriptType.P2SH
+                },
+                // Address generation always sorts the keys, so verification has to agree with it
+                sortedKeys = true
+            )
+        } catch (e: Exception) {
+            AppLog.e(TAG) { "Failed to build multisig account: ${e.message}" }
+            null
+        }
+    }
+
+    /**
      * Checks if an address belongs to the multisig wallet.
      */
     fun checkAddressBelongsToMultisig(
@@ -250,17 +294,19 @@ class MultisigAddressService {
         val cleanedXpub = xpubString.trim()
         return try {
             val (prefix, bin) = Base58Check.decodeWithIntPrefix(cleanedXpub)
-            // Validate it's an xpub-type prefix
-            // Includes both single-sig (lowercase) and BIP48 multisig (uppercase) prefixes
-            if (!Bip48MultisigPrefixes.isValidXpubPrefix(prefix)) {
+            // Public prefixes only, single-sig (lowercase) and BIP48 multisig (uppercase) alike
+            if (prefix !in DeterministicWallet.mainnetPublicPrefixes &&
+                prefix !in DeterministicWallet.testnetPublicPrefixes
+            ) {
                 AppLog.e(TAG) { "Invalid xpub prefix" }
                 return null
             }
 
             // Parse xpub structure (78 bytes after prefix):
-            // depth (1) + parent (4) + childNumber (4) + chaincode (32) + publicKey (33) = 74 bytes
-            if (bin.size < 74) {
-                AppLog.e(TAG) { "xpub data too short" }
+            // depth (1) + parent (4) + childNumber (4) + chaincode (32) + publicKey (33) = 74 bytes.
+            // Exact, as vaultovich's decoder requires: extra bytes are not silently ignored.
+            if (bin.size != 74) {
+                AppLog.e(TAG) { "xpub data has wrong length" }
                 return null
             }
 

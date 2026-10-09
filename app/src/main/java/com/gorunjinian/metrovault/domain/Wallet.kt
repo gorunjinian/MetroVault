@@ -23,6 +23,7 @@ import com.gorunjinian.metrovault.data.model.CoordinatorExportResult
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import com.gorunjinian.metrovault.data.model.PsbtDetails
+import com.gorunjinian.metrovault.data.model.PsbtOutputOwnership
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
@@ -31,7 +32,9 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.CoordinatorExportServic
 import com.gorunjinian.metrovault.domain.service.multisig.BSMS
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigChangeValidator
+import com.gorunjinian.metrovault.domain.service.psbt.PsbtOutputClassifier
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
+import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
@@ -41,8 +44,14 @@ import com.gorunjinian.metrovault.domain.manager.SilentPaymentManager
 import com.gorunjinian.metrovault.domain.manager.StatelessWalletManager
 import com.gorunjinian.metrovault.domain.manager.WalletAccountManager
 import com.gorunjinian.metrovault.domain.manager.WalletSessionManager
+import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.vaultovich.DeterministicWallet
+import com.gorunjinian.vaultovich.KeyPath
 import com.gorunjinian.vaultovich.MnemonicCode
+import com.gorunjinian.vaultovich.OutputOwnership
+import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.SingleSigAccount
+import com.gorunjinian.vaultovich.verifyOutput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -920,7 +929,7 @@ class   Wallet(context: Context) {
                 )
             }
             activeMetadata.multisigConfig?.let { config ->
-                val validation = multisigChangeValidator.validate(psbtString, config, isActiveWalletTestnet())
+                val validation = multisigChangeValidator.validate(psbtString, config)
                 if (validation is MultisigChangeValidator.Result.Mismatch) {
                     return PsbtSigningResult.Failure(
                         WalletSigningService.SigningError.CHANGE_OUTPUT_MISMATCH,
@@ -1095,6 +1104,46 @@ class   Wallet(context: Context) {
         val accountPublicKey = state.getAccountPublicKey() ?: return null
         val scriptType = getScriptType(state.derivationPath)
         return bitcoinService.checkAddressBelongsToWallet(address, accountPublicKey, scriptType, isTestnet)
+    }
+
+    /**
+     * Decides which outputs of [psbtString] pay the active wallet; see [PsbtOutputClassifier].
+     * [outputAddresses] are the addresses shown for each output, in output order.
+     */
+    fun classifyPsbtOutputs(psbtString: String, outputAddresses: List<String>): List<PsbtOutputOwnership> {
+        val verify = PsbtUtils.parsePsbt(psbtString)?.let { outputOwnershipCheck(it) }
+        return PsbtOutputClassifier.classify(outputAddresses, verify, ::checkAddressBelongsToWallet)
+    }
+
+    /**
+     * vaultovich's `Psbt.verifyOutput` bound to the active wallet's account, resolved in the same
+     * order as [checkAddressBelongsToWallet]. Null when there is no account to verify against.
+     */
+    private fun outputOwnershipCheck(psbt: Psbt): ((Int) -> OutputOwnership)? {
+        if (isActiveSilentPayment()) return null
+
+        val statelessState = statelessWalletManager.get()
+        if (statelessState == null) {
+            val metadata = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) } ?: return null
+            if (metadata.isMultisig) {
+                val account = metadata.multisigConfig?.let { multisigAddressService.toMultisigAccount(it) }
+                    ?: return null
+                return { index -> psbt.verifyOutput(index, account) }
+            }
+        }
+
+        val state = statelessState ?: getActiveWalletState() ?: return null
+        val master = state.getMasterPrivateKey() ?: return null
+        val accountKey = state.getAccountPublicKey() ?: return null
+        val account = runCatching {
+            SingleSigAccount(
+                masterFingerprint = BitcoinUtils.computeFingerprintLong(master.publicKey),
+                accountPath = KeyPath(state.derivationPath),
+                accountKey = accountKey,
+                scriptType = getScriptType(state.derivationPath),
+            )
+        }.getOrNull() ?: return null
+        return { index -> psbt.verifyOutput(index, account) }
     }
 
     // ==================== Wallet Info ====================

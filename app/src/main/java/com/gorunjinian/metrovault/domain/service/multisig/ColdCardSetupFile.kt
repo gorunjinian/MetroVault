@@ -1,12 +1,8 @@
 package com.gorunjinian.metrovault.domain.service.multisig
 
 import com.gorunjinian.metrovault.core.logging.AppLog
-import com.gorunjinian.metrovault.core.util.Bip48MultisigPrefixes
-import com.gorunjinian.metrovault.core.util.NetworkUtils
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.Result
-import com.gorunjinian.vaultovich.Base58Check
-import com.gorunjinian.vaultovich.Crypto
 import com.gorunjinian.vaultovich.Descriptor
 import com.gorunjinian.vaultovich.DeterministicWallet
 
@@ -273,40 +269,28 @@ object ColdCardSetupFile {
      * Decode and validate an extended public key, normalizing SLIP-132 variants
      * (Zpub/Ypub/Vpub/Upub/zpub/ypub/vpub/upub) to canonical xpub/tpub encoding.
      * Returns null if the string is not a valid extended public key.
+     *
+     * vaultovich's decoder does the validation: it accepts only public prefixes, requires the
+     * 78-byte BIP-32 serialization, and rejects a key that is not a point on the curve.
      */
     private fun validateAndNormalizeXpub(raw: String): ValidatedXpub? {
         return try {
-            val (prefix, payload) = Base58Check.decodeWithIntPrefix(raw.trim())
-            if (!Bip48MultisigPrefixes.isValidXpubPrefix(prefix)) {
-                AppLog.e(TAG) { "Rejected extended key with unknown or private prefix" }
-                return null
-            }
-            // depth (1) + parent (4) + childNumber (4) + chaincode (32) + publicKey (33)
-            if (payload.size != 74) {
-                AppLog.e(TAG) { "Extended key payload has wrong length: ${payload.size}" }
-                return null
-            }
-            val publicKeyBytes = payload.copyOfRange(41, 74)
-            if (!Crypto.isPubKeyValid(publicKeyBytes)) {
-                AppLog.e(TAG) { "Extended key contains an invalid public key" }
-                return null
-            }
-
-            val isTestnet = NetworkUtils.isTestnetPrefix(prefix)
+            val trimmed = raw.trim()
+            val (prefix, _) = DeterministicWallet.ExtendedPublicKey.decode(trimmed)
             val slip132ScriptType = when (prefix) {
-                Bip48MultisigPrefixes.Zpub, Bip48MultisigPrefixes.Vpub,
+                DeterministicWallet.Zpub, DeterministicWallet.Vpub,
                 DeterministicWallet.zpub, DeterministicWallet.vpub -> MultisigScriptType.P2WSH
-                Bip48MultisigPrefixes.Ypub, Bip48MultisigPrefixes.Upub,
+                DeterministicWallet.Ypub, DeterministicWallet.Upub,
                 DeterministicWallet.ypub, DeterministicWallet.upub -> MultisigScriptType.P2SH_P2WSH
                 else -> null
             }
-            val canonicalPrefix = if (isTestnet) DeterministicWallet.tpub else DeterministicWallet.xpub
             ValidatedXpub(
-                canonical = Base58Check.encode(canonicalPrefix, payload),
-                isTestnet = isTestnet,
+                canonical = Descriptor.normalizeExtendedPublicKey(trimmed),
+                isTestnet = prefix in DeterministicWallet.testnetPublicPrefixes,
                 slip132ScriptType = slip132ScriptType
             )
         } catch (e: Exception) {
+            // vaultovich's messages never echo the key, so they are safe to log
             AppLog.e(TAG) { "Failed to decode extended key: ${e.message}" }
             null
         }

@@ -3,6 +3,7 @@ package com.gorunjinian.metrovault.domain.service.bitcoin
 import com.gorunjinian.metrovault.data.model.CoordinatorExportData
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.vaultovich.ScriptType
+import com.gorunjinian.vaultovich.Descriptor
 import com.gorunjinian.vaultovich.DeterministicWallet
 
 /**
@@ -172,9 +173,8 @@ class CoordinatorExportService(
             val scriptIndex = bip48ScriptIndex(bip48ScriptType)
             val standardXpub = keyEncodingService.getStandardAccountXpub(key, isTestnet)
             validateBip48PublicKey(standardXpub, isTestnet, scriptIndex)
-            // The SLIP-132 encoding comes from the same in-memory key, so unlike buildExport no
-            // cross-check decode is possible or needed — decode() rejects Zpub/Ypub prefixes.
             val slip132Xpub = keyEncodingService.getBip48Xpub(key, bip48ScriptType, isTestnet)
+            validateEquivalentPublicKeys(standardXpub, slip132Xpub)
             sections += sectionKey to listOf(
                 "name" to bip48SectionName(bip48ScriptType),
                 "xfp" to formatFingerprint(key.fingerprint()),
@@ -266,8 +266,7 @@ class CoordinatorExportService(
         }
 
         /** Formats a BIP32 key fingerprint as eight uppercase hex digits, matching Coldcard. */
-        private fun formatFingerprint(value: Long): String =
-            value.toString(16).padStart(8, '0').uppercase()
+        private fun formatFingerprint(value: Long): String = Descriptor.formatFingerprint(value).uppercase()
 
         private fun validateAccountPublicKey(xpub: String, path: AccountPath) {
             val (prefix, decoded) = runCatching {
