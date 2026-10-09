@@ -5,13 +5,15 @@ import com.gorunjinian.metrovault.data.model.CosignerInfo
 import com.gorunjinian.metrovault.data.model.MultisigConfig
 import com.gorunjinian.metrovault.data.model.MultisigScriptType
 import com.gorunjinian.metrovault.data.model.Result
+import com.gorunjinian.vaultovich.Descriptor
 
 /**
  * Parser for multisig wallet configurations.
  *
  * Single content-format router for everything the import screen can receive
  * (after the QR transport layer has already unwrapped UR/BBQr to text):
- * - Plain output descriptors: `wsh(sortedmulti(...))`, with or without checksum/comments
+ * - Plain output descriptors: `wsh(sortedmulti(...))` or `wsh(multi(...))`, with or without
+ *   checksum/comments; a checksum that is present must be correct
  * - BSMS (BIP-0129) descriptor records, delegated to [BSMS]
  * - ColdCard multisig setup files (`Name:`/`Policy:`/`Derivation:` text), delegated to
  *   [ColdCardSetupFile]
@@ -167,6 +169,9 @@ class MultisigDescriptorParser {
             return Result.Error("No valid keys found in descriptor. Make sure the descriptor is in standard format.")
         }
 
+        // Checked once the input has parsed as a descriptor, so other text keeps the errors above
+        checksumError(extractedDescriptor)?.let { return Result.Error(it) }
+
         val cosigners = keyMatches.map { match ->
             val fingerprint = match.groupValues[1].lowercase()
             val path = match.groupValues[2].removePrefix("/")
@@ -196,6 +201,32 @@ class MultisigDescriptorParser {
             },
             onError = { Result.Error(it) }
         )
+    }
+
+    /**
+     * BIP-380: a descriptor's `#checksum`, when present, must match the text before it. It catches a
+     * descriptor altered or corrupted between the coordinator and this device, including one that
+     * still parses, such as a swapped key. Descriptors without a checksum are accepted, as BIP-380
+     * allows.
+     *
+     * @return the user-facing reason the checksum is unacceptable, or null if absent or correct
+     */
+    private fun checksumError(descriptor: String): String? {
+        val parts = descriptor.split('#')
+        if (parts.size == 1) return null
+        if (parts.size > 2) return "Descriptor contains more than one '#'."
+
+        val supplied = parts[1].trim()
+        val expected = runCatching { Descriptor.checksum(parts[0].trim()) }.getOrElse {
+            // vaultovich's message names the offending position, which is fine for the log
+            AppLog.e(TAG) { "Descriptor checksum could not be computed: ${it.message}" }
+            return "Descriptor contains characters that are not allowed in a descriptor."
+        }
+        if (supplied == expected) return null
+
+        AppLog.e(TAG) { "Descriptor checksum mismatch: supplied #$supplied, computed #$expected" }
+        return "Descriptor checksum doesn't match its contents. It may have been altered or corrupted " +
+            "on the way here; export it again from your coordinator."
     }
 
     // ==================== Shared Validation ====================

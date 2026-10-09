@@ -8,7 +8,7 @@ import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.vaultovich.*
 import com.gorunjinian.vaultovich.MultisigScriptType as VaultovichMultisigScriptType
-import com.gorunjinian.vaultovich.io.readNBytes
+import com.gorunjinian.vaultovich.utils.Either
 import com.gorunjinian.metrovault.domain.service.bitcoin.AddressCheckResult
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.metrovault.domain.service.util.WalletConstants
@@ -16,11 +16,9 @@ import com.gorunjinian.metrovault.domain.service.util.WalletConstants
 /**
  * Service for generating and verifying multisig addresses.
  *
- * Generates P2WSH (and P2SH-P2WSH) addresses from multisig configurations.
- * Uses sortedmulti semantics: public keys are sorted lexicographically before
- * building the witness script.
+ * Generates P2WSH, P2SH-P2WSH and P2SH addresses from multisig configurations, for both
+ * `sortedmulti` (keys sorted lexicographically) and `multi` (keys in descriptor order) wallets.
  */
-@Suppress("LocalVariableName")
 class MultisigAddressService {
 
     companion object {
@@ -55,7 +53,7 @@ class MultisigAddressService {
             // Track failures for better error reporting
             val failedCosigners = mutableListOf<String>()
             val childPubKeys = config.cosigners.mapIndexedNotNull { i, cosigner ->
-                deriveChildPublicKey(cosigner.xpub, changeIndex, index.toLong(), isTestnet)
+                deriveChildPublicKey(cosigner.xpub, changeIndex, index.toLong())
                     ?: run {
                         failedCosigners.add("cosigner ${i + 1} (fingerprint: ${cosigner.fingerprint})")
                         null
@@ -69,30 +67,10 @@ class MultisigAddressService {
                 )
             }
 
-            // Sort public keys lexicographically (sortedmulti semantics)
-            val sortedPubKeys = childPubKeys.sortedBy { it.toHex() }
-
-            // Build witness script: OP_m <pubkey1> <pubkey2> ... OP_n OP_CHECKMULTISIG
-            val witnessScript = buildMultisigScript(config.m, sortedPubKeys)
-
-            // Generate address based on script type
-            val address = when (config.scriptType) {
-                MultisigScriptType.P2WSH -> {
-                    // Native SegWit: P2WSH address from witness script hash
-                    computeP2wshAddress(witnessScript, chainHash)
-                }
-                MultisigScriptType.P2SH_P2WSH -> {
-                    // Nested SegWit: P2SH address wrapping P2WSH
-                    computeP2shP2wshAddress(witnessScript, chainHash)
-                }
-                MultisigScriptType.P2SH -> {
-                    // Legacy multisig: P2SH address from redeem script
-                    computeP2shMultisigAddress(config.m, sortedPubKeys, chainHash)
-                }
-            }
-
-            if (address == null) {
-                return Result.Error("Failed to compute multisig address")
+            val encoded = Bitcoin.addressFromPublicKeyScript(chainHash, scriptPubKey(config, childPubKeys))
+            val address = when (encoded) {
+                is Either.Right -> encoded.value
+                is Either.Left -> return Result.Error("Failed to compute multisig address: ${encoded.value.message}")
             }
 
             val scriptType = when (config.scriptType) {
@@ -127,26 +105,15 @@ class MultisigAddressService {
     fun generateMultisigScriptPubKey(
         config: MultisigConfig,
         index: Int,
-        isChange: Boolean,
-        isTestnet: Boolean
+        isChange: Boolean
     ): ByteArray? {
         return try {
             val changeIndex = if (isChange) 1L else 0L
             val childPubKeys = config.cosigners.mapNotNull { cosigner ->
-                deriveChildPublicKey(cosigner.xpub, changeIndex, index.toLong(), isTestnet)
+                deriveChildPublicKey(cosigner.xpub, changeIndex, index.toLong())
             }
             if (childPubKeys.size != config.n) return null
-
-            // Sort public keys lexicographically (sortedmulti semantics) — must match address derivation
-            val sortedPubKeys = childPubKeys.sortedBy { it.toHex() }
-            val witnessScript = buildMultisigScript(config.m, sortedPubKeys)
-
-            val scriptPubKey = when (config.scriptType) {
-                MultisigScriptType.P2WSH -> Script.pay2wsh(witnessScript)
-                MultisigScriptType.P2SH_P2WSH -> Script.pay2sh(Script.pay2wsh(witnessScript))
-                MultisigScriptType.P2SH -> Script.pay2sh(witnessScript)
-            }
-            Script.write(scriptPubKey)
+            Script.write(scriptPubKey(config, childPubKeys))
         } catch (e: Exception) {
             AppLog.e(TAG) { "Failed to derive multisig scriptPubKey: ${e.message}" }
             null
@@ -155,29 +122,19 @@ class MultisigAddressService {
 
     /**
      * The registered wallet as vaultovich's [MultisigAccount], the input `Psbt.verifyOutput` checks
-     * outputs against.
-     *
-     * Each cosigner key is rebuilt from its raw public key and chain code, the only fields BIP-32
-     * derivation reads, with depth and path taken from the descriptor's key origin. This is the same
-     * bypass [deriveChildPublicKey] uses for descriptor xpubs whose own depth bytes are inconsistent.
+     * outputs against. Each cosigner key carries the descriptor's key origin as its path; see
+     * [accountKey] for why it is not decoded with the library's own decoder.
      *
      * @return null if any cosigner's fingerprint, derivation path or key cannot be read
      */
     fun toMultisigAccount(config: MultisigConfig): MultisigAccount? {
         return try {
             val cosigners = config.cosigners.map { cosigner ->
-                val raw = decodeXpubRaw(cosigner.xpub) ?: return null
                 val accountPath = KeyPath(cosigner.derivationPath.replace('H', 'h'))
                 Cosigner(
                     masterFingerprint = cosigner.fingerprint.toLong(16),
                     accountPath = accountPath,
-                    accountKey = DeterministicWallet.ExtendedPublicKey(
-                        raw.publicKeyBytes.byteVector(),
-                        raw.chaincode.byteVector32(),
-                        depth = accountPath.path.size,
-                        path = accountPath,
-                        parent = 0L
-                    )
+                    accountKey = accountKey(cosigner.xpub, accountPath) ?: return null
                 )
             }
             MultisigAccount(
@@ -188,8 +145,8 @@ class MultisigAddressService {
                     MultisigScriptType.P2SH_P2WSH -> VaultovichMultisigScriptType.P2SH_P2WSH
                     MultisigScriptType.P2SH -> VaultovichMultisigScriptType.P2SH
                 },
-                // Address generation always sorts the keys, so verification has to agree with it
-                sortedKeys = true
+                // Cosigners are in descriptor order, which is the script order for `multi`
+                sortedKeys = config.sortedKeys
             )
         } catch (e: Exception) {
             AppLog.e(TAG) { "Failed to build multisig account: ${e.message}" }
@@ -230,70 +187,34 @@ class MultisigAddressService {
     // ==================== Private Helpers ====================
 
     /**
-     * Derives a child public key from an extended public key string.
+     * Derives `xpub/changeIndex/addressIndex` with vaultovich's BIP-32 public derivation.
      * The xpub should already be at the account level (e.g., m/48'/0'/0'/2').
-     * We then derive: xpub / changeIndex / addressIndex
-     *
-     * Note: This uses raw BIP32 derivation to avoid ExtendedPublicKey constructor validation
-     * issues with descriptor xpubs that have inconsistent depth metadata.
      */
-    private fun deriveChildPublicKey(
-        xpubString: String,
-        changeIndex: Long,
-        addressIndex: Long,
-        @Suppress("UNUSED_PARAMETER") isTestnet: Boolean
-    ): PublicKey? {
+    private fun deriveChildPublicKey(xpubString: String, changeIndex: Long, addressIndex: Long): PublicKey? {
+        val accountKey = accountKey(xpubString) ?: return null
         return try {
-            // Extract raw key data from xpub
-            val keyData = decodeXpubRaw(xpubString) ?: return null
-
-            // Derive: xpub / changeIndex / addressIndex using raw BIP32
-            val level1 = deriveChildKeyRaw(keyData.publicKeyBytes, keyData.chaincode, changeIndex)
-                ?: return null
-            val level2 = deriveChildKeyRaw(level1.first, level1.second, addressIndex)
-                ?: return null
-
-            PublicKey(level2.first.byteVector())
+            accountKey.derivePublicKey(listOf(changeIndex, addressIndex)).publicKey
         } catch (e: Exception) {
+            // A hardened index, or an IL outside the curve order (probability below 2^-127)
             AppLog.e(TAG) { "Failed to derive child key from xpub: ${e.message}" }
             null
         }
     }
 
     /**
-     * Raw xpub data without the validation-problematic ExtendedPublicKey wrapper.
+     * A cosigner's account key, rebuilt from the public key and chain code in [xpubString], the
+     * only fields BIP-32 derivation reads. Depth and path come from [path], not from the serialized
+     * key: descriptor xpubs do not always carry consistent depth bytes, and
+     * `ExtendedPublicKey.decode` rejects those over metadata that cannot change a derived key.
+     *
+     * @return null if [xpubString] is not a 78-byte extended public key holding a valid point
      */
-    private data class RawXpubData(
-        val publicKeyBytes: ByteArray,
-        val chaincode: ByteArray
-    ) {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (javaClass != other?.javaClass) return false
-
-            other as RawXpubData
-
-            if (!publicKeyBytes.contentEquals(other.publicKeyBytes)) return false
-            if (!chaincode.contentEquals(other.chaincode)) return false
-
-            return true
-        }
-
-        override fun hashCode(): Int {
-            var result = publicKeyBytes.contentHashCode()
-            result = 31 * result + chaincode.contentHashCode()
-            return result
-        }
-    }
-
-    /**
-     * Decodes an xpub string to raw public key bytes and chaincode.
-     * This bypasses ExtendedPublicKey constructor validation entirely.
-     */
-    private fun decodeXpubRaw(xpubString: String): RawXpubData? {
-        val cleanedXpub = xpubString.trim()
+    private fun accountKey(
+        xpubString: String,
+        path: KeyPath = KeyPath.empty
+    ): DeterministicWallet.ExtendedPublicKey? {
         return try {
-            val (prefix, bin) = Base58Check.decodeWithIntPrefix(cleanedXpub)
+            val (prefix, bin) = Base58Check.decodeWithIntPrefix(xpubString.trim())
             // Public prefixes only, single-sig (lowercase) and BIP48 multisig (uppercase) alike
             if (prefix !in DeterministicWallet.mainnetPublicPrefixes &&
                 prefix !in DeterministicWallet.testnetPublicPrefixes
@@ -302,7 +223,6 @@ class MultisigAddressService {
                 return null
             }
 
-            // Parse xpub structure (78 bytes after prefix):
             // depth (1) + parent (4) + childNumber (4) + chaincode (32) + publicKey (33) = 74 bytes.
             // Exact, as vaultovich's decoder requires: extra bytes are not silently ignored.
             if (bin.size != 74) {
@@ -310,154 +230,33 @@ class MultisigAddressService {
                 return null
             }
 
-            val bis = com.gorunjinian.vaultovich.io.ByteArrayInput(bin)
-            bis.read() // depth - skip
-            bis.readNBytes(4) // parent - skip
-            bis.readNBytes(4) // childNumber - skip
-            val chaincode = bis.readNBytes(32) ?: return null
-            val publicKeyBytes = bis.readNBytes(33) ?: return null
-
-            // Validate public key is valid
-            if (!Crypto.isPubKeyValid(publicKeyBytes)) {
-                AppLog.e(TAG) { "Invalid public key in xpub" }
-                return null
-            }
-
-            RawXpubData(publicKeyBytes, chaincode)
+            // The constructor rejects a public key that is not a point on the curve
+            DeterministicWallet.ExtendedPublicKey(
+                publickeybytes = bin.copyOfRange(41, 74).byteVector(),
+                chaincode = bin.copyOfRange(9, 41).byteVector32(),
+                depth = path.path.size,
+                path = path,
+                parent = 0L
+            )
         } catch (e: Exception) {
-            AppLog.e(TAG) { "Failed to decode xpub raw: ${e.message}" }
+            AppLog.e(TAG) { "Failed to decode xpub: ${e.message}" }
             null
         }
     }
 
     /**
-     * Performs raw BIP32 public key derivation without using ExtendedPublicKey.
-     * Implements the child key derivation formula from BIP32.
-     *
-     * @return Pair of (childPublicKey, childChaincode) or null on failure
+     * The wallet's output script for one set of derived cosigner keys:
+     * `OP_m <pubkey1> … <pubkeyN> OP_n OP_CHECKMULTISIG`, wrapped for the script type.
+     * [childPubKeys] must be in cosigner (descriptor) order: `sortedmulti` sorts them
+     * lexicographically (BIP-67), `multi` keeps that order. [toMultisigAccount] follows the same rule.
      */
-    private fun deriveChildKeyRaw(
-        parentPublicKey: ByteArray,
-        parentChaincode: ByteArray,
-        index: Long
-    ): Pair<ByteArray, ByteArray>? {
-        return try {
-            // Cannot derive hardened keys from public keys
-            if (DeterministicWallet.isHardened(index)) {
-                AppLog.e(TAG) { "Cannot derive hardened key from public key" }
-                return null
-            }
-
-            // I = HMAC-SHA512(Key =    cpar, Data = serP(Kpar) || ser32(i))
-            val data = parentPublicKey + com.gorunjinian.vaultovich.crypto.Pack.writeInt32BE(index.toInt())
-            val I = Crypto.hmac512(parentChaincode, data)
-
-            val IL = I.take(32).toByteArray()
-            val IR = I.takeLast(32).toByteArray()
-
-            // Validate IL is a valid private key
-            if (!Crypto.isPrivKeyValid(IL)) {
-                AppLog.e(TAG) { "IL is not a valid private key" }
-                return null
-            }
-
-            // Ki = point(parse256(IL)) + Kpar
-            val ilPoint = PrivateKey(IL.byteVector32()).publicKey()
-            val parentPoint = PublicKey(parentPublicKey.byteVector())
-            val childPoint = ilPoint + parentPoint
-
-            val childPublicKey = childPoint.value.toByteArray()
-
-            // Validate result
-            if (!Crypto.isPubKeyValid(childPublicKey)) {
-                AppLog.e(TAG) { "Derived child key is invalid" }
-                return null
-            }
-
-            Pair(childPublicKey, IR)
-        } catch (e: Exception) {
-            AppLog.e(TAG) { "Failed to derive child key: ${e.message}" }
-            null
-        }
-    }
-
-    /**
-     * Builds a multisig script: OP_m <pubkey1> <pubkey2> ... OP_n OP_CHECKMULTISIG
-     * Delegates to Script.createMultiSigMofN() which provides validation and standardized output.
-     */
-    private fun buildMultisigScript(m: Int, sortedPubKeys: List<PublicKey>): List<ScriptElt> {
-        return Script.createMultiSigMofN(m, sortedPubKeys)
-    }
-
-    /**
-     * Computes a P2WSH address from a witness script.
-     */
-    private fun computeP2wshAddress(witnessScript: List<ScriptElt>, chainHash: BlockHash): String? {
-        return try {
-            // P2WSH: witness program is SHA256 of witness script
-            val scriptBytes = Script.write(witnessScript)
-            val witnessProgram = Crypto.sha256(scriptBytes)
-
-            // Encode as bech32 address
-            val hrp = if (chainHash == Block.LivenetGenesisBlock.hash) "bc" else "tb"
-            Bech32.encodeWitnessAddress(hrp, 0, witnessProgram)
-        } catch (e: Exception) {
-            AppLog.e(TAG) { "Failed to compute P2WSH address: ${e.message}" }
-            null
-        }
-    }
-
-    /**
-     * Computes a P2SH-P2WSH address (nested SegWit multisig).
-     */
-    private fun computeP2shP2wshAddress(witnessScript: List<ScriptElt>, chainHash: BlockHash): String? {
-        return try {
-            // Redeem script is the P2WSH output script: OP_0 <sha256(witnessScript)>.
-            // Pass the witness script itself — Script.pay2wsh already applies the single sha256.
-            // (Passing a pre-hashed program here would hash twice and yield a wrong address.)
-            val p2wshScript = Script.pay2wsh(witnessScript)
-
-            // Then wrap in P2SH: address = base58check(hash160(redeemScript))
-            val redeemScriptBytes = Script.write(p2wshScript)
-            val scriptHash = Crypto.hash160(redeemScriptBytes)
-
-            val prefix = if (chainHash == Block.LivenetGenesisBlock.hash) {
-                Base58.Prefix.ScriptAddress
-            } else {
-                Base58.Prefix.ScriptAddressTestnet
-            }
-
-            Base58Check.encode(prefix, scriptHash)
-        } catch (e: Exception) {
-            AppLog.e(TAG) { "Failed to compute P2SH-P2WSH address: ${e.message}" }
-            null
-        }
-    }
-
-    /**
-     * Computes a legacy P2SH multisig address.
-     */
-    private fun computeP2shMultisigAddress(
-        m: Int,
-        sortedPubKeys: List<PublicKey>,
-        chainHash: BlockHash
-    ): String? {
-        return try {
-            // Build redeem script (same as witness script for legacy)
-            val redeemScript = buildMultisigScript(m, sortedPubKeys)
-            val redeemScriptBytes = Script.write(redeemScript)
-            val scriptHash = Crypto.hash160(redeemScriptBytes)
-
-            val prefix = if (chainHash == Block.LivenetGenesisBlock.hash) {
-                Base58.Prefix.ScriptAddress
-            } else {
-                Base58.Prefix.ScriptAddressTestnet
-            }
-
-            Base58Check.encode(prefix, scriptHash)
-        } catch (e: Exception) {
-            AppLog.e(TAG) { "Failed to compute P2SH address: ${e.message}" }
-            null
+    private fun scriptPubKey(config: MultisigConfig, childPubKeys: List<PublicKey>): List<ScriptElt> {
+        val keys = if (config.sortedKeys) childPubKeys.sortedBy { it.toHex() } else childPubKeys
+        val multisig = Script.createMultiSigMofN(config.m, keys)
+        return when (config.scriptType) {
+            MultisigScriptType.P2WSH -> Script.pay2wsh(multisig)
+            MultisigScriptType.P2SH_P2WSH -> Script.pay2sh(Script.pay2wsh(multisig))
+            MultisigScriptType.P2SH -> Script.pay2sh(multisig)
         }
     }
 }

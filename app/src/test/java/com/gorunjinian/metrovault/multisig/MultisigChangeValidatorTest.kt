@@ -65,9 +65,14 @@ class MultisigChangeValidatorTest {
         rawDescriptor = ""
     )
 
-    /** The 2-of-2 sortedmulti P2WSH script [signers] produce at `branch/index`. */
-    private fun multisigScript(branch: Long, index: Long, signers: List<Signer> = listOf(a, b)): List<ScriptElt> {
-        val keys = signers.map { it.key(branch, index) }.sortedBy { it.value.toHex() }
+    /** The 2-of-2 P2WSH script [signers] produce at `branch/index`, sortedmulti unless [sorted] is false. */
+    private fun multisigScript(
+        branch: Long,
+        index: Long,
+        signers: List<Signer> = listOf(a, b),
+        sorted: Boolean = true
+    ): List<ScriptElt> {
+        val keys = signers.map { it.key(branch, index) }.let { keys -> if (sorted) keys.sortedBy { it.value.toHex() } else keys }
         return Script.pay2wsh(Script.createMultiSigMofN(2, keys))
     }
 
@@ -134,6 +139,19 @@ class MultisigChangeValidatorTest {
 
         assertEquals(MultisigChangeValidator.Result.Valid, validator.validate(psbt(payment), broken))
         assertEquals(MultisigChangeValidator.Result.Mismatch(1), validator.validate(psbt(payment, change), broken))
+    }
+
+    @Test
+    fun multiWalletChangeIsCheckedInDescriptorOrder() {
+        // Put the cosigners in the order sorting would *not* give, so the two scripts differ
+        val unsortedOrder = listOf(a, b).sortedBy { it.key(1, 5).value.toHex() }.reversed()
+        val multiConfig = config(unsortedOrder.map { it.cosignerInfo() }).copy(rawDescriptor = "wsh(multi(2,…))")
+
+        val change = multisigScript(1, 5, unsortedOrder, sorted = false) to ourClaims(1, 5)
+        assertEquals(MultisigChangeValidator.Result.Valid, validator.validate(psbt(change), multiConfig))
+
+        val sortedLookalike = multisigScript(1, 5, unsortedOrder, sorted = true) to ourClaims(1, 5)
+        assertEquals(MultisigChangeValidator.Result.Mismatch(0), validator.validate(psbt(sortedLookalike), multiConfig))
     }
 
     @Test

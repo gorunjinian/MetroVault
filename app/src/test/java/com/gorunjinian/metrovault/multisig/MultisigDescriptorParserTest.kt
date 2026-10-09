@@ -3,10 +3,12 @@ package com.gorunjinian.metrovault.multisig
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
+import com.gorunjinian.vaultovich.Descriptor
 import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.vaultovich.KeyPath
 import com.gorunjinian.vaultovich.MnemonicCode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -128,6 +130,58 @@ class MultisigDescriptorParserTest {
 
         val parsed = parseOk(file, localFingerprints = listOf("AaAaAaAa"))
         assertEquals(listOf("aaaaaaaa"), parsed.config.localKeyFingerprints)
+    }
+
+    // ==================== Checksum ====================
+
+    private val descriptorBody by lazy {
+        "wsh(sortedmulti(2,[aaaaaaaa/48'/0'/0'/2']$xpub1/<0;1>/*,[bbbbbbbb/48'/0'/0'/2']$xpub2/<0;1>/*))"
+    }
+
+    private fun parseErr(input: String): String =
+        when (val r = parser.parse(input, listOf("aaaaaaaa"))) {
+            is Result.Error -> r.error
+            is Result.Success -> throw AssertionError("Expected an error but parsed ${r.value.config}")
+        }
+
+    @Test
+    fun acceptsCorrectChecksumInDescriptorAndBsms() {
+        val withChecksum = "$descriptorBody#${Descriptor.checksum(descriptorBody)}"
+        assertEquals(MultisigDescriptorParser.SourceFormat.DESCRIPTOR, parseOk(withChecksum).sourceFormat)
+        assertEquals(MultisigDescriptorParser.SourceFormat.BSMS, parseOk("BSMS 1.0\n$withChecksum\n/0/*,/1/*").sourceFormat)
+    }
+
+    @Test
+    fun rejectsChecksumThatDoesNotMatchTheDescriptor() {
+        // The checksum of the real descriptor, attached to one whose threshold was lowered to 1
+        val checksum = Descriptor.checksum(descriptorBody)
+        val altered = descriptorBody.replaceFirst("sortedmulti(2,", "sortedmulti(1,")
+
+        assertTrue(parseErr("$altered#$checksum").contains("checksum"))
+        assertTrue(parseErr("BSMS 1.0\n$altered#$checksum\n/0/*,/1/*").contains("checksum"))
+        assertTrue("an empty checksum is not a checksum", parseErr("$descriptorBody#").contains("checksum"))
+    }
+
+    @Test
+    fun rejectsMoreThanOneHash() {
+        val checksum = Descriptor.checksum(descriptorBody)
+        assertTrue(parseErr("$descriptorBody#$checksum#$checksum").contains("more than one"))
+    }
+
+    @Test
+    fun nonDescriptorTextKeepsItsOwnError() {
+        // A comment's '#' must not turn "this isn't a descriptor" into a checksum complaint
+        assertTrue(parseErr("hello # not a descriptor").contains("threshold"))
+    }
+
+    // ==================== multi / sortedmulti ====================
+
+    @Test
+    fun importsMultiAsUnsortedAndSortedmultiAsSorted() {
+        val multi = descriptorBody.replace("sortedmulti(", "multi(")
+        assertFalse(parseOk(multi).config.sortedKeys)
+        assertFalse(parseOk("$multi#${Descriptor.checksum(multi)}").config.sortedKeys)
+        assertTrue(parseOk(descriptorBody).config.sortedKeys)
     }
 
     // ==================== Cross-Format Equivalence ====================

@@ -23,6 +23,17 @@ data class MultisigConfig(
     val scriptType: MultisigScriptType,
     val rawDescriptor: String
 ) {
+
+    /**
+     * Whether the script sorts the cosigner keys (`sortedmulti`, BIP-67) or keeps them in
+     * descriptor order (`multi`), which yields a different script and so different addresses.
+     *
+     * Read from [rawDescriptor], so wallets stored before this existed need no migration. Anything
+     * not explicitly `multi(` is sortedmulti, which is what every wallet was treated as until then.
+     */
+    val sortedKeys: Boolean
+        get() = !UNSORTED_MULTI.containsMatchIn(rawDescriptor.lowercase())
+
     /**
      * Determines if this is a testnet multisig wallet.
      * Delegates to NetworkUtils for consistent testnet detection across the codebase.
@@ -50,6 +61,9 @@ data class MultisigConfig(
     }
 
     companion object {
+        /** `multi(` that is not the tail of `sortedmulti(`. */
+        private val UNSORTED_MULTI = Regex("""(?<![a-z])multi\(""")
+
         fun fromJson(json: JSONObject): MultisigConfig {
             val cosignersArray = json.getJSONArray("cosigners")
             val cosigners = (0 until cosignersArray.length()).map { 
