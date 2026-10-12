@@ -334,6 +334,40 @@ Users can choose **not to save their passphrase locally**. In this case:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+#### Passphrase Wallets Sharing a Key
+
+A key is stored once per mnemonic + passphrase, even when the wallets using it chose differently about saving the passphrase:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               Same Seed, Different Choices                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Wallets made from the same mnemonic + passphrase share one     │
+│  key, and its stored seed follows the wallets that read it:     │
+│  • Creating a wallet that saves the passphrase stores the full  │
+│    seed in the key, even if it held only the base seed          │
+│  • The full seed stays while a wallet that saves the            │
+│    passphrase, or a multisig wallet signing with the key,       │
+│    still uses it                                                │
+│  • Once every wallet left asks for the passphrase, the key      │
+│    goes back to the base seed: when the wallet is deleted, or   │
+│    at the next login if that was interrupted                    │
+│                                                                 │
+│  So while a wallet that saves the passphrase exists, the full   │
+│  seed is on disk for every wallet sharing its key, including    │
+│  session-only ones. Those still ask for it on every open.       │
+│                                                                 │
+│  On Wallet Open:                                                │
+│  • The stored seed is used only when it matches the wallet's    │
+│    fingerprint; otherwise the passphrase is asked for first     │
+│  • Auto-open skips a wallet that needs its passphrase           │
+│  • A multisig asks for a key's passphrase only when the key     │
+│    holds just the base seed                                     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 #### Adding a Passphrase on Top (Passphrase Shortcut)
 
 The **Passphrase** quick shortcut on an expanded single-sig or Silent Payments wallet card opens the same passphrase dialog for any wallet, including ones created without a passphrase or with one saved locally:

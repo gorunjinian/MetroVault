@@ -299,7 +299,15 @@ fun WalletsListContent(
                 calculateFingerprint = { passphrase ->
                     wallet.calculateFingerprint(mnemonic!!, passphrase)
                 },
-                note = if (isAddedPassphrase) "Applies until you leave this wallet. Nothing is saved." else null
+                note = when {
+                    isAddedPassphrase -> "Applies until you leave this wallet. Nothing is saved."
+                    // A wallet that saves its passphrase is only asked for it when an older
+                    // version stored its key without it (see PassphraseManager.needsPassphraseInput)
+                    !walletMeta.hasPassphrase ->
+                        "An older version saved this wallet without its passphrase. Enter it to " +
+                            "continue; funds sent to its earlier addresses open with an empty passphrase."
+                    else -> null
+                }
             )
         }
     }

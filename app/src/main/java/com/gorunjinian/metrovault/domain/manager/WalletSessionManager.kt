@@ -24,14 +24,15 @@ class WalletSessionManager(
 
     /**
      * Sets the session after successful login.
-     * Runs migration silently if needed.
-     * 
+     * Runs migration silently if needed, then drops any saved passphrase no wallet uses.
+     *
      * @param isDecoy Whether this is a decoy vault session
      */
     suspend fun setSession(isDecoy: Boolean) {
         this.isDecoyMode = isDecoy
         withContext(Dispatchers.IO) {
             secureStorage.runMigrationIfNeeded(isDecoy)
+            passphraseManager.dropUnneededPassphrases(isDecoy)
         }
         AppLog.d(TAG) { "Session set" }
     }

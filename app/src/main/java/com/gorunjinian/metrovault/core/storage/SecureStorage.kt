@@ -1217,6 +1217,19 @@ class SecureStorage(private val context: Context) {
                         AppLog.e(TAG) { "Cached keyId not found, skipping wallet" }
                         continue
                     }
+                    // This wallet opens straight from the stored seed. If the key holds another
+                    // seed for the same mnemonic (the base seed of a wallet that asks for its
+                    // passphrase), it takes this wallet's full one; that wallet still asks
+                    if (!metadata.hasPassphrase && verifyKey.mnemonic == secrets.mnemonic &&
+                        verifyKey.bip39Seed != secrets.bip39Seed
+                    ) {
+                        val upgraded = saveWalletKey(verifyKey.copy(bip39Seed = secrets.bip39Seed), isDecoy) &&
+                            loadWalletKey(existingKeyId, isDecoy)?.bip39Seed == secrets.bip39Seed
+                        if (!upgraded) {
+                            AppLog.e(TAG) { "Failed to store the full seed in the shared key - secrets preserved" }
+                            continue
+                        }
+                    }
                     keyId = existingKeyId
                     AppLog.d(TAG) { "Reusing existing key" }
                 } else {

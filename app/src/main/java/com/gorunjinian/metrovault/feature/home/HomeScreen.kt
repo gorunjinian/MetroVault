@@ -35,6 +35,7 @@ import com.gorunjinian.metrovault.navigation.Screen
 import com.gorunjinian.metrovault.navigation.navigateToUnlockAfterManualLock
 import com.gorunjinian.metrovault.navigation.openWalletFeature
 import com.gorunjinian.metrovault.domain.Wallet
+import com.gorunjinian.metrovault.domain.manager.WalletCreationManager
 import com.gorunjinian.metrovault.feature.settings.SettingsContent
 import com.gorunjinian.metrovault.feature.wallet.list.WalletsListContent
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -283,7 +284,7 @@ fun HomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // FAB above the nav bar - centered over lock button (hidden in edit mode)
-                val maxWallets = if (wallet.isDecoyMode) Wallet.MAX_DECOY_WALLETS else Wallet.MAX_MAIN_WALLETS
+                val maxWallets = if (wallet.isDecoyMode) WalletCreationManager.MAX_DECOY_WALLETS else WalletCreationManager.MAX_MAIN_WALLETS
                 val canShowFab = wallets.size < maxWallets && pagerState.currentPage == 0
                 
                 // Determine what to show: FAB, Info message, or nothing
@@ -516,7 +517,7 @@ fun HomeScreen(
 
     // Create Wallet Dialog
     if (showCreateDialog) {
-        val maxWallets = if (wallet.isDecoyMode) Wallet.MAX_DECOY_WALLETS else Wallet.MAX_MAIN_WALLETS
+        val maxWallets = if (wallet.isDecoyMode) WalletCreationManager.MAX_DECOY_WALLETS else WalletCreationManager.MAX_MAIN_WALLETS
         val currentCount = wallets.size
 
         AlertDialog(

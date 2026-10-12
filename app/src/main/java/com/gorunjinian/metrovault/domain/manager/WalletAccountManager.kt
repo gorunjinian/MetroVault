@@ -4,18 +4,19 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.model.AddressStartIndex
 import com.gorunjinian.metrovault.data.model.WalletMetadata
+import com.gorunjinian.metrovault.data.repository.WalletListStore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 
 /**
  * Manages wallet account operations.
  * Handles adding, removing, switching, and renaming accounts within a wallet.
- * 
+ *
  * Extracted from Wallet.kt to follow single responsibility principle.
  */
 class WalletAccountManager(
-    private val secureStorage: SecureStorage
+    private val secureStorage: SecureStorage,
+    private val walletList: WalletListStore
 ) {
     companion object {
         private const val TAG = "WalletAccountManager"
@@ -23,20 +24,15 @@ class WalletAccountManager(
 
     /**
      * Add a new account number to a wallet.
-     * 
+     *
      * @return false if already exists or storage fails
      */
     suspend fun addAccount(
         walletId: String,
         accountNumber: Int,
-        isDecoyMode: Boolean,
-        walletList: MutableList<WalletMetadata>,
-        walletListLock: Any,
-        walletsFlow: MutableStateFlow<List<WalletMetadata>>
+        isDecoyMode: Boolean
     ): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            walletList.find { it.id == walletId }
-        } ?: return@withContext false
+        val metadata = walletList.find(walletId) ?: return@withContext false
 
         if (metadata.accounts.contains(accountNumber)) return@withContext false
 
@@ -45,13 +41,7 @@ class WalletAccountManager(
         )
 
         if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = walletList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    walletList[idx] = updated
-                    walletsFlow.value = walletList.toList()
-                }
-            }
+            walletList.replace(updated)
             AppLog.d(TAG) { "Added account $accountNumber" }
             true
         } else false
@@ -59,20 +49,15 @@ class WalletAccountManager(
 
     /**
      * Remove an account from a wallet.
-     * 
+     *
      * @return false if: doesn't exist, is currently active, is the last account, or storage fails
      */
     suspend fun removeAccount(
         walletId: String,
         accountNumber: Int,
-        isDecoyMode: Boolean,
-        walletList: MutableList<WalletMetadata>,
-        walletListLock: Any,
-        walletsFlow: MutableStateFlow<List<WalletMetadata>>
+        isDecoyMode: Boolean
     ): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            walletList.find { it.id == walletId }
-        } ?: return@withContext false
+        val metadata = walletList.find(walletId) ?: return@withContext false
 
         // Validation checks
         if (!metadata.accounts.contains(accountNumber)) return@withContext false
@@ -84,13 +69,7 @@ class WalletAccountManager(
         )
 
         if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = walletList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    walletList[idx] = updated
-                    walletsFlow.value = walletList.toList()
-                }
-            }
+            walletList.replace(updated)
             AppLog.d(TAG) { "Removed account $accountNumber" }
             true
         } else false
@@ -99,7 +78,7 @@ class WalletAccountManager(
     /**
      * Switch the active account for a wallet.
      * This will unload and reload the wallet with the new account's derivation path.
-     * 
+     *
      * @param onUnloadWallet Callback to unload wallet from memory
      * @param onOpenWallet Callback to reload wallet with new derivation path
      * @return true if switch succeeded
@@ -108,15 +87,10 @@ class WalletAccountManager(
         walletId: String,
         accountNumber: Int,
         isDecoyMode: Boolean,
-        walletList: MutableList<WalletMetadata>,
-        walletListLock: Any,
-        walletsFlow: MutableStateFlow<List<WalletMetadata>>,
         onUnloadWallet: (String) -> Unit,
         onOpenWallet: suspend (String) -> Boolean
     ): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            walletList.find { it.id == walletId }
-        } ?: return@withContext false
+        val metadata = walletList.find(walletId) ?: return@withContext false
 
         if (!metadata.accounts.contains(accountNumber)) return@withContext false
         if (metadata.activeAccountNumber == accountNumber) return@withContext true // Already active
@@ -124,13 +98,7 @@ class WalletAccountManager(
         val updated = metadata.copy(activeAccountNumber = accountNumber)
 
         if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = walletList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    walletList[idx] = updated
-                    walletsFlow.value = walletList.toList()
-                }
-            }
+            walletList.replace(updated)
             // Reload wallet with new account path
             onUnloadWallet(walletId)
             val reloaded = onOpenWallet(walletId)
@@ -147,14 +115,9 @@ class WalletAccountManager(
         walletId: String,
         accountNumber: Int,
         newName: String,
-        isDecoyMode: Boolean,
-        walletList: MutableList<WalletMetadata>,
-        walletListLock: Any,
-        walletsFlow: MutableStateFlow<List<WalletMetadata>>
+        isDecoyMode: Boolean
     ): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            walletList.find { it.id == walletId }
-        } ?: return@withContext false
+        val metadata = walletList.find(walletId) ?: return@withContext false
 
         if (!metadata.accounts.contains(accountNumber)) return@withContext false
 
@@ -172,13 +135,7 @@ class WalletAccountManager(
         val updated = metadata.copy(accountNames = updatedNames)
 
         if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = walletList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    walletList[idx] = updated
-                    walletsFlow.value = walletList.toList()
-                }
-            }
+            walletList.replace(updated)
             AppLog.d(TAG) { "Renamed account $accountNumber" }
             true
         } else false
@@ -188,15 +145,9 @@ class WalletAccountManager(
      * Addresses-screen start indices (receive, change) for a wallet's active account.
      * Unknown wallets and unset chains start at 0.
      */
-    fun getAddressStartIndices(
-        walletId: String?,
-        walletList: List<WalletMetadata>,
-        walletListLock: Any
-    ): Pair<Int, Int> {
+    fun getAddressStartIndices(walletId: String?): Pair<Int, Int> {
         if (walletId == null) return 0 to 0
-        val metadata = synchronized(walletListLock) {
-            walletList.find { it.id == walletId }
-        } ?: return 0 to 0
+        val metadata = walletList.find(walletId) ?: return 0 to 0
         val account = metadata.activeAccountNumber
         return metadata.getAddressStartIndex(account, false) to metadata.getAddressStartIndex(account, true)
     }
@@ -213,14 +164,9 @@ class WalletAccountManager(
         accountNumber: Int,
         receiveStart: Int,
         changeStart: Int,
-        isDecoyMode: Boolean,
-        walletList: MutableList<WalletMetadata>,
-        walletListLock: Any,
-        walletsFlow: MutableStateFlow<List<WalletMetadata>>
+        isDecoyMode: Boolean
     ): Boolean = withContext(Dispatchers.IO) {
-        val metadata = synchronized(walletListLock) {
-            walletList.find { it.id == walletId }
-        } ?: return@withContext false
+        val metadata = walletList.find(walletId) ?: return@withContext false
 
         if (!metadata.accounts.contains(accountNumber)) return@withContext false
 
@@ -235,13 +181,7 @@ class WalletAccountManager(
         val updated = metadata.copy(addressStartIndices = indices)
 
         if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = walletList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    walletList[idx] = updated
-                    walletsFlow.value = walletList.toList()
-                }
-            }
+            walletList.replace(updated)
             AppLog.d(TAG) { "Updated address start indices for account $accountNumber" }
             true
         } else false
@@ -250,14 +190,8 @@ class WalletAccountManager(
     /**
      * Get active account number for a wallet.
      */
-    fun getActiveAccountNumber(
-        walletId: String?,
-        walletList: List<WalletMetadata>,
-        walletListLock: Any
-    ): Int {
+    fun getActiveAccountNumber(walletId: String?): Int {
         if (walletId == null) return 0
-        return synchronized(walletListLock) {
-            walletList.find { it.id == walletId }?.activeAccountNumber ?: 0
-        }
+        return walletList.find(walletId)?.activeAccountNumber ?: 0
     }
 }

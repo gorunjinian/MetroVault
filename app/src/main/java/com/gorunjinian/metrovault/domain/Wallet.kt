@@ -9,9 +9,7 @@ import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.vaultovich.ScriptType
-import com.gorunjinian.metrovault.data.model.WalletCreationError
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
-import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletKind
 import com.gorunjinian.metrovault.data.model.WalletProfile
@@ -38,16 +36,18 @@ import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
+import com.gorunjinian.metrovault.data.repository.WalletListStore
 import com.gorunjinian.metrovault.data.repository.WalletRepository
+import com.gorunjinian.metrovault.domain.manager.CoordinatorExportManager
 import com.gorunjinian.metrovault.domain.manager.PassphraseManager
 import com.gorunjinian.metrovault.domain.manager.SilentPaymentManager
 import com.gorunjinian.metrovault.domain.manager.StatelessWalletManager
+import com.gorunjinian.metrovault.domain.manager.WalletCreationManager
 import com.gorunjinian.metrovault.domain.manager.WalletAccountManager
 import com.gorunjinian.metrovault.domain.manager.WalletSessionManager
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.vaultovich.KeyPath
-import com.gorunjinian.vaultovich.MnemonicCode
 import com.gorunjinian.vaultovich.OutputOwnership
 import com.gorunjinian.vaultovich.Psbt
 import com.gorunjinian.vaultovich.SingleSigAccount
@@ -81,56 +81,48 @@ class   Wallet(context: Context) {
     private val multisigChangeValidator = MultisigChangeValidator(multisigAddressService)
     private val sessionKeyManager = SessionKeyManager.getInstance()
 
+    private val walletStates = ConcurrentHashMap<String, WalletState>()
+    private val walletList = WalletListStore()
+    val wallets: StateFlow<List<WalletMetadata>> = walletList.wallets
+
     // Managers for better separation of concerns
     private val passphraseManager = PassphraseManager(secureStorage, bitcoinService)
     private val sessionManager = WalletSessionManager(secureStorage, passphraseManager)
-    private val accountManager = WalletAccountManager(secureStorage)
+    private val accountManager = WalletAccountManager(secureStorage, walletList)
     private val statelessWalletManager = StatelessWalletManager(bitcoinService)
     private val silentPaymentManager = SilentPaymentManager()
     private val signingService = WalletSigningService(secureStorage, bitcoinService)
     private val keyEncodingService = KeyEncodingService()
-    private val coordinatorExportService = CoordinatorExportService(keyEncodingService)
+    private val coordinatorExportManager =
+        CoordinatorExportManager(keyEncodingService, CoordinatorExportService(keyEncodingService))
 
-    private val walletStates = ConcurrentHashMap<String, WalletState>()
-    private val _walletMetadataList = mutableListOf<WalletMetadata>()
-    private val walletListLock = Any()
-
-    private val _wallets = MutableStateFlow<List<WalletMetadata>>(emptyList())
-    val wallets: StateFlow<List<WalletMetadata>> = _wallets.asStateFlow()
+    // Repository for wallet CRUD and state management, sharing the in-memory wallet state.
+    // isDecoyMode is passed as a lambda since it's dynamic (depends on session state)
+    private val walletRepository = WalletRepository(
+        secureStorage = secureStorage,
+        bitcoinService = bitcoinService,
+        passphraseManager = passphraseManager,
+        walletStates = walletStates,
+        walletList = walletList,
+        getIsDecoyMode = { isDecoyMode }
+    )
+    private val creationManager = WalletCreationManager(
+        secureStorage, bitcoinService, silentPaymentManager, passphraseManager, sessionKeyManager,
+        walletRepository, walletList
+    )
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private var activeWalletId: String? = null
 
-    // Repository for wallet CRUD and state management
-    private var walletRepository: WalletRepository
-
     // isDecoyMode now delegated to sessionManager
     var isDecoyMode: Boolean
         get() = sessionManager.isDecoyMode
         private set(_) { /* no-op, managed by sessionManager */ }
 
-    init {
-        // Initialize repository with shared state
-        // Pass a lambda for isDecoyMode since it's dynamic (depends on session state)
-        walletRepository = WalletRepository(
-            secureStorage = secureStorage,
-            bitcoinService = bitcoinService,
-            passphraseManager = passphraseManager,
-            walletStates = walletStates,
-            walletMetadataList = _walletMetadataList,
-            walletsFlow = _wallets,
-            walletListLock = walletListLock,
-            getIsDecoyMode = { isDecoyMode }
-        )
-    }
-
     companion object {
         private const val TAG = "Wallet"
-
-        const val MAX_MAIN_WALLETS = 5
-        const val MAX_DECOY_WALLETS = 5
 
         @SuppressLint("StaticFieldLeak")
         @Volatile
@@ -184,33 +176,15 @@ class   Wallet(context: Context) {
      */
     suspend fun refreshWallets(): Boolean = loadWalletList()
 
-    fun canCreateWallet(): Pair<Boolean, String?> {
-        val maxWallets = if (isDecoyMode) MAX_DECOY_WALLETS else MAX_MAIN_WALLETS
-        val vaultName = if (isDecoyMode) "Decoy" else "Main"
-        val currentCount = secureStorage.getWalletCount(isDecoyMode)
-
-        return if (currentCount >= maxWallets) {
-            Pair(false, "Maximum of $maxWallets wallets reached for $vaultName vault.")
-        } else {
-            Pair(true, null)
-        }
-    }
-
-    // ==================== Wallet Creation ====================
+    // ==================== Wallet Creation (delegated to WalletCreationManager) ====================
 
     fun generateMnemonic(wordCount: Int, userEntropy: ByteArray? = null): List<String> {
         return bitcoinService.generateMnemonicWithUserEntropy(wordCount, userEntropy)
     }
 
     /**
-     * Creates a wallet from mnemonic.
-     *
-     * Security model:
-     * - Creates or reuses a WalletKey based on fingerprint matching
-     * - Always stores BIP39 seed derived from mnemonic + passphrase (if saveLocally=true)
-     *   or mnemonic + empty passphrase (if saveLocally=false)
-     * - Passphrase never stored directly on disk
-     * - hasPassphrase=true means passphrase entry required on wallet open
+     * Creates a wallet from mnemonic in the current vault. See [WalletCreationManager.createWallet]
+     * for the security model around the stored seed and the passphrase.
      *
      * @param savePassphraseLocally If false, only base seed (without passphrase) is saved,
      *        and hasPassphrase is set to require re-entry on open
@@ -222,253 +196,18 @@ class   Wallet(context: Context) {
         passphrase: String = "",
         savePassphraseLocally: Boolean = true,
         accountNumber: Int = 0
-    ): WalletCreationResult = withContext(Dispatchers.IO) {
-        try {
-            if (!sessionKeyManager.isSessionActive.value) {
-                return@withContext WalletCreationResult.Error(WalletCreationError.NOT_AUTHENTICATED)
-            }
-
-            val (canCreate, errorMsg) = canCreateWallet()
-            if (!canCreate) {
-                AppLog.e(TAG) { "Cannot create wallet: $errorMsg" }
-                return@withContext WalletCreationResult.Error(WalletCreationError.MAX_WALLETS_REACHED)
-            }
-
-            if (!bitcoinService.validateMnemonic(mnemonic)) {
-                return@withContext WalletCreationResult.Error(WalletCreationError.INVALID_MNEMONIC)
-            }
-
-            // Build full derivation path with account number
-            val fullPath = DerivationPaths.withAccountNumber(derivationPath, accountNumber)
-
-            // Create wallet with passphrase to get correct fingerprint
-            val walletResult =
-                bitcoinService.createWalletFromMnemonic(mnemonic, passphrase, fullPath)
-                    ?: return@withContext WalletCreationResult.Error(WalletCreationError.WALLET_CREATION_FAILED)
-
-            val walletId = java.util.UUID.randomUUID().toString()
-            val mnemonicString = mnemonic.joinToString(" ")
-
-            // Compute BIP39 seed to store
-            // If savePassphraseLocally=true: store seed WITH passphrase (wallet ready to use)
-            // If savePassphraseLocally=false: store seed WITHOUT passphrase (base seed, requires passphrase on open)
-            val seedPassphrase = if (savePassphraseLocally) passphrase else ""
-            var seedBytes: ByteArray? = null
-            try {
-                seedBytes =
-                    MnemonicCode.toSeed(mnemonic, seedPassphrase)
-                val seedHex = seedBytes.toHexString()
-
-                // hasPassphrase = true only if passphrase used AND not saved locally
-                // This triggers passphrase dialog on wallet open
-                val requiresPassphraseEntry = passphrase.isNotEmpty() && !savePassphraseLocally
-                val fingerprint = walletResult.fingerprint.lowercase()
-
-                // Check if a WalletKey with this fingerprint already exists (deduplication)
-                val existingKey = secureStorage.findKeyByFingerprint(fingerprint, isDecoyMode)
-                val keyId: String
-                
-                if (existingKey != null) {
-                    // Reuse existing key
-                    keyId = existingKey.keyId
-                    AppLog.d(TAG) { "Reusing existing key for new wallet" }
-                } else {
-                    // Create new WalletKey
-                    keyId = java.util.UUID.randomUUID().toString()
-                    val keyLabel = secureStorage.getNextKeyLabel(isDecoyMode)
-                    
-                    val walletKeys = WalletKeys(
-                        keyId = keyId,
-                        mnemonic = mnemonicString,
-                        bip39Seed = seedHex,
-                        fingerprint = fingerprint,
-                        label = keyLabel
-                    )
-                    
-                    if (!secureStorage.saveWalletKey(walletKeys, isDecoyMode)) {
-                        return@withContext WalletCreationResult.Error(WalletCreationError.STORAGE_FAILED)
-                    }
-                    AppLog.d(TAG) { "Created new key" }
-                }
-
-                // For BIP-352 silent-payment wallets, derive the scan/spend pubkeys eagerly from
-                // the WITH-passphrase seed (independent of savePassphraseLocally — those pubkeys
-                // must reflect the wallet's real identity, not the base seed). Cached on metadata
-                // so the sp1q… address can be shown while the wallet is locked.
-                val isSp = DerivationPaths.getPurpose(fullPath) == 352
-                var spScanPubKeyHex = ""
-                var spSpendPubKeyHex = ""
-                if (isSp) {
-                    val realSeed = MnemonicCode.toSeed(mnemonic, passphrase)
-                    try {
-                        val master = DeterministicWallet.generate(realSeed)
-                        val isTestnet = DerivationPaths.isTestnet(fullPath)
-                        val keys = silentPaymentManager.deriveKeys(master, accountNumber, isTestnet)
-                        spScanPubKeyHex = keys.scanPublicKey.toHex()
-                        spSpendPubKeyHex = keys.spendPublicKey.toHex()
-                    } finally {
-                        realSeed.fill(0)
-                    }
-                }
-
-                val metadata = WalletMetadata(
-                    id = walletId,
-                    name = name,
-                    derivationPath = fullPath,
-                    masterFingerprint = walletResult.fingerprint.lowercase(),  // Normalized to lowercase
-                    hasPassphrase = requiresPassphraseEntry,
-                    createdAt = System.currentTimeMillis(),
-                    accounts = listOf(accountNumber),
-                    activeAccountNumber = accountNumber,
-                    keyIds = listOf(keyId),  // Reference to WalletKey
-                    isSilentPayment = isSp,
-                    silentPaymentScanPubKey = spScanPubKeyHex,
-                    silentPaymentSpendPubKey = spSpendPubKeyHex
-                )
-
-                // Save wallet metadata (key material is already saved in WalletKey above)
-                if (!secureStorage.saveWalletMetadata(metadata, isDecoyMode)) {
-                    return@withContext WalletCreationResult.Error(WalletCreationError.STORAGE_FAILED)
-                }
-
-                // Update wallet order
-                val currentOrder =
-                    secureStorage.loadWalletOrder(isDecoyMode)?.toMutableList() ?: mutableListOf()
-                currentOrder.add(walletId)
-                secureStorage.saveWalletOrder(currentOrder, isDecoyMode)
-
-                // Update in-memory list
-                synchronized(walletListLock) {
-                    _walletMetadataList.add(metadata)
-                    _wallets.value = _walletMetadataList.toList()
-                }
-                
-                // Refresh multisig key bindings in case this new key matches a cosigner
-                val updatedMultisigs = secureStorage.refreshMultisigKeyBindings(isDecoyMode)
-                if (updatedMultisigs > 0) {
-                    // Reload wallet list to reflect updated multisig bindings
-                    loadWalletList()
-                }
-                
-                WalletCreationResult.Success(metadata)
-            } finally {
-                // Securely wipe seed bytes from memory
-                seedBytes?.fill(0)
-            }
-        } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Create wallet failed: ${e.message}" }
-            WalletCreationResult.Error(WalletCreationError.UNKNOWN_ERROR)
-        }
-    }
-
-    // ==================== Multisig Wallet Creation ====================
+    ): WalletCreationResult = creationManager.createWallet(
+        name, mnemonic, derivationPath, passphrase, savePassphraseLocally, accountNumber, isDecoyMode
+    )
 
     /**
-     * Creates a multisig wallet from a parsed configuration.
-     * 
-     * Multisig wallets reference existing WalletKeys via fingerprint matching.
-     * At least one local key must match a cosigner fingerprint.
-     * 
-     * @param name Display name for the wallet
-     * @param config Parsed multisig configuration from descriptor
+     * Creates a multisig wallet from a parsed configuration. At least one local key must match a
+     * cosigner fingerprint.
+     *
      * @return the new wallet id on success, or null on failure
      */
-    suspend fun createMultisigWallet(
-        name: String,
-        config: MultisigConfig
-    ): String? = withContext(Dispatchers.IO) {
-        try {
-            if (!sessionKeyManager.isSessionActive.value) {
-                AppLog.e(TAG) { "Cannot create multisig wallet: not authenticated" }
-                return@withContext null
-            }
-
-            val (canCreate, errorMsg) = canCreateWallet()
-            if (!canCreate) {
-                AppLog.e(TAG) { "Cannot create multisig wallet: $errorMsg" }
-                return@withContext null
-            }
-
-            // Match cosigner fingerprints to local WalletKeys
-            val keyIds = mutableListOf<String>()
-            val updatedCosigners = config.cosigners.map { cosigner ->
-                val localKey = secureStorage.findKeyByFingerprint(cosigner.fingerprint, isDecoyMode)
-                if (localKey != null) {
-                    keyIds.add(localKey.keyId)
-                    cosigner.copy(isLocal = true, keyId = localKey.keyId)
-                } else {
-                    cosigner.copy(isLocal = false, keyId = null)
-                }
-            }
-            
-            // Validate we have at least one local key (signing device app requirement)
-            if (keyIds.isEmpty()) {
-                AppLog.e(TAG) { "Cannot create multisig wallet: no local keys match cosigner fingerprints" }
-                return@withContext null
-            }
-
-            val walletId = java.util.UUID.randomUUID().toString()
-
-            // Use first local key's fingerprint as the wallet's fingerprint
-            // Safe: keyIds is non-empty, so at least one cosigner has isLocal=true
-            val localCosigner = updatedCosigners.firstOrNull { it.isLocal }
-            if (localCosigner == null) {
-                AppLog.e(TAG) { "Cannot create multisig wallet: inconsistent state - keyIds present but no local cosigner" }
-                return@withContext null
-            }
-            val primaryFingerprint = localCosigner.fingerprint.lowercase()
-
-            // Create updated config with keyId references, normalizing all fingerprints
-            val updatedConfig = config.copy(
-                cosigners = updatedCosigners.map { it.copy(fingerprint = it.fingerprint.lowercase()) },
-                localKeyFingerprints = keyIds.mapNotNull { keyId ->
-                    secureStorage.loadWalletKey(keyId, isDecoyMode)?.fingerprint?.lowercase()
-                }
-            )
-            
-            // Determine derivation path from the first cosigner (for display purposes)
-            val displayPath = "multisig/${config.m}of${config.n}"
-
-            val metadata = WalletMetadata(
-                id = walletId,
-                name = name,
-                derivationPath = displayPath,
-                masterFingerprint = primaryFingerprint,
-                hasPassphrase = false,  // Multisig wallets don't have their own passphrase
-                createdAt = System.currentTimeMillis(),
-                accounts = listOf(0),
-                activeAccountNumber = 0,
-                isMultisig = true,
-                multisigConfig = updatedConfig,
-                keyIds = keyIds  // Direct references to WalletKeys
-            )
-
-            // Save metadata only - no secrets stored for multisig wallets
-            if (!secureStorage.saveWalletMetadata(metadata, isDecoyMode)) {
-                AppLog.e(TAG) { "Failed to save multisig wallet metadata" }
-                return@withContext null
-            }
-
-            // Update wallet order
-            val currentOrder =
-                secureStorage.loadWalletOrder(isDecoyMode)?.toMutableList() ?: mutableListOf()
-            currentOrder.add(walletId)
-            secureStorage.saveWalletOrder(currentOrder, isDecoyMode)
-
-            // Update in-memory list
-            synchronized(walletListLock) {
-                _walletMetadataList.add(metadata)
-                _wallets.value = _walletMetadataList.toList()
-            }
-            
-            AppLog.d(TAG) { "Multisig wallet created (${config.m}-of-${config.n}) with ${keyIds.size} local key(s)" }
-            walletId
-
-        } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Create multisig wallet failed: ${e.message}" }
-            null
-        }
-    }
+    suspend fun createMultisigWallet(name: String, config: MultisigConfig): String? =
+        creationManager.createMultisigWallet(name, config, isDecoyMode)
 
     // ==================== Multisig Registration / Verification ====================
 
@@ -503,13 +242,7 @@ class   Wallet(context: Context) {
             return false
         }
         // Refresh in-memory list so observers (Wallet Details) reflect the change without a reload
-        synchronized(walletListLock) {
-            val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-            if (idx >= 0) {
-                _walletMetadataList[idx] = updated
-                _wallets.value = _walletMetadataList.toList()
-            }
-        }
+        walletList.replace(updated)
         AppLog.d(TAG) { "Multisig wallet registered/verified" }
         return true
     }
@@ -592,20 +325,14 @@ class   Wallet(context: Context) {
 
     /** Add a new account number to a wallet. Returns false if already exists. */
     suspend fun addAccountToWallet(walletId: String, accountNumber: Int): Boolean =
-        accountManager.addAccount(
-            walletId, accountNumber, isDecoyMode, 
-            _walletMetadataList, walletListLock, _wallets
-        )
+        accountManager.addAccount(walletId, accountNumber, isDecoyMode)
 
     /**
      * Remove an account from a wallet.
      * Returns false if: account doesn't exist, is currently active, or is the last account.
      */
     suspend fun removeAccountFromWallet(walletId: String, accountNumber: Int): Boolean =
-        accountManager.removeAccount(
-            walletId, accountNumber, isDecoyMode,
-            _walletMetadataList, walletListLock, _wallets
-        )
+        accountManager.removeAccount(walletId, accountNumber, isDecoyMode)
 
     /**
      * Move a persisted single-seed wallet to [format] (any of the four single-sig BIP purposes or
@@ -653,13 +380,7 @@ class   Wallet(context: Context) {
      */
     private suspend fun persistAndReload(updated: WalletMetadata): Boolean {
         if (!secureStorage.updateWalletMetadata(updated, isDecoyMode)) return false
-        synchronized(walletListLock) {
-            val idx = _walletMetadataList.indexOfFirst { it.id == updated.id }
-            if (idx >= 0) {
-                _walletMetadataList[idx] = updated
-                _wallets.value = _walletMetadataList.toList()
-            }
-        }
+        walletList.replace(updated)
         unloadWallet(updated.id)
         val reloaded = openWallet(updated.id)
         if (reloaded) refreshSilentPaymentPubkeysIfSp(updated.id)
@@ -670,7 +391,6 @@ class   Wallet(context: Context) {
     suspend fun switchActiveAccount(walletId: String, accountNumber: Int): Boolean {
         val switched = accountManager.switchAccount(
             walletId, accountNumber, isDecoyMode,
-            _walletMetadataList, walletListLock, _wallets,
             onUnloadWallet = { unloadWallet(it) },
             onOpenWallet = { openWallet(it) }
         )
@@ -707,13 +427,7 @@ class   Wallet(context: Context) {
             silentPaymentSpendPubKey = newSpendHex
         )
         if (secureStorage.updateWalletMetadata(updated, isDecoyMode)) {
-            synchronized(walletListLock) {
-                val idx = _walletMetadataList.indexOfFirst { it.id == walletId }
-                if (idx >= 0) {
-                    _walletMetadataList[idx] = updated
-                    _wallets.value = _walletMetadataList.toList()
-                }
-            }
+            walletList.replace(updated)
         }
     }
 
@@ -723,7 +437,7 @@ class   Wallet(context: Context) {
      */
     fun getActiveAccountNumber(): Int {
         statelessWalletManager.get()?.let { return DerivationPaths.getAccountNumber(it.derivationPath) }
-        return accountManager.getActiveAccountNumber(activeWalletId, _walletMetadataList, walletListLock)
+        return accountManager.getActiveAccountNumber(activeWalletId)
     }
 
     /**
@@ -731,10 +445,7 @@ class   Wallet(context: Context) {
      * Pass empty string or default name ("Account N") to remove custom name.
      */
     suspend fun renameAccount(walletId: String, accountNumber: Int, newName: String): Boolean =
-        accountManager.renameAccount(
-            walletId, accountNumber, newName, isDecoyMode,
-            _walletMetadataList, walletListLock, _wallets
-        )
+        accountManager.renameAccount(walletId, accountNumber, newName, isDecoyMode)
 
     /**
      * Addresses-screen start indices (receive, change) for the active wallet's active account.
@@ -742,7 +453,7 @@ class   Wallet(context: Context) {
      */
     fun getAddressStartIndices(): Pair<Int, Int> {
         if (statelessWalletManager.get() != null) return 0 to 0
-        return accountManager.getAddressStartIndices(activeWalletId, _walletMetadataList, walletListLock)
+        return accountManager.getAddressStartIndices(activeWalletId)
     }
 
     /**
@@ -754,8 +465,7 @@ class   Wallet(context: Context) {
         if (statelessWalletManager.get() != null) return false
         val walletId = activeWalletId ?: return false
         return accountManager.setAddressStartIndices(
-            walletId, getActiveAccountNumber(), receiveStart, changeStart, isDecoyMode,
-            _walletMetadataList, walletListLock, _wallets
+            walletId, getActiveAccountNumber(), receiveStart, changeStart, isDecoyMode
         )
     }
 
@@ -1176,24 +886,7 @@ class   Wallet(context: Context) {
         }
         val state = getActiveWalletState()
             ?: return CoordinatorExportResult.Error(CoordinatorExportError.WALLET_NOT_LOADED)
-        val accountPublicKey = getAccountPublicKeyForAccount(state, accountNumber)
-            ?: return CoordinatorExportResult.Error(CoordinatorExportError.ACCOUNT_KEY_UNAVAILABLE)
-        return try {
-            CoordinatorExportResult.Available(
-                coordinatorExportService.buildExport(
-                    walletName = state.name,
-                    masterFingerprint = state.fingerprint,
-                    derivationPath = DerivationPaths.withAccountNumber(state.derivationPath, accountNumber),
-                    accountPublicKey = accountPublicKey
-                )
-            )
-        } catch (e: IllegalArgumentException) {
-            AppLog.w(TAG, e) { "Coordinator export rejected account $accountNumber" }
-            CoordinatorExportResult.Unsupported(CoordinatorExportError.UNSUPPORTED_DERIVATION_PATH)
-        } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Coordinator export failed for account $accountNumber" }
-            CoordinatorExportResult.Error(CoordinatorExportError.BUILD_FAILED)
-        }
+        return coordinatorExportManager.buildExport(state, accountNumber)
     }
 
     /**
@@ -1203,31 +896,8 @@ class   Wallet(context: Context) {
      */
     fun getCombinedCoordinatorExportForAccount(accountNumber: Int): String? {
         if (isActiveMultisig() || isActiveSilentPayment()) return null
-        val state = getActiveWalletState() ?: return null
-        val master = state.getMasterPrivateKey() ?: return null
-        val isTestnet = isActiveWalletTestnet()
-        return try {
-            coordinatorExportService.buildCombinedExport(
-                masterFingerprint = state.fingerprint,
-                accountNumber = accountNumber,
-                isTestnet = isTestnet,
-                keys = CoordinatorExportService.CombinedAccountKeys(
-                    bip44 = master.derivePrivateKey(DerivationPaths.legacy(accountNumber, isTestnet)).extendedPublicKey,
-                    bip49 = master.derivePrivateKey(DerivationPaths.nestedSegwit(accountNumber, isTestnet)).extendedPublicKey,
-                    bip84 = master.derivePrivateKey(DerivationPaths.nativeSegwit(accountNumber, isTestnet)).extendedPublicKey,
-                    bip86 = master.derivePrivateKey(DerivationPaths.taproot(accountNumber, isTestnet)).extendedPublicKey,
-                    bip48P2shP2wsh = master.derivePrivateKey(
-                        DerivationPaths.bip48(accountNumber, DerivationPaths.Bip48ScriptType.P2SH_P2WSH, isTestnet)
-                    ).extendedPublicKey,
-                    bip48P2wsh = master.derivePrivateKey(
-                        DerivationPaths.bip48(accountNumber, DerivationPaths.Bip48ScriptType.P2WSH, isTestnet)
-                    ).extendedPublicKey
-                )
-            )
-        } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Combined coordinator export failed for account $accountNumber" }
-            null
-        }
+        val key = activeMasterKey() ?: return null
+        return coordinatorExportManager.buildCombinedExport(key.master, key.fingerprint, accountNumber, key.isTestnet)
     }
 
     /** Nunchuk BIP48 multisig signer record for [accountNumber]. Empty on error. */
@@ -1235,53 +905,17 @@ class   Wallet(context: Context) {
         accountNumber: Int,
         bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
     ): String {
-        val state = getActiveWalletState() ?: return ""
-        val master = state.getMasterPrivateKey() ?: return ""
-        val isTestnet = isActiveWalletTestnet()
-        return try {
-            val bip48Key = master.derivePrivateKey(
-                DerivationPaths.bip48(accountNumber, bip48ScriptType, isTestnet)
-            ).extendedPublicKey
-            CoordinatorExportService.buildNunchukBip48SignerRecord(
-                masterFingerprint = state.fingerprint,
-                accountNumber = accountNumber,
-                bip48ScriptType = bip48ScriptType,
-                standardAccountXpub = keyEncodingService.getStandardAccountXpub(bip48Key, isTestnet),
-                isTestnet = isTestnet
-            )
-        } catch (e: Exception) {
-            AppLog.w(TAG, e) { "Nunchuk BIP48 signer record unavailable for account $accountNumber" }
-            ""
-        }
-    }
-
-    /**
-     * Account public key at [accountNumber] under the active wallet's own purpose. Prefers the
-     * cached key when the account matches the active one; otherwise derives from the master key.
-     */
-    private fun getAccountPublicKeyForAccount(
-        state: WalletState,
-        accountNumber: Int
-    ): DeterministicWallet.ExtendedPublicKey? {
-        if (DerivationPaths.getAccountNumber(state.derivationPath) == accountNumber) {
-            state.getAccountPublicKey()?.let { return it }
-        }
-        val master = state.getMasterPrivateKey() ?: return null
-        return try {
-            master.derivePrivateKey(
-                DerivationPaths.withAccountNumber(state.derivationPath, accountNumber)
-            ).extendedPublicKey
-        } catch (e: Exception) {
-            AppLog.e(TAG, e) { "Failed to derive the account public key for account $accountNumber" }
-            null
-        }
+        val key = activeMasterKey() ?: return ""
+        return coordinatorExportManager.buildNunchukBip48SignerRecord(
+            key.master, key.fingerprint, accountNumber, bip48ScriptType, key.isTestnet
+        )
     }
 
     fun getActiveWalletDerivationPath(): String {
         // Try wallet state first, then fallback to metadata for multisig wallets
         val state = getActiveWalletState()
         if (state != null) return state.derivationPath
-        
+
         // Fallback to metadata derivation path for multisig wallets
         val metadata = activeWalletId?.let { secureStorage.loadWalletMetadata(it, isDecoyMode) }
         return metadata?.derivationPath ?: ""
@@ -1296,13 +930,9 @@ class   Wallet(context: Context) {
      * @return Extended public key string, or empty string on error
      */
     fun getXpubForAccount(baseDerivationPath: String, accountNumber: Int): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val scriptType = getScriptType(baseDerivationPath)
-        val isTestnet = isActiveWalletTestnet()
-
+        val key = activeMasterKey() ?: return ""
         return keyEncodingService.getXpubForAccount(
-            masterPrivateKey, baseDerivationPath, accountNumber, scriptType, isTestnet
+            key.master, baseDerivationPath, accountNumber, getScriptType(baseDerivationPath), key.isTestnet
         )
     }
 
@@ -1316,13 +946,9 @@ class   Wallet(context: Context) {
      * @return Extended private key string, or empty string on error
      */
     fun getXprivForAccount(baseDerivationPath: String, accountNumber: Int): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val scriptType = getScriptType(baseDerivationPath)
-        val isTestnet = isActiveWalletTestnet()
-
+        val key = activeMasterKey() ?: return ""
         return keyEncodingService.getXprivForAccount(
-            masterPrivateKey, baseDerivationPath, accountNumber, scriptType, isTestnet
+            key.master, baseDerivationPath, accountNumber, getScriptType(baseDerivationPath), key.isTestnet
         )
     }
 
@@ -1340,13 +966,8 @@ class   Wallet(context: Context) {
         accountNumber: Int,
         bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
     ): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val isTestnet = isActiveWalletTestnet()
-
-        return keyEncodingService.getBip48XpubForAccount(
-            masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
-        )
+        val key = activeMasterKey() ?: return ""
+        return keyEncodingService.getBip48XpubForAccount(key.master, accountNumber, bip48ScriptType, key.isTestnet)
     }
 
     /**
@@ -1361,26 +982,17 @@ class   Wallet(context: Context) {
         accountNumber: Int,
         bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
     ): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val isTestnet = isActiveWalletTestnet()
-
-        return keyEncodingService.getBip48XprivForAccount(
-            masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
-        )
+        val key = activeMasterKey() ?: return ""
+        return keyEncodingService.getBip48XprivForAccount(key.master, accountNumber, bip48ScriptType, key.isTestnet)
     }
 
     fun getBip48KeyExpressionForAccount(
         accountNumber: Int,
         bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
     ): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val fingerprint = state.fingerprint
-        val isTestnet = isActiveWalletTestnet()
-
+        val key = activeMasterKey() ?: return ""
         return keyEncodingService.getBip48KeyExpressionForAccount(
-            fingerprint, masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
+            key.fingerprint, key.master, accountNumber, bip48ScriptType, key.isTestnet
         )
     }
 
@@ -1396,22 +1008,16 @@ class   Wallet(context: Context) {
         accountNumber: Int,
         bip48ScriptType: DerivationPaths.Bip48ScriptType = DerivationPaths.Bip48ScriptType.P2WSH
     ): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val fingerprint = state.fingerprint
-        val isTestnet = isActiveWalletTestnet()
-
+        val key = activeMasterKey() ?: return ""
         return keyEncodingService.getBip48PrivateKeyExpressionForAccount(
-            fingerprint, masterPrivateKey, accountNumber, bip48ScriptType, isTestnet
+            key.fingerprint, key.master, accountNumber, bip48ScriptType, key.isTestnet
         )
     }
 
     @Suppress("unused")
     fun getActiveDescriptor(): Pair<String, String>? {
-        val state = getActiveWalletState() ?: return null
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return null
-        val isTestnet = isActiveWalletTestnet()
-        return bitcoinService.getWalletDescriptors(masterPrivateKey, isTestnet)
+        val key = activeMasterKey() ?: return null
+        return bitcoinService.getWalletDescriptors(key.master, key.isTestnet)
     }
 
     /**
@@ -1424,14 +1030,10 @@ class   Wallet(context: Context) {
      * @return Descriptor string with checksum, or empty string on error
      */
     fun getUnifiedDescriptorForAccount(baseDerivationPath: String, accountNumber: Int): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val fingerprint = state.fingerprint
-        val scriptType = getScriptType(baseDerivationPath)
-        val isTestnet = isActiveWalletTestnet()
-
+        val key = activeMasterKey() ?: return ""
         return keyEncodingService.getUnifiedDescriptorForAccount(
-            fingerprint, masterPrivateKey, baseDerivationPath, accountNumber, scriptType, isTestnet
+            key.fingerprint, key.master, baseDerivationPath, accountNumber,
+            getScriptType(baseDerivationPath), key.isTestnet
         )
     }
 
@@ -1445,14 +1047,10 @@ class   Wallet(context: Context) {
      * @return Private descriptor string with checksum, or empty string on error
      */
     fun getPrivateDescriptorForAccount(baseDerivationPath: String, accountNumber: Int): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val fingerprint = state.fingerprint
-        val scriptType = getScriptType(baseDerivationPath)
-        val isTestnet = isActiveWalletTestnet()
-
+        val key = activeMasterKey() ?: return ""
         return keyEncodingService.getPrivateDescriptorForAccount(
-            fingerprint, masterPrivateKey, baseDerivationPath, accountNumber, scriptType, isTestnet
+            key.fingerprint, key.master, baseDerivationPath, accountNumber,
+            getScriptType(baseDerivationPath), key.isTestnet
         )
     }
 
@@ -1464,11 +1062,25 @@ class   Wallet(context: Context) {
      * @return Master private key as xprv (mainnet) or tprv (testnet), or empty string on error
      */
     fun getBIP32RootKey(): String {
-        val state = getActiveWalletState() ?: return ""
-        val masterPrivateKey = state.getMasterPrivateKey() ?: return ""
-        val isTestnet = isActiveWalletTestnet()
+        val key = activeMasterKey() ?: return ""
+        return keyEncodingService.getBIP32RootKey(key.master, key.isTestnet)
+    }
 
-        return keyEncodingService.getBIP32RootKey(masterPrivateKey, isTestnet)
+    /** The active wallet's master key, with the fingerprint and network the key exports need. */
+    private class ActiveMasterKey(
+        val master: DeterministicWallet.ExtendedPrivateKey,
+        val fingerprint: String,
+        val isTestnet: Boolean
+    )
+
+    /**
+     * The active wallet's master key, or null when there is none to export from: no wallet open,
+     * a multisig wallet, or an xpub-only stateless wallet.
+     */
+    private fun activeMasterKey(): ActiveMasterKey? {
+        val state = getActiveWalletState() ?: return null
+        val master = state.getMasterPrivateKey() ?: return null
+        return ActiveMasterKey(master, state.fingerprint, isActiveWalletTestnet())
     }
 
     fun getMasterFingerprint(): String? {
@@ -1575,8 +1187,8 @@ class   Wallet(context: Context) {
     // ==================== Session Seed Management (delegated to PassphraseManager) ====================
 
     /**
-     * Checks if a wallet needs passphrase re-entry.
-     * This happens when hasPassphrase=true, and we don't have a session seed.
+     * Checks if a single-sig wallet needs passphrase re-entry: there is no session seed, and
+     * either hasPassphrase=true or the stored seed lacks the passphrase.
      */
     fun needsPassphraseInput(walletId: String): Boolean =
         passphraseManager.needsPassphraseInput(walletId, isDecoyMode)

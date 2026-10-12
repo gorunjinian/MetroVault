@@ -14,8 +14,9 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Dialog for re-entering BIP39 passphrase when opening a wallet
- * that has hasPassphrase = true (passphrase not saved locally),
- * or for adding one to any single-seed wallet via the Passphrase shortcut.
+ * that has hasPassphrase = true (passphrase not saved locally) or whose
+ * stored seed lacks its saved passphrase, or for adding one to any
+ * single-seed wallet via the Passphrase shortcut.
  *
  * Shows a live-updating master fingerprint as user types.
  * Fingerprint is red if it doesn't match the original.

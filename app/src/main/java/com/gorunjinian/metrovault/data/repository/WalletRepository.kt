@@ -3,12 +3,10 @@ package com.gorunjinian.metrovault.data.repository
 import com.gorunjinian.metrovault.core.crypto.SecureByteArray
 import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
-import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletState
 import com.gorunjinian.metrovault.domain.manager.PassphraseManager
 import com.gorunjinian.metrovault.domain.service.bitcoin.BitcoinService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
@@ -31,9 +29,7 @@ class WalletRepository(
 
     // References to Wallet.kt's shared state
     private val walletStates: ConcurrentHashMap<String, WalletState>,
-    private val walletMetadataList: MutableList<WalletMetadata>,
-    private val walletsFlow: MutableStateFlow<List<WalletMetadata>>,
-    private val walletListLock: Any,
+    private val walletList: WalletListStore,
     // Lambda to get current isDecoyMode state (dynamic)
     private val getIsDecoyMode: () -> Boolean
 ) {
@@ -48,11 +44,7 @@ class WalletRepository(
     suspend fun loadWalletList(): Boolean = withContext(Dispatchers.IO) {
         try {
             val list = secureStorage.loadAllWalletMetadata(getIsDecoyMode())
-            synchronized(walletListLock) {
-                walletMetadataList.clear()
-                walletMetadataList.addAll(list)
-                walletsFlow.value = walletMetadataList.toList()
-            }
+            walletList.replaceAll(list)
             AppLog.d(TAG) { "Loaded ${list.size} wallets" }
             true
         } catch (e: Exception) {
@@ -107,9 +99,15 @@ class WalletRepository(
                 // A session seed (mnemonic + passphrase entered this visit) wins whenever present:
                 // it is the re-entered passphrase of a hasPassphrase wallet, or one added on top via
                 // the Passphrase shortcut, which replaces any locally saved passphrase.
-                // Otherwise, use the stored seed directly
-                val seedToUse = passphraseManager.getSessionSeed(walletId, getIsDecoyMode())
-                    ?: walletKey.bip39Seed
+                // Otherwise, use the stored seed directly, but only if it is this wallet's own. A
+                // key can hold just the base seed, and opening from that would show another
+                // wallet's keys under this wallet's name; the passphrase has to be entered first.
+                val sessionSeed = passphraseManager.getSessionSeed(walletId, getIsDecoyMode())
+                if (sessionSeed == null && !passphraseManager.storedSeedMatches(walletKey, metadata.masterFingerprint)) {
+                    AppLog.e(TAG) { "Stored seed lacks the wallet's passphrase; it must be entered first" }
+                    return@withContext Pair(false, null)
+                }
+                val seedToUse = sessionSeed ?: walletKey.bip39Seed
 
                 // Use active account's derivation path
                 val derivationPath = metadata.getActiveDerivationPath()
@@ -162,17 +160,17 @@ class WalletRepository(
             val keyIds = metadata?.keyIds ?: emptyList()
 
             unloadWallet(walletId)
-            synchronized(walletListLock) {
-                walletMetadataList.removeAll { it.id == walletId }
-                walletsFlow.value = walletMetadataList.toList()
-            }
+            walletList.remove(walletId)
 
             // Delete wallet (metadata and secrets)
             val deleted = secureStorage.deleteWallet(walletId, getIsDecoyMode())
 
-            // Clean up keys that are no longer referenced by any wallet
+            // Delete keys no wallet references any more. A key still in use drops a passphrase
+            // that was saved for the deleted wallet alone
             for (keyId in keyIds) {
-                secureStorage.deleteKeyIfUnreferenced(keyId, getIsDecoyMode())
+                if (!secureStorage.deleteKeyIfUnreferenced(keyId, getIsDecoyMode())) {
+                    passphraseManager.dropUnneededPassphrase(keyId, getIsDecoyMode())
+                }
             }
 
             AppLog.d(TAG) { "Wallet deleted" }
@@ -190,19 +188,11 @@ class WalletRepository(
     suspend fun renameWallet(walletId: String, newName: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
-                val metadata = synchronized(walletListLock) {
-                    walletMetadataList.find { it.id == walletId }
-                } ?: return@withContext false
+                val metadata = walletList.find(walletId) ?: return@withContext false
 
                 val updated = metadata.copy(name = newName)
                 if (secureStorage.updateWalletMetadata(updated, getIsDecoyMode())) {
-                    synchronized(walletListLock) {
-                        val idx = walletMetadataList.indexOfFirst { it.id == walletId }
-                        if (idx != -1) {
-                            walletMetadataList[idx] = updated
-                            walletsFlow.value = walletMetadataList.toList()
-                        }
-                    }
+                    walletList.replace(updated)
                     walletStates[walletId]?.rename(newName)
                     AppLog.d(TAG) { "Wallet renamed" }
                     true
@@ -218,14 +208,8 @@ class WalletRepository(
      * Does not persist - call saveWalletListOrder() to persist.
      */
     fun swapWallets(index1: Int, index2: Int) {
-        synchronized(walletListLock) {
-            if (index1 in walletMetadataList.indices && index2 in walletMetadataList.indices) {
-                val temp = walletMetadataList[index1]
-                walletMetadataList[index1] = walletMetadataList[index2]
-                walletMetadataList[index2] = temp
-                walletsFlow.value = walletMetadataList.toList()
-                AppLog.d(TAG) { "Wallets swapped: index $index1 <-> $index2" }
-            }
+        if (walletList.swap(index1, index2)) {
+            AppLog.d(TAG) { "Wallets swapped: index $index1 <-> $index2" }
         }
     }
 
@@ -235,9 +219,7 @@ class WalletRepository(
      */
     suspend fun saveWalletListOrder(): Boolean = withContext(Dispatchers.IO) {
         try {
-            val orderedIds = synchronized(walletListLock) {
-                walletMetadataList.map { it.id }
-            }
+            val orderedIds = walletList.current.map { it.id }
             val success = secureStorage.saveWalletOrder(orderedIds, getIsDecoyMode())
             if (success) AppLog.d(TAG) { "Wallet order saved" }
             success
@@ -277,13 +259,10 @@ class WalletRepository(
      */
     fun unloadAllWallets() {
         val keyCount = walletStates.size
-        val metadataCount = walletMetadataList.size
+        val metadataCount = walletList.current.size
         walletStates.values.forEach { it.wipe() }
         walletStates.clear()
-        synchronized(walletListLock) {
-            walletMetadataList.clear()
-            walletsFlow.value = emptyList()
-        }
+        walletList.clear()
         AppLog.d(TAG) { "Full session wipe: $keyCount keys + $metadataCount metadata cleared" }
     }
 

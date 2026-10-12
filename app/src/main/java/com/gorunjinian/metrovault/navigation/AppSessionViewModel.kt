@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.core.crypto.SessionKeyManager
 import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -102,8 +103,9 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * Post-unlock: with auto-open requested and exactly one wallet, load it
-     * before navigating so WalletDetails opens ready; otherwise go to Home.
+     * Post-unlock: with auto-open requested and exactly one wallet that needs
+     * no passphrase entered, load it before navigating so WalletDetails opens
+     * ready; otherwise go to Home.
      */
     fun onUnlockSuccess(autoOpenRequested: Boolean) {
         if (isProcessingAutoOpen) {
@@ -117,8 +119,10 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
                     val wallets = wallet.wallets.value
                     AppLog.d(TAG) { "Checking wallets: size=${wallets.size}" }
                     if (wallets.size == 1) {
+                        val only = wallets.first()
                         val loaded = withContext(Dispatchers.IO) {
-                            wallet.openWallet(wallets.first().id, showLoading = false)
+                            // One that needs its passphrase is left on Home, where opening it asks
+                            !needsPassphrase(only) && wallet.openWallet(only.id, showLoading = false)
                         }
                         AppLog.d(TAG) { "Wallet loaded: $loaded" }
                         if (loaded) {
@@ -133,6 +137,14 @@ class AppSessionViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
     }
+
+    /** Whether [metadata]'s wallet needs a passphrase entered before it opens. */
+    private suspend fun needsPassphrase(metadata: WalletMetadata): Boolean =
+        if (metadata.isMultisig) {
+            wallet.getKeysNeedingPassphrase(metadata.id).isNotEmpty()
+        } else {
+            wallet.needsPassphraseInput(metadata.id)
+        }
 
     /** Wipe loaded wallet keys from memory when returning to Home (security). */
     fun onHomeOpened() {
