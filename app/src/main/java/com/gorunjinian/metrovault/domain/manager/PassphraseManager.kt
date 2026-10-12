@@ -49,8 +49,10 @@ class PassphraseManager(
 
     /**
      * Sets the session seed for a wallet's key by computing it from the entered passphrase.
-     * Used when user re-enters passphrase after app restart.
-     * 
+     * Used when user re-enters passphrase after app restart, or adds one via the Passphrase
+     * shortcut. Always starts from the stored mnemonic, so any locally saved passphrase (baked
+     * into the stored seed) is ignored while this session seed exists.
+     *
      * @param walletId Wallet ID
      * @param passphrase User-entered passphrase
      */

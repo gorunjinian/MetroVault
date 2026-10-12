@@ -104,15 +104,12 @@ class WalletRepository(
                 }
 
                 // Determine which BIP39 seed to use
-                // If hasPassphrase=true, check for session seed (computed from user-entered passphrase)
+                // A session seed (mnemonic + passphrase entered this visit) wins whenever present:
+                // it is the re-entered passphrase of a hasPassphrase wallet, or one added on top via
+                // the Passphrase shortcut, which replaces any locally saved passphrase.
                 // Otherwise, use the stored seed directly
-                val seedToUse = if (metadata.hasPassphrase) {
-                    // Check if user has entered passphrase this session
-                    passphraseManager.getSessionSeed(walletId, getIsDecoyMode())
-                        ?: walletKey.bip39Seed  // Fallback to stored base seed
-                } else {
-                    walletKey.bip39Seed
-                }
+                val seedToUse = passphraseManager.getSessionSeed(walletId, getIsDecoyMode())
+                    ?: walletKey.bip39Seed
 
                 // Use active account's derivation path
                 val derivationPath = metadata.getActiveDerivationPath()

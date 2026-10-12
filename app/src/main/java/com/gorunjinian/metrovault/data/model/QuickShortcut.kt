@@ -16,7 +16,9 @@ enum class QuickShortcut(
     CHECK_ADDRESS("Check", R.drawable.ic_search, WalletFeature.CHECK_ADDRESS),
     EXPORT("Export", R.drawable.ic_upload, WalletFeature.EXPORT),
     BIP85("BIP-85", R.drawable.ic_account_tree, WalletFeature.BIP85),
-    SIGN_MESSAGE("Message", R.drawable.ic_signature, WalletFeature.SIGN_MESSAGE);
+    SIGN_MESSAGE("Message", R.drawable.ic_signature, WalletFeature.SIGN_MESSAGE),
+    /** Opens the passphrase dialog instead of a screen; see [WalletFeature.PASSPHRASE]. */
+    PASSPHRASE("Passphrase", R.drawable.ic_key, WalletFeature.PASSPHRASE);
 
     companion object {
         val DEFAULT = listOf(VIEW_ADDRESSES, SIGN_PSBT, CHECK_ADDRESS)

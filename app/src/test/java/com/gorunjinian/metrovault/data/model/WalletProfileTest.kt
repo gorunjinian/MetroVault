@@ -67,6 +67,7 @@ class WalletProfileTest {
             WalletFeature.COORDINATOR_EXPORT to listOf(singleSig, statelessSingleSig),
             WalletFeature.ACCOUNT_KEYS_AND_DESCRIPTORS to listOf(singleSig, statelessSingleSig),
             WalletFeature.SEED_PHRASE to listOf(singleSig, silentPayment),
+            WalletFeature.PASSPHRASE to listOf(singleSig, silentPayment),
         )
         // A new feature has to be added to the table above before this passes
         assertEquals(WalletFeature.entries.toSet(), expected.keys)
@@ -87,6 +88,15 @@ class WalletProfileTest {
             listOf(QuickShortcut.VIEW_ADDRESSES, QuickShortcut.EXPORT),
             QuickShortcut.forProfile(chosen, silentPayment)
         )
+    }
+
+    @Test
+    fun `single-sig and silent-payment cards keep the passphrase shortcut`() {
+        val chosen = listOf(QuickShortcut.PASSPHRASE, QuickShortcut.SIGN_PSBT, QuickShortcut.EXPORT)
+
+        assertEquals(chosen, QuickShortcut.forProfile(chosen, singleSig))
+        assertEquals(chosen, QuickShortcut.forProfile(chosen, silentPayment))
+        assertEquals(QuickShortcut.DEFAULT, QuickShortcut.forProfile(chosen, multisig))
     }
 
     @Test

@@ -682,11 +682,16 @@ class   Wallet(context: Context) {
      * For an SP-flagged wallet, re-derive the scan/spend pubkeys at the now-active account and
      * persist them to metadata so the cached `sp1q…` shown in locked-state matches the new active
      * account. No-op for non-SP wallets or when the master key isn't currently in memory.
+     *
+     * Also a no-op when the loaded master key isn't the wallet's own (its fingerprint differs from
+     * the stored one): a passphrase added via the shortcut, or a mistyped one, must not overwrite
+     * the cached pubkeys with another wallet's.
      */
     private fun refreshSilentPaymentPubkeysIfSp(walletId: String) {
         val metadata = secureStorage.loadWalletMetadata(walletId, isDecoyMode) ?: return
         if (!metadata.isSilentPayment) return
         val state = walletStates[walletId] ?: return
+        if (!state.fingerprint.equals(metadata.masterFingerprint, ignoreCase = true)) return
         val master = state.getMasterPrivateKey() ?: return
         val isTestnet = DerivationPaths.isTestnet(state.derivationPath)
         val keys = runCatching {
@@ -806,9 +811,6 @@ class   Wallet(context: Context) {
         unloadAllWalletKeys()
         return statelessWalletManager.create(mnemonic, passphrase, derivationPath)
     }
-    
-    /** Gets the current stateless wallet state, if one exists. */
-    fun getStatelessWalletState(): WalletState? = statelessWalletManager.get()
     
     /** Wipes the stateless wallet from memory. */
     fun wipeStatelessWallet() = statelessWalletManager.wipe()
@@ -1581,10 +1583,14 @@ class   Wallet(context: Context) {
 
     /**
      * Sets the session seed for a wallet by computing it from the entered passphrase.
-     * Used when user re-enters passphrase after app restart.
+     * Used when user re-enters passphrase after app restart, or adds one via the Passphrase
+     * shortcut. A wallet already in memory still holds keys from its previous seed, so it is
+     * unloaded and the next [openWallet] derives from the new one.
      */
-    suspend fun setSessionPassphrase(walletId: String, passphrase: String) =
+    suspend fun setSessionPassphrase(walletId: String, passphrase: String) {
         passphraseManager.setWalletPassphrase(walletId, passphrase, isDecoyMode)
+        unloadWallet(walletId)
+    }
 
     /**
      * Calculates master fingerprint from mnemonic and passphrase.

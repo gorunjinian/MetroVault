@@ -55,6 +55,8 @@ fun WalletsListContent(
     var showPassphraseDialog by remember { mutableStateOf<WalletMetadata?>(null) }
     // Track pending shortcut action when passphrase is required
     var pendingShortcut by remember { mutableStateOf<QuickShortcut?>(null) }
+    // Passphrase shortcut opened the dialog for a wallet that doesn't normally ask for one
+    var isAddedPassphrase by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var expandedWalletId by remember { mutableStateOf<String?>(null) }
 
@@ -194,8 +196,14 @@ fun WalletsListContent(
                                 }
                             },
                             onShortcutClick = { shortcut ->
-                                // Check if wallet needs passphrase re-entry before executing shortcut
-                                if (walletItem.isMultisig) {
+                                // Passphrase shortcut always prompts, then opens Wallet Details. The
+                                // entered passphrase is applied to the stored mnemonic, replacing any
+                                // saved one for this visit (Home wipes it again).
+                                // Other shortcuts check if wallet needs passphrase re-entry first.
+                                if (shortcut == QuickShortcut.PASSPHRASE) {
+                                    isAddedPassphrase = !walletItem.hasPassphrase
+                                    showPassphraseDialog = walletItem
+                                } else if (walletItem.isMultisig) {
                                     // Multi-sig: check if any local keys need passphrase
                                     scope.launch {
                                         val keysNeeding = wallet.getKeysNeedingPassphrase(walletItem.id)
@@ -250,7 +258,7 @@ fun WalletsListContent(
         )
     }
 
-    // Passphrase re-entry dialog for single-sig wallets with unsaved passphrase
+    // Passphrase dialog for single-sig wallets with unsaved passphrase, or opened by the Passphrase shortcut
     if (showPassphraseDialog != null) {
         val walletMeta = showPassphraseDialog!!
         var mnemonic by remember { mutableStateOf<List<String>?>(null) }
@@ -267,12 +275,14 @@ fun WalletsListContent(
                 onDismiss = {
                     showPassphraseDialog = null
                     pendingShortcut = null
+                    isAddedPassphrase = false
                 },
                 onConfirm = { passphrase, _ ->
                     // Store session seed (computed from passphrase) and navigate
                     val shortcut = pendingShortcut
                     pendingShortcut = null
                     showPassphraseDialog = null
+                    isAddedPassphrase = false
 
                     scope.launch {
                         // Compute and store BIP39 seed from passphrase
@@ -288,7 +298,8 @@ fun WalletsListContent(
                 },
                 calculateFingerprint = { passphrase ->
                     wallet.calculateFingerprint(mnemonic!!, passphrase)
-                }
+                },
+                note = if (isAddedPassphrase) "Applies until you leave this wallet. Nothing is saved." else null
             )
         }
     }

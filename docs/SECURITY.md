@@ -334,6 +334,28 @@ Users can choose **not to save their passphrase locally**. In this case:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+#### Adding a Passphrase on Top (Passphrase Shortcut)
+
+The **Passphrase** quick shortcut on an expanded single-sig or Silent Payments wallet card opens the same passphrase dialog for any wallet, including ones created without a passphrase or with one saved locally:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               Passphrase Shortcut                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  • Seed computed in RAM from the STORED MNEMONIC + the entered  │
+│    passphrase; the stored seed (and any saved passphrase baked  │
+│    into it) is ignored while this session seed exists           │
+│  • Nothing written to disk; wallet metadata is unchanged        │
+│  • Lasts until the user returns Home, which wipes all loaded    │
+│    keys and session seeds                                       │
+│  • Fingerprint shown in RED when it differs from the stored one │
+│  • Cached Silent Payments pubkeys are only refreshed when the   │
+│    loaded fingerprint matches the stored one                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 #### Session Seed Memory Security
 
 When session seeds are stored in RAM, they use a specialized `SecureSeedCache` instead of plain String objects:

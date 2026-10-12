@@ -14,7 +14,8 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Dialog for re-entering BIP39 passphrase when opening a wallet
- * that has hasPassphrase = true (passphrase not saved locally).
+ * that has hasPassphrase = true (passphrase not saved locally),
+ * or for adding one to any single-seed wallet via the Passphrase shortcut.
  *
  * Shows a live-updating master fingerprint as user types.
  * Fingerprint is red if it doesn't match the original.
@@ -24,6 +25,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * @param onDismiss Called when user dismisses the dialog
  * @param onConfirm Called when user confirms (passphrase can be empty)
  * @param calculateFingerprint Function to calculate fingerprint from passphrase
+ * @param note Optional extra line shown under the prompt
  */
 @Composable
 fun PassphraseEntryDialog(
@@ -31,7 +33,8 @@ fun PassphraseEntryDialog(
     originalFingerprint: String,  // From metadata (for comparison, NOT displayed)
     onDismiss: () -> Unit,
     onConfirm: (passphrase: String, calculatedFingerprint: String) -> Unit,
-    calculateFingerprint: suspend (passphrase: String) -> String?
+    calculateFingerprint: suspend (passphrase: String) -> String?,
+    note: String? = null
 ) {
     var passphrase by remember { mutableStateOf("") }
     var currentFingerprint by remember { mutableStateOf("") }
@@ -58,7 +61,15 @@ fun PassphraseEntryDialog(
                     text = "Enter the BIP39 passphrase for \"$label\"",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                
+
+                if (note != null) {
+                    Text(
+                        text = note,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 // Passphrase input
                 SecureOutlinedTextField(
                     value = passphrase,

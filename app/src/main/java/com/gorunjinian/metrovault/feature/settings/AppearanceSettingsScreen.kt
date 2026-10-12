@@ -291,6 +291,10 @@ fun AppearanceSettingsScreen(
                                     }
                                 }
                             }
+                            // Keep a lone last card at half width when the shortcut count is odd
+                            if (row.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
                 }

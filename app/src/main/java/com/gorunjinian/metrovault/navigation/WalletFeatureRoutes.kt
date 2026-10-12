@@ -35,5 +35,7 @@ internal fun WalletFeature.routeFor(profile: WalletProfile): String? {
         WalletFeature.COORDINATOR_EXPORT,
         WalletFeature.ACCOUNT_KEYS_AND_DESCRIPTORS,
         WalletFeature.SEED_PHRASE -> null
+        // The shortcut opens the passphrase dialog on the wallet card, then Wallet Details
+        WalletFeature.PASSPHRASE -> null
     }
 }

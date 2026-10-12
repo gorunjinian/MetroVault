@@ -17,6 +17,7 @@ enum class WalletFeature {
     COORDINATOR_EXPORT,
     ACCOUNT_KEYS_AND_DESCRIPTORS,
     SEED_PHRASE,
+    PASSPHRASE,
 }
 
 /**
@@ -43,6 +44,8 @@ data class WalletProfile(val kind: WalletKind, val isStateless: Boolean) {
             kind == WalletKind.SINGLE_SIG
         // A stateless wallet never keeps its mnemonic
         WalletFeature.SEED_PHRASE -> kind != WalletKind.MULTISIG && !isStateless
+        // Re-derives the seed from the stored mnemonic, which multisig and stateless wallets lack
+        WalletFeature.PASSPHRASE -> kind != WalletKind.MULTISIG && !isStateless
     }
 
     companion object {

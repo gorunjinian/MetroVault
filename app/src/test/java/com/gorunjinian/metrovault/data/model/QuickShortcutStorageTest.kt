@@ -27,10 +27,10 @@ class QuickShortcutStorageTest {
     @Test
     fun `every shortcut survives a round-trip in some selection`() {
         // Pins the enum constant names, which are the on-disk format. Renaming one silently
-        // resets that user's shortcut row to the default.
-        for (chunk in QuickShortcut.entries.chunked(3)) {
-            if (chunk.size != 3) continue
-            assertEquals(chunk, QuickShortcut.fromStorageString(QuickShortcut.toStorageString(chunk)))
+        // resets that user's shortcut row to the default. Sliding windows cover every entry
+        // whatever the count, where chunks of three would skip a leftover.
+        for (window in QuickShortcut.entries.windowed(3)) {
+            assertEquals(window, QuickShortcut.fromStorageString(QuickShortcut.toStorageString(window)))
         }
     }
 

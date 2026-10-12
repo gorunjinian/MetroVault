@@ -25,6 +25,8 @@ class WalletFeatureRoutesTest {
         WalletFeature.COORDINATOR_EXPORT,
         WalletFeature.ACCOUNT_KEYS_AND_DESCRIPTORS,
         WalletFeature.SEED_PHRASE,
+        // Its shortcut opens a dialog on the wallet card, not a screen
+        WalletFeature.PASSPHRASE,
     )
 
     @Test
