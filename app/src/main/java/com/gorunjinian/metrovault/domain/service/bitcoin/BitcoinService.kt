@@ -62,7 +62,11 @@ class BitcoinService {
     fun calculateFingerprintFromSeed(seedHex: String): String? {
         return try {
             val seedBytes = seedHex.hexToByteArray()
-            val masterPrivateKey = DeterministicWallet.generate(seedBytes.byteVector())
+            val masterPrivateKey = try {
+                DeterministicWallet.generate(seedBytes)
+            } finally {
+                seedBytes.fill(0)
+            }
             BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
         } catch (e: Exception) {
             AppLog.e(TAG) { "Failed to calculate fingerprint from seed: ${e.message}" }
@@ -111,7 +115,13 @@ class BitcoinService {
         return try {
             AppLog.d(TAG) { "createWalletFromSeed" }
             val seedBytes = seedHex.hexToByteArray()
-            val masterPrivateKey = DeterministicWallet.generate(seedBytes.byteVector())
+            // ByteArray overload, as in createWalletFromMnemonic: the ByteVector one copies the
+            // seed into an array nothing zeroes.
+            val masterPrivateKey = try {
+                DeterministicWallet.generate(seedBytes)
+            } finally {
+                seedBytes.fill(0)
+            }
             AppLog.d(TAG) { "Master key generated" }
             val path = BitcoinUtils.parseDerivationPath(derivationPath)
             AppLog.d(TAG) { "Parsed derivation path" }

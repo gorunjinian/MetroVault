@@ -4,7 +4,6 @@ import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.vaultovich.Crypto
 import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.vaultovich.MnemonicCode
-import com.gorunjinian.vaultovich.byteVector
 import com.gorunjinian.metrovault.domain.service.util.BitcoinUtils
 import java.security.SecureRandom
 
@@ -95,7 +94,8 @@ class MnemonicService {
         var seed: ByteArray? = null
         return try {
             seed = MnemonicCode.toSeed(mnemonicWords, passphrase)
-            val masterPrivateKey = DeterministicWallet.generate(seed.byteVector())
+            // ByteArray overload: the ByteVector one would leave an unzeroed copy of the seed
+            val masterPrivateKey = DeterministicWallet.generate(seed)
             BitcoinUtils.computeFingerprintHex(masterPrivateKey.publicKey)
         } catch (_: Exception) {
             AppLog.w(TAG) { "Failed to calculate fingerprint" }
