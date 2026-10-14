@@ -32,16 +32,16 @@ MetroVault provides three methods for generating entropy:
 
 ### 1. System Entropy (Default)
 
-Uses Android's `SecureRandom`, which sources entropy from:
+Uses Android's `SecureRandom`, which is backed by the kernel's CSPRNG:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     SecureRandom Sources                        │
 ├─────────────────────────────────────────────────────────────────┤
-│  • /dev/urandom (kernel entropy pool)                           │
-│  • Hardware RNG (if device has dedicated chip)                  │
-│  • Environmental noise (timing, sensor data)                    │
-│  • StrongBox/TEE entropy (on supported devices)                 │
+│  • Kernel CSPRNG (getrandom / /dev/urandom), read through       │
+│    Conscrypt (BoringSSL), Android's default provider            │
+│  • The kernel pool is seeded from interrupt timing and the      │
+│    device's hardware RNG, where one is present                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,8 +58,6 @@ For users who prefer verifiable randomness:
 │  • 12-word mnemonic: requires 128 flips                         │
 │  • 24-word mnemonic: requires 256 flips                         │
 │                                                                 │
-
-
 │  Encoding: 1 byte per flip, in entry order                      │
 │  Example: H,T,T,H → 0x00 0x01 0x01 0x00                         │
 └─────────────────────────────────────────────────────────────────┘
@@ -149,13 +147,15 @@ The BIP-39 mnemonic encoding process:
 | 21 | 224 | 7 | 2²²⁴ ≈ 10⁶⁷ combinations |
 | 24 | 256 | 8 | 2²⁵⁶ ≈ 10⁷⁷ combinations |
 
+New wallets are created with 12 or 24 words; all five lengths pass validation.
+
 ### Checksum Validation
 
 MetroVault validates all imported mnemonics:
 
 ```
 Validation Steps:
-1. Check word count is valid (multiple of 3)
+1. Check word count is valid (12, 15, 18, 21 or 24)
 2. Check all words exist in BIP-39 English wordlist
 3. Extract entropy bits and checksum bits from word indices
 4. Recompute SHA-256 checksum from extracted entropy
@@ -244,26 +244,29 @@ MetroVault supports standard BIP derivation paths:
 | Nested SegWit | BIP-49 | `m/49'/0'/0'` | `3...` | `3J98t1WpEZ73CN...` |
 | Native SegWit | BIP-84 | `m/84'/0'/0'` | `bc1q...` | `bc1qar0srrr7xf...` |
 | Taproot | BIP-86 | `m/86'/0'/0'` | `bc1p...` | `bc1p5d7rjq7g7r...` |
+| Silent Payments | BIP-352 | `m/352'/0'/0'` | `sp1q...` | `sp1qq...` |
+
+The third level is the account number (`0'` for the first account). Testnet wallets use coin type `1'` instead of `0'` (e.g. `m/84'/1'/0'`, `tb1q...` addresses). A Silent Payments wallet derives its spend key at `…/0'/0` and its scan key at `…/1'/0` below the account path.
 
 ### Key Derivation Process
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Example: BIP-84 Path                         │
-│                    m/84'/0'/0'/0/0                               │
+│                    m/84'/0'/0'/0/0                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  m          Master key (from seed)                              │
 │   │                                                             │
-│   └─ 84'    Purpose (BIP-84 Native SegWit) [hardened]          │
+│   └─ 84'    Purpose (BIP-84 Native SegWit) [hardened]           │
 │       │                                                         │
-│       └─ 0' Coin type (0 = Bitcoin mainnet) [hardened]         │
+│       └─ 0' Coin type (0 = Bitcoin mainnet) [hardened]          │
 │           │                                                     │
-│           └─ 0' Account index [hardened]                       │
+│           └─ 0' Account index [hardened]                        │
 │               │                                                 │
-│               └─ 0  External chain (0=receive, 1=change)       │
+│               └─ 0  External chain (0=receive, 1=change)        │
 │                   │                                             │
-│                   └─ 0  Address index                          │
+│                   └─ 0  Address index                           │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -305,34 +308,44 @@ Wallet data is split into two categories:
 │  • name: "My Wallet"                                            │
 │  • derivationPath: "m/84'/0'/0'"                                │
 │  • masterFingerprint: "a1b2c3d4"                                │
-│  • hasPassphrase: true/false                                    │
+│  • hasPassphrase: true = passphrase asked for on every open     │
+│  • keyIds: references to WalletKeys entries                     │
 │  • createdAt: timestamp                                         │
+│  • accounts, multisig config, silent-payment PUBLIC keys,       │
+│    address-list preferences                                     │
 │                                                                 │
 │  Storage: Plain JSON in EncryptedSharedPreferences              │
 │  Encryption: Single layer (platform only)                       │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                      WalletSecrets                              │
+│                       WalletKeys                                │
 │                     (Highly sensitive)                          │
 ├─────────────────────────────────────────────────────────────────┤
+│  • keyId: UUID                                                  │
 │  • mnemonic: "abandon ability able..."                          │
-│  • passphrase: "optional-passphrase"                            │
+│  • bip39Seed: 512-bit BIP-39 seed (hex)                         │
+│  • fingerprint: "a1b2c3d4"                                      │
+│  • label: "My Main Seed"                                        │
 │                                                                 │
 │  Storage: Session-key encrypted in EncryptedSharedPreferences   │
 │  Encryption: Dual layer (session key + platform)                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+The passphrase itself is **never stored**. `bip39Seed` holds the seed derived from the mnemonic plus the passphrase when a wallet using the key saves its passphrase, and the base seed (empty passphrase) otherwise. A wallet with `hasPassphrase = true` gets its seed from the mnemonic and the passphrase entered at open, kept in RAM only.
+
+Keys are shared: wallets made from the same mnemonic + passphrase reference one `WalletKeys` entry by `keyId`, and the entry is deleted only when no wallet references it. See [SECURITY.md](./SECURITY.md#passphrase-wallets-sharing-a-key) for how the stored seed follows the wallets sharing a key.
+
 ### Encryption Layers
 
 See [SECURITY.md](./SECURITY.md) for full encryption details.
 
 ```
-Mnemonic ──► AES-256-GCM (Session Key) ──► AES-256-GCM (Keystore) ──► Disk
-                    │                              │
-            Password-derived               Hardware-backed
-            (wiped on logout)              (survives restart)
+WalletKeys ──► AES-256-GCM (Session Key) ──► AES-256-GCM (Keystore) ──► Disk
+                      │                              │
+              Password-derived               Hardware-backed
+              (wiped on lock)                (survives restart)
 ```
 
 ---
@@ -346,25 +359,27 @@ Mnemonic ──► AES-256-GCM (Session Key) ──► AES-256-GCM (Keystore) �
 │                    Wallet Open Flow                             │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  1. Load WalletSecrets from storage                             │
+│  1. Load the wallet's WalletKeys entry from storage             │
 │     └─ Decrypt with session key                                 │
 │                                                                 │
-│  2. Parse mnemonic string → word list                           │
+│  2. Choose the seed                                             │
+│     ├─ Session seed, if a passphrase was entered this visit     │
+│     └─ Otherwise the stored bip39Seed, only if its fingerprint  │
+│        matches the wallet's (else the passphrase is asked for)  │
 │                                                                 │
-│  3. Derive 512-bit seed (PBKDF2, ~10ms)                         │
-│     └─ MnemonicCode.toSeed(words, passphrase)                   │
-│                                                                 │
-│  4. Generate master extended private key                        │
+│  3. Generate master extended private key                        │
 │     └─ DeterministicWallet.generate(seed)                       │
 │                                                                 │
-│  5. Derive account-level keys                                   │
+│  4. Derive the active account's keys                            │
 │     └─ masterKey.derivePrivateKey("m/84'/0'/0'")                │
 │                                                                 │
-│  6. Store keys in RAM (WalletState)                             │
+│  5. Store keys in RAM (WalletState)                             │
 │     └─ SecureByteArray for mnemonic                             │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Opening a wallet runs no PBKDF2: the BIP-39 seed (`MnemonicCode.toSeed`) is computed once when the wallet is created, and again only when a passphrase is entered.
 
 ### Address Generation
 
@@ -393,17 +408,23 @@ Each address type uses different script encoding:
 │                                                                 │
 │  1. Parse PSBT from QR code                                     │
 │                                                                 │
-│  2. For each input:                                             │
-│     a. Extract scriptPubKey                                     │
-│     b. Search address lookup (100 receive + 100 change)         │
-│     c. If match found:                                          │
-│        - Derive signing key at that path                        │
-│        - Sign input with private key                            │
+│  2. For each input not already finalized, find its key:         │
+│     a. BIP-32 derivation info under this wallet's fingerprint   │
+│        → derive the key at that path (if it does not match,     │
+│          retry the standard purposes and accounts)              │
+│     b. Otherwise match the scriptPubKey against the wallet's    │
+│        addresses (2,000 receive + 2,000 change)                 │
 │                                                                 │
-│  3. Return signed PSBT as QR code                               │
+│  3. Sign under the signing policy                               │
+│     • SIGHASH_ALL or SIGHASH_DEFAULT only                       │
+│     • Multi-input segwit v0 spends need previous transactions   │
+│                                                                 │
+│  4. Return signed PSBT as QR code                               │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Inputs that match this wallet but break the policy are reported with the reason. When a multi-input PSBT lacks previous transactions, every signature is withheld unless the user chooses "Sign Anyway": without them the fee cannot be verified (the BIP-143 fee attack, CVE-2020-14199). A single-input spend signs from its witness UTXO, because the attack needs two inputs.
 
 ---
 
@@ -416,44 +437,49 @@ Each address type uses different script encoding:
 │                    WalletState (In-Memory)                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  mnemonic:          SecureByteArray (wiped on close)            │
-│  masterPrivateKey:  Native object (garbage collected)           │
-│  accountPrivateKey: Native object (for signing)                 │
-│  accountPublicKey:  Native object (for address generation)      │
+│  mnemonic:          SecureByteArray (zeroed on wipe)            │
+│  masterPrivateKey:  JVM object (reference dropped on wipe)      │
+│  accountPrivateKey: JVM object (for signing)                    │
+│  accountPublicKey:  JVM object (for address generation)         │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+The key objects come from vaultovich, which is pure Kotlin/JVM. They are immutable and cannot be zeroed in place, so wiping drops every reference and leaves them to the garbage collector.
+
 ### Key Wiping
 
-On wallet close or app exit:
+On returning Home, locking, or the app going to the background, every loaded `WalletState` is wiped:
 
 ```kotlin
-// Explicit memory wiping
-mnemonicBytes.fill(0)       // Overwrite with zeros
-secretKeyBytes.fill(0)      // Overwrite with zeros
-references = null           // Clear references
+// WalletState.wipe()
+mnemonic?.close()           // SecureByteArray overwrites its bytes with zeros
+mnemonic = null
+masterPrivateKey = null     // Drop key references
+accountPrivateKey = null
+accountPublicKey = null
 System.gc()                 // Request garbage collection
 ```
+
+Transient secrets are zeroed in `finally` blocks once used: the system and mixed entropy buffers in `MnemonicService`, and the BIP-39 seed bytes as soon as the master key exists, whether the wallet is created from its mnemonic (`BitcoinService.createWalletFromMnemonic`) or opened from its stored seed (`createWalletFromSeed`). The master key is generated with vaultovich's `ByteArray` overload, which hashes the seed in place. The hex string the stored seed is read from cannot be zeroed, because JVM strings are immutable; only its decoded bytes are.
 
 ### Session Lifecycle
 
 ```
 App Start ──► No keys in memory
                    │
-Login ─────────────┼──► Derive session key (~200ms)
+Unlock ────────────┼──► Derive session key (PBKDF2 → HKDF)
                    │    └─ User password + stored salt
+                   │       (600,000 PBKDF2 iterations for new passwords)
                    │
-Open Wallet ───────┼──► Decrypt mnemonic
+Open Wallet ───────┼──► Decrypt WalletKeys
                    │    └─ Derive keys to RAM
                    │
 Operations ────────┼──► Use cached keys (instant)
                    │
-Close Wallet ──────┼──► Wipe WalletState from RAM
+Return Home ───────┼──► Wipe WalletState and session seeds from RAM
                    │
-Logout ────────────┼──► Wipe session key
-                   │
-App Exit ──────────┴──► All keys cleared
+Lock / Background ─┴──► Wipe session key and all keys
 ```
 
 ---
@@ -468,5 +494,5 @@ App Exit ──────────┴──► All keys cleared
 | Seed Derivation | PBKDF2-HMAC-SHA512, 2048 iterations | Standard BIP-39 |
 | Master Key Generation | HMAC-SHA512("Bitcoin seed") | Standard BIP-32 |
 | Key Derivation | HMAC-SHA512 (hardened + normal) | Standard BIP-32 |
-| Storage Encryption | AES-256-GCM (dual layer) | 256-bit symmetric |
+| Storage Encryption | AES-256-GCM (dual layer for keys, single for metadata) | 256-bit symmetric |
 | Memory Protection | Explicit wiping + SecureByteArray | Defense in depth |
