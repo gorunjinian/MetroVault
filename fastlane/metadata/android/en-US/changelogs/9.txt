@@ -1,0 +1,6 @@
+- Duress unlock: a password or fingerprint that wipes all app data and opens a throwaway wallet
+- Fee-attack protection: multi-input segwit PSBTs need previous transactions, with a "Sign Anyway" override
+- Outputs are verified as yours; mismatches are flagged "NOT YOURS"
+- Multisig: unsorted multi() descriptors, checksum validation, valid BIP-48 cosigner export
+- Change address type or network without re-importing; passphrase shortcut
+- Bitcoin library moved to vaultovich

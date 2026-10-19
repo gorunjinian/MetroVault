@@ -265,3 +265,4 @@ reproducibility comparison against `Binaries`).
 | ACINQ secp256k1-kmp (wrapper) | Apache-2.0 | Yes |
 | bitcoin-core/secp256k1 (C library) | MIT | Yes |
 | bbqr-kotlin, bcur-kotlin | MIT | Yes |
+| vaultovich (Bitcoin library, fork of ACINQ bitcoin-kmp) | Apache-2.0 | Yes |
