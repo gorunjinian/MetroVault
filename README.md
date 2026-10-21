@@ -58,16 +58,17 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 | **Dual-Layer Encryption** | AES-256-GCM with PBKDF2 (600k iterations) + Android Keystore |
 | **Biometric Authentication** | Hardware-backed fingerprint/face unlock with crypto binding |
 | **Plausible Deniability** | Separate "Main" and "Decoy" wallets with different passwords |
-| **Brute-Force Protection** | Exponential backoff rate limiting with 24-hour lockout |
+| **Brute-Force Protection** | Exponential backoff rate limiting with a 24-hour lockout after 20 attempts; changing the device clock can't skip it |
 | **Automatic Wipe** | Optional feature to completely wipe sensitive data after 4 unsuccessful login attempts |
 | **Duress Unlock** | Optional password or fingerprint that wipes all app data at unlock and opens a throwaway wallet so the screen looks normal |
+| **Clipboard Auto-Clear** | Sensitive values copied to the clipboard are cleared after 20 seconds |
 
 ### 💼 Wallet Management
 - **Multi-Type Support**: Native SegWit (`bc1q...`), Taproot (`bc1p...`), Nested SegWit (`3...`), Legacy (`1...`), Silent Payments (`sp1q...`)
 - **Multi-Sig Support**: Import and sign for collaborative custody wallets (2-of-3, 3-of-5, etc.)
 - **Silent Payments (BIP-352)**: Create dedicated SP wallets, send to `sp1q…` recipients from any wallet, and sign spends of received SP outputs — all air-gapped. The spend key never leaves the device; only the scan key is exported (`spscan…` / descriptor) to the watching wallet.
 - **Address Type & Network**: Switch any single-seed wallet between Taproot / Native SegWit / Nested SegWit / Legacy / Silent Payments, and between mainnet and testnet, without re-importing the seed
-- **Passphrase Support**: Optional BIP-39 passphrase with choice to save locally or keep in session memory only
+- **Passphrase Support**: Optional BIP-39 passphrase with choice to save locally or keep in session memory only; a home-screen shortcut applies a session passphrase to an existing wallet
 - **Testnet4 Support**: Import or create Testnet wallet for testing and development
 - **Custom Entropy**: Add your own randomness via dice rolls or coin flips
 - **Mnemonic Tools**: Built-in checksum calculator and validator
@@ -78,6 +79,8 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 - **PSBT Workflow** (BIP-174 + BIP-370 v2): Partially Signed Bitcoin Transactions for single-sig and multi-sig
 - **Multi-Sig Signing**: Sign your part of collaborative custody transactions (with locally saved keys)
 - **Silent-Payment Signing**: Sign sends to `sp1q…` recipients (the derived `bc1p…` is computed on-device and shown alongside the `sp1q…` on the confirmation screen) and sign spends of received SP outputs via `PSBT_IN_SP_TWEAK` (BIP-374)
+- **Fee-Attack Protection**: Multi-input SegWit v0 PSBTs must include their previous transactions (blocking the BIP-143 fee attack), with a "Sign Anyway" override for coordinators that leave them out
+- **Output Ownership Check**: Change and self-transfer outputs are proven to be yours before you sign; an output whose derivation data claims your wallet but pays elsewhere is flagged **NOT YOURS** (multisig signing is refused)
 - **Transaction Finalization**: Finalize fully-signed PSBTs into broadcastable transactions
 - **QR Code Air-Gap**: Scan PSBT → Verify → Sign → Export via QR
 - **Animated QR Support**: BC-UR (v1/v2) and BBQr formats for large transactions
@@ -85,14 +88,15 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 - **XPUB Export**: Generate watch-only wallets on your online device
 
 ### 🔗 Multi-Sig & Descriptors
-- **Descriptor Import**: Import multi-sig wallets via QR (BC-UR v2, BBQr) or text
-- **Descriptor Export**: Share your signer info for multi-sig setup (BIP-48 compatible)
+- **Descriptor Import**: Import multi-sig wallets via QR (BC-UR v2, BBQr) or text: `sortedmulti()` and unsorted `multi()` descriptors, BSMS, and ColdCard multisig setup files, with BIP-380 checksum validation
+- **Cosigner Export**: Share your signer info for multi-sig setup as a BIP-48 key expression (`[fingerprint/48h/…]xpub`)
+- **Coordinator Export**: Export account keys to Nunchuk or as Coldcard/Sparrow JSON, across multiple accounts, as an animated QR
 - **Flexible Derivation**: Supports BIP-48 m/48'/0'/0'/2' and m/48'/0'/0'/1' paths
 
 ### 📖 Signing / Verifying Messages
-- **Sign Messages**: Sign messages to prove ownership
-- **Verify Signatures**: Verify signatures and messages
-- **Qr Code Support**: Sign messages using QR codes, and display signature via QR codes.
+- **Sign Messages**: Sign messages to prove ownership, in Electrum, BIP-137 or BIP-322 format
+- **Verify Signatures**: Verify signatures and messages, with the signature format detected automatically
+- **QR Code Support**: Sign Sparrow `signmessage` QR requests and BIP-322 message PSBTs, and display signatures via QR codes
 
 ## 🔄 How It Works
 
@@ -119,7 +123,7 @@ The primary goal of MetroVault is to provide a completely **offline** environmen
 |----------|------------|
 | **UI Framework** | Jetpack Compose (Material 3) |
 | **Architecture** | MVVM with Clean Architecture |
-| **Cryptography** | [vaultovich](https://github.com/gorunjinian/vaultovich) — Kotlin Bitcoin library (BIP-32, BIP-39, BIP-48, BIP-174, BIP-340/341/342, BIP-352, BIP-370, BIP-371, BIP-374) + secp256k1-kmp JNI binding |
+| **Cryptography** | [vaultovich](https://github.com/gorunjinian/vaultovich) — Kotlin Bitcoin library (BIP-32, BIP-39, BIP-48, BIP-137, BIP-174, BIP-322, BIP-340/341/342, BIP-352, BIP-370, BIP-371, BIP-374, BIP-380) + secp256k1-kmp JNI binding |
 | **Storage** | EncryptedSharedPreferences (Android Keystore) |
 | **QR Codes** | ZXing + [bcur-kotlin](https://github.com/gorunjinian/bcur-kotlin) & [bbqr-kotlin](https://github.com/gorunjinian/bbqr-kotlin) (Kotlin ports for BC-UR and BBQr animated multi-frame QR) |
 | **Biometrics** | AndroidX Biometric Library (BIOMETRIC_STRONG) |
@@ -144,23 +148,27 @@ MetroVault is on [F-Droid](https://f-droid.org/packages/com.gorunjinian.metrovau
 - **Package ID:** `com.gorunjinian.metrovault`
 - **Signing certificate SHA-256:** `1245554ceb17cea21e9912af7bf60d38d716f5884d4b3664e5338462cc76fd03`
 
-### Option 2: Build from Source (Recommended)
+### Option 2: Build from Source
 
 **Prerequisites:**
-- Android Studio Ladybug or newer
-- JDK 17
+- Android Studio 2026.1 or newer (the build uses AGP 9.3)
+- JDK 21 to run Gradle (downloaded automatically if missing; the app itself targets Java 17)
 - Android device (API 26+)
 
 **Steps:**
 ```bash
 # Clone the repository
 git clone https://github.com/gorunjinian/MetroVault.git
+cd MetroVault
 
-# Open in Android Studio
-# Sync Gradle project
-# Build
-# Install on your air-gapped device
+# Debug build (no signing key needed)
+./gradlew assembleDebug
+
+# Release build (needs a signing key in keystore.properties or environment variables, see app/build.gradle.kts)
+./gradlew assembleRelease
 ```
+
+You can also open the project in Android Studio and build from there. The APK lands in `app/build/outputs/apk/`; the [Device Setup Guide](./docs/DEVICE_SETUP.md) covers sideloading it onto your air-gapped device.
 
 ### Option 3: Download APK from GitHub
 
@@ -177,7 +185,7 @@ Check the [Releases](https://github.com/gorunjinian/MetroVault/releases) page fo
 - **Package ID:** `com.gorunjinian.metrovault`
 - **Signing certificate SHA-256:** `1245554ceb17cea21e9912af7bf60d38d716f5884d4b3664e5338462cc76fd03`
 
-> ⚠️ **Security Note:** For production use, always build from source and install on a factory-reset device that remains permanently offline.
+> ⚠️ **Security Note:** For production use, install on a factory-reset device that remains permanently offline, and only install an APK you can trust: build it from source yourself, or check that its signing certificate matches the one above.
 
 ### Recommended Device Setup
 
@@ -205,6 +213,8 @@ Detailed documentation is available in the repository:
 | [DEVICE_SETUP.md](./docs/DEVICE_SETUP.md) | Step-by-step tutorial for preparing a dedicated air-gapped device |
 | [SECURITY.md](./docs/SECURITY.md) | Complete security architecture and encryption model |
 | [SEED_GENERATION.md](./docs/SEED_GENERATION.md) | How wallets are generated, stored, and used |
+| [FDROID_BUILD.md](./docs/FDROID_BUILD.md) | How the F-Droid release is built, including secp256k1 from source and the reproducible-build setup |
+| [ADDRESSES.md](./docs/ADDRESSES.md) | Canonical donation addresses, to check against [metrovault.app/donate](https://metrovault.app/donate/) |
 
 ## 🤝 Contributing
 
