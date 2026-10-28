@@ -156,7 +156,7 @@ fun AboutScreen(
                 ) {
                     // Profile Picture
                     Image(
-                        painter = painterResource(R.drawable.account_profile),
+                        imageVector = DeveloperAvatar,
                         contentDescription = "Developer Profile",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
