@@ -2,7 +2,6 @@ package com.gorunjinian.metrovault.feature.transaction.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,7 +14,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.data.model.PsbtDetails
@@ -323,24 +321,14 @@ fun TransactionConfirmation(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                // Show input address or UTXO based on toggle - horizontally scrollable for consistency with outputs
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = if (showAddresses) input.address 
-                                               else "${input.prevTxHash.take(8)}...${input.prevTxHash.takeLast(8)}:${input.prevTxIndex}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
+                            // Input address or UTXO based on toggle. Wraps so long (e.g. P2WSH multisig)
+                            // addresses stay fully visible.
+                            Text(
+                                text = if (showAddresses) input.address
+                                       else "${input.prevTxHash.take(8)}...${input.prevTxHash.takeLast(8)}:${input.prevTxIndex}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = formatAmount(input.value, showInSats),
@@ -447,23 +435,15 @@ fun TransactionConfirmation(
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // Horizontally scrollable address container
-                                        Row(
-                                            modifier = Modifier
-                                                .weight(1f, fill = false)
-                                                .horizontalScroll(rememberScrollState()),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = outputWithType.output.address,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = if (outputWithType.isOurAddress)
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                    else MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                softWrap = false
-                                            )
-                                        }
+                                        // Wraps so long (e.g. P2WSH multisig) addresses stay fully visible
+                                        Text(
+                                            text = outputWithType.output.address,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (outputWithType.isOurAddress)
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                                else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
                                         when {
                                             outputWithType.claimMismatch -> ClaimMismatchBadge()
                                             outputWithType.isChangeAddress == true -> {
@@ -768,7 +748,7 @@ private fun SignAnywayButton(enabled: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * One labeled, horizontally-scrollable address line in a silent-payment output block — e.g.
+ * One labeled, wrapping address line in a silent-payment output block — e.g.
  * "Paying  sp1q…" or "On-chain  bc1p…". The fixed-width label keeps the two addresses aligned.
  * An optional [trailingBadge] (CHANGE / RECEIVE) is shown after the address when the derived
  * output belongs to this wallet.
@@ -790,20 +770,12 @@ private fun SilentPaymentAddressRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(64.dp)
         )
-        Row(
-            modifier = Modifier
-                .weight(1f, fill = false)
-                .horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = address,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                softWrap = false
-            )
-        }
+        Text(
+            text = address,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f, fill = false)
+        )
         trailingBadge()
     }
 }
