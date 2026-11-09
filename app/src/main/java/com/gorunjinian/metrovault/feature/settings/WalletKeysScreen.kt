@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
@@ -39,7 +40,14 @@ fun WalletKeysScreen(
     
     // Keys list - loaded immediately since authentication was done in AdvancedSettingsScreen
     var keys by remember { mutableStateOf<List<WalletKeys>>(emptyList()) }
-    
+
+    // Keys in the Wallets screen's order, each with the names of the wallets using it. Built from
+    // the same in-memory list the Wallets screen draws, so the two orders always agree and
+    // follow reorders and deletions.
+    val wallets by wallet.wallets.collectAsState()
+    val keyEntries = remember(keys, wallets) { orderKeysByWallets(keys, wallets) }
+    val walletNamesByKey = remember(keyEntries) { keyEntries.associate { it.key.keyId to it.walletNames } }
+
     // Edit mode state
     var isEditMode by remember { mutableStateOf(false) }
     
@@ -161,10 +169,10 @@ fun WalletKeysScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 
-                items(keys) { key ->
-                    val referencingWallets = secureStorage.getWalletsReferencingKey(key.keyId, wallet.isDecoyMode)
-                    val walletCount = referencingWallets.size
-                    
+                items(keyEntries, key = { it.key.keyId }) { entry ->
+                    val key = entry.key
+                    val walletNames = entry.walletNames
+
                     OutlinedCard(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -210,14 +218,16 @@ fun WalletKeysScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = when (walletCount) {
-                                        0 -> "Not used by any wallet"
-                                        1 -> "Used by 1 wallet"
-                                        else -> "Used by $walletCount wallets"
+                                    text = if (walletNames.isEmpty()) {
+                                        "Not used by any wallet"
+                                    } else {
+                                        "Used by ${walletNames.joinToString(", ")}"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (walletCount == 0) MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
-                                            else MaterialTheme.colorScheme.primary
+                                    color = if (walletNames.isEmpty()) MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                                            else MaterialTheme.colorScheme.primary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             if (isEditMode) {
@@ -302,10 +312,7 @@ fun WalletKeysScreen(
     // ========================================
     if (showKeyDetailsDialog && keyToView != null) {
         val key = keyToView!!
-        val referencingWalletIds = secureStorage.getWalletsReferencingKey(key.keyId, wallet.isDecoyMode)
-        val referencingWalletNames = referencingWalletIds.mapNotNull { walletId ->
-            secureStorage.loadWalletMetadata(walletId, wallet.isDecoyMode)?.name
-        }
+        val referencingWalletNames = walletNamesByKey[key.keyId].orEmpty()
         val mnemonicWords = key.mnemonic.split(" ")
         val wordCount = mnemonicWords.size
         val is24Words = wordCount == 24
