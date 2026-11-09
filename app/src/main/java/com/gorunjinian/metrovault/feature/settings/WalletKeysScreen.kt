@@ -18,16 +18,21 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
-import com.gorunjinian.metrovault.core.ui.dialogs.VerifyPasswordDialog
-import com.gorunjinian.metrovault.core.ui.dialogs.PasswordGatedWarningDialog
+import com.gorunjinian.metrovault.core.ui.dialogs.WarningDialog
 import com.gorunjinian.metrovault.data.model.WalletKeys
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.domain.Wallet
 import kotlinx.coroutines.launch
 
 /**
- * Screen for viewing and managing all saved wallet keys.
- * Allows renaming, viewing details (with password confirmation), and deleting keys.
+ * Screen for viewing and managing all saved wallet keys: renaming, viewing details (including
+ * the seed phrase) and deleting.
+ *
+ * The password is confirmed once, in AdvancedSettingsScreen, before this screen opens, and that
+ * confirmation covers everything here: revealing a seed only needs a tap on Show, and deleting a
+ * key only needs its warning. It lasts one visit: leaving asks again, and every lock (manual,
+ * background, session timeout) clears the back stack, so the screen can't be returned to
+ * without passing the gate again.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -58,7 +63,6 @@ fun WalletKeysScreen(
     // Key details dialog state
     var keyToView by remember { mutableStateOf<WalletKeys?>(null) }
     var showKeyDetailsDialog by remember { mutableStateOf(false) }
-    var showSeedPasswordDialog by remember { mutableStateOf(false) }
     var isMnemonicVisible by remember { mutableStateOf(false) }
     
     // Delete dialog state
@@ -293,21 +297,6 @@ fun WalletKeysScreen(
     }
     
     // ========================================
-    // Seed Phrase Password Dialog (triggered by Show button)
-    // ========================================
-    if (showSeedPasswordDialog && keyToView != null) {
-        VerifyPasswordDialog(
-            secureStorage = secureStorage,
-            isDecoyMode = wallet.isDecoyMode,
-            onDismiss = { showSeedPasswordDialog = false },
-            onVerified = {
-                showSeedPasswordDialog = false
-                isMnemonicVisible = true
-            }
-        )
-    }
-    
-    // ========================================
     // Key Details Dialog
     // ========================================
     if (showKeyDetailsDialog && keyToView != null) {
@@ -360,16 +349,10 @@ fun WalletKeysScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            // No password here: it was confirmed to open this screen. The seed
+                            // stays masked until Show, and re-masks when the dialog closes.
                             TextButton(
-                                onClick = { 
-                                    if (isMnemonicVisible) {
-                                        // Hide directly
-                                        isMnemonicVisible = false
-                                    } else {
-                                        // Show requires password confirmation
-                                        showSeedPasswordDialog = true
-                                    }
-                                }
+                                onClick = { isMnemonicVisible = !isMnemonicVisible }
                             ) {
                                 Text(if (isMnemonicVisible) "Hide" else "Show")
                             }
@@ -493,18 +476,19 @@ fun WalletKeysScreen(
     }
     
     // ========================================
-    // Delete Key: warning, then password
+    // Delete Key: warning only (the password was confirmed to open this screen)
     // ========================================
     keyToDelete?.let { key ->
-        PasswordGatedWarningDialog(
+        WarningDialog(
             title = if (key.label.isNotEmpty()) "Delete \"${key.label}\"?" else "Delete This Key?",
             confirmLabel = "Delete",
-            secureStorage = secureStorage,
-            isDecoyMode = wallet.isDecoyMode,
             onDismiss = { keyToDelete = null },
-            onVerified = {
+            onConfirm = {
+                if (isDeleting) return@WarningDialog
                 val isDecoy = wallet.isDecoyMode
                 isDeleting = true
+                // Close the warning right away; isDeleting keeps the cards disabled until done
+                keyToDelete = null
                 scope.launch {
                     // First, delete all wallets that reference this key
                     val walletsList = secureStorage.loadAllWalletMetadata(isDecoy)
@@ -549,11 +533,9 @@ fun WalletKeysScreen(
                     wallet.refreshWallets()
 
                     isDeleting = false
-                    keyToDelete = null
                     loadKeys()
                 }
-            },
-            isLoading = isDeleting
+            }
         ) {
             if (deletionImpact.deletedWallets.isEmpty() && deletionImpact.multisigsLosingKey.isEmpty()) {
                 Text("No wallet uses this key. It will be permanently removed from this device.")
@@ -579,7 +561,7 @@ fun WalletKeysScreen(
 
 /**
  * What deleting a key does to the vault's wallets, for the delete warning. Mirrors the
- * deletion in the password dialog's `onVerified`: a wallet goes with the key when the key is
+ * deletion in the warning's `onConfirm`: a wallet goes with the key when the key is
  * its only local signer, and a multisig wallet with other local signers just loses this one.
  */
 private class KeyDeletionImpact(
