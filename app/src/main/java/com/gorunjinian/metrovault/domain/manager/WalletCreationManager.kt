@@ -19,9 +19,9 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
- * Creates single-sig and multisig wallets: validates the request against the session and the
- * per-vault wallet limit, stores or reuses the [WalletKeys], writes the metadata and display
- * order, and publishes the new wallet to the in-memory list.
+ * Creates single-sig and multisig wallets: validates the request against the session, stores or
+ * reuses the [WalletKeys], writes the metadata and display order, and publishes the new wallet to
+ * the in-memory list. There is no per-vault wallet limit.
  *
  * Extracted from Wallet.kt to follow single responsibility principle. The vault (main or decoy)
  * is passed in per call, like the other managers.
@@ -37,9 +37,6 @@ class WalletCreationManager(
 ) {
     companion object {
         private const val TAG = "WalletCreationManager"
-
-        const val MAX_MAIN_WALLETS = 5
-        const val MAX_DECOY_WALLETS = 5
     }
 
     /**
@@ -68,12 +65,6 @@ class WalletCreationManager(
         try {
             if (!sessionKeyManager.isSessionActive.value) {
                 return@withContext WalletCreationResult.Error(WalletCreationError.NOT_AUTHENTICATED)
-            }
-
-            val (canCreate, errorMsg) = canCreateWallet(isDecoyMode)
-            if (!canCreate) {
-                AppLog.e(TAG) { "Cannot create wallet: $errorMsg" }
-                return@withContext WalletCreationResult.Error(WalletCreationError.MAX_WALLETS_REACHED)
             }
 
             if (!bitcoinService.validateMnemonic(mnemonic)) {
@@ -166,12 +157,6 @@ class WalletCreationManager(
                 return@withContext null
             }
 
-            val (canCreate, errorMsg) = canCreateWallet(isDecoyMode)
-            if (!canCreate) {
-                AppLog.e(TAG) { "Cannot create multisig wallet: $errorMsg" }
-                return@withContext null
-            }
-
             // Match cosigner fingerprints to local WalletKeys
             val keyIds = mutableListOf<String>()
             val updatedCosigners = config.cosigners.map { cosigner ->
@@ -232,18 +217,6 @@ class WalletCreationManager(
         } catch (e: Exception) {
             AppLog.e(TAG, e) { "Create multisig wallet failed: ${e.message}" }
             null
-        }
-    }
-
-    private fun canCreateWallet(isDecoyMode: Boolean): Pair<Boolean, String?> {
-        val maxWallets = if (isDecoyMode) MAX_DECOY_WALLETS else MAX_MAIN_WALLETS
-        val vaultName = if (isDecoyMode) "Decoy" else "Main"
-        val currentCount = secureStorage.getWalletCount(isDecoyMode)
-
-        return if (currentCount >= maxWallets) {
-            Pair(false, "Maximum of $maxWallets wallets reached for $vaultName vault.")
-        } else {
-            Pair(true, null)
         }
     }
 

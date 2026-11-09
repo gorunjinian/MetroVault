@@ -1040,8 +1040,6 @@ class SecureStorage(private val context: Context) {
         return prefs.getStringSet(KEY_WALLET_IDS, emptySet()) ?: emptySet()
     }
 
-    fun getWalletCount(isDecoy: Boolean): Int = getWalletIds(isDecoy).size
-
     private fun updateWalletIndex(walletId: String, isDecoy: Boolean) {
         val prefs = if (isDecoy) decoyPrefs else mainPrefs
         val currentIds = getWalletIds(isDecoy).toMutableSet()

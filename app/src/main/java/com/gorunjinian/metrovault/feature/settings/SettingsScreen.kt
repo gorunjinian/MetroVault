@@ -14,6 +14,7 @@ import com.gorunjinian.metrovault.core.ui.components.SettingsSectionCard
  */
 @Composable
 fun SettingsContent(
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
     onAppearanceSettings: () -> Unit,
     onSecuritySettings: () -> Unit,
     onAdvancedSettings: () -> Unit,
@@ -21,9 +22,8 @@ fun SettingsContent(
     onAbout: () -> Unit
 ) {
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {

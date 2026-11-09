@@ -35,11 +35,12 @@ import com.gorunjinian.metrovault.navigation.Screen
 import com.gorunjinian.metrovault.navigation.navigateToUnlockAfterManualLock
 import com.gorunjinian.metrovault.navigation.openWalletFeature
 import com.gorunjinian.metrovault.domain.Wallet
-import com.gorunjinian.metrovault.domain.manager.WalletCreationManager
 import com.gorunjinian.metrovault.feature.settings.SettingsContent
 import com.gorunjinian.metrovault.feature.wallet.list.WalletsListContent
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -67,7 +68,23 @@ fun HomeScreen(
     var selectedTab by rememberSaveable { mutableStateOf(BottomNavTab.WALLETS) }
     var showCreateDialog by remember { mutableStateOf(false) }
 
-    val wallets by wallet.wallets.collectAsState()
+    // Height of the floating FAB + nav bar overlay (including the system navigation bar inset),
+    // measured so page content can scroll fully clear of it
+    var floatingBarHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val floatingBarHeight = if (floatingBarHeightPx > 0) {
+        with(density) { floatingBarHeightPx.toDp() }
+    } else {
+        160.dp // Until the first measurement
+    }
+    // Content scrolls behind the floating bar, so the padding goes inside the lists
+    // (contentPadding) rather than shrinking their viewport
+    val pageContentPadding = PaddingValues(
+        start = 16.dp,
+        end = 16.dp,
+        top = 8.dp,
+        bottom = floatingBarHeight + 16.dp
+    )
 
     // FIX: Observe loading state for UI feedback (Bug #3 & #4)
     val isLoading by wallet.isLoading.collectAsState()
@@ -239,12 +256,9 @@ fun HomeScreen(
                 // Disable swiping in edit mode to prevent accidental page changes
                 userScrollEnabled = !isEditMode
             ) { page ->
-                // Add bottom padding within each page content for scrollable area clearance
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = 100.dp) // Clear space for floating nav
-                ) {
+                // Pages fill the screen down to the bottom edge; each list clears the floating
+                // nav through pageContentPadding
+                Box(modifier = Modifier.fillMaxSize()) {
                     when (page) {
                         0 -> {
                             // Filter out BIP85 from shortcuts if disabled
@@ -258,11 +272,13 @@ fun HomeScreen(
                                 isEditMode = isEditMode,
                                 autoExpandSingleWallet = userPreferencesRepository.autoExpandSingleWallet.collectAsState().value,
                                 quickShortcuts = filteredShortcuts,
+                                contentPadding = pageContentPadding,
                                 onWalletClick = onWalletClickCallback,
                                 onShortcut = onShortcutCallback
                             )
                         }
                         1 -> SettingsContent(
+                            contentPadding = pageContentPadding,
                             onAppearanceSettings = onAppearanceSettings,
                             onSecuritySettings = onSecuritySettings,
                             onAdvancedSettings = onAdvancedSettings,
@@ -277,6 +293,7 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .onSizeChanged { floatingBarHeightPx = it.height }
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp)
@@ -284,9 +301,8 @@ fun HomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // FAB above the nav bar - centered over lock button (hidden in edit mode)
-                val maxWallets = if (wallet.isDecoyMode) WalletCreationManager.MAX_DECOY_WALLETS else WalletCreationManager.MAX_MAIN_WALLETS
-                val canShowFab = wallets.size < maxWallets && pagerState.currentPage == 0
-                
+                val canShowFab = pagerState.currentPage == 0
+
                 // Determine what to show: FAB, Info message, or nothing
                 // Using a sealed approach with AnimatedContent for smooth crossfade
                 val fabState = when {
@@ -517,9 +533,6 @@ fun HomeScreen(
 
     // Create Wallet Dialog
     if (showCreateDialog) {
-        val maxWallets = if (wallet.isDecoyMode) WalletCreationManager.MAX_DECOY_WALLETS else WalletCreationManager.MAX_MAIN_WALLETS
-        val currentCount = wallets.size
-
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
             title = {
@@ -539,23 +552,6 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Wallet capacity indicator - styled as a subtle chip
-                    val remaining = maxWallets - currentCount
-                    Surface(
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Text(
-                            text = "$currentCount of $maxWallets wallets added • $remaining available",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
                     // Create New Wallet - Card option
                     Surface(
                         onClick = {

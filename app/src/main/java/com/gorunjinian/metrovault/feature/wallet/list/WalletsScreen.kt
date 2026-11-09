@@ -2,15 +2,18 @@ package com.gorunjinian.metrovault.feature.wallet.list
 
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -23,6 +26,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import com.gorunjinian.metrovault.R
@@ -36,9 +40,22 @@ import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletProfile
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
+/** Smallest wallet count that shows the "N wallets" line under the last card. */
+private const val WALLET_COUNT_FOOTER_THRESHOLD = 5
+
+/** Footer key; wallet ids are UUIDs, so it can't collide with a card's key. */
+private const val WALLET_COUNT_FOOTER_KEY = "wallet_count_footer"
+
+/**
+ * The vault's wallet list. The number of wallets is unbounded, so the list scrolls in every mode,
+ * edit mode included. [contentPadding] is applied inside the list so cards can scroll out from
+ * under any overlay at the bottom (the Home screen's floating nav) instead of being cut off by it.
+ */
 @Composable
 fun WalletsListContent(
     wallet: Wallet,
@@ -46,6 +63,7 @@ fun WalletsListContent(
     isEditMode: Boolean = false,
     autoExpandSingleWallet: Boolean = false,
     quickShortcuts: List<QuickShortcut> = QuickShortcut.DEFAULT,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
     onWalletClick: (String) -> Unit,
     onShortcut: (walletId: String, shortcut: QuickShortcut) -> Unit
 ) {
@@ -77,9 +95,11 @@ fun WalletsListContent(
     }
 
     if (wallets.isEmpty()) {
-        // Empty State
+        // Empty State, centered in the area the bottom overlay leaves visible
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -107,7 +127,12 @@ fun WalletsListContent(
     } else {
         // Wallet List with Drag and Drop using LazyColumn for better performance
         val lazyListState = rememberLazyListState()
-        val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        // The padding doubles as the auto-scroll threshold, so dragging a card toward the
+        // floating nav scrolls the list before the card disappears behind it
+        val reorderableState = rememberReorderableLazyListState(
+            lazyListState = lazyListState,
+            scrollThresholdPadding = contentPadding
+        ) { from, to ->
             val fromIndex = wallets.indexOfFirst { it.id == from.key }
             val toIndex = wallets.indexOfFirst { it.id == to.key }
             if (fromIndex != -1 && toIndex != -1) {
@@ -115,19 +140,19 @@ fun WalletsListContent(
             }
         }
 
+        // Scrolling stays enabled in edit mode: with any number of wallets, cards below the fold
+        // must stay reachable to rename or reorder. A drag on the handle is consumed by the
+        // reorderable modifier, so it never fights the list's own scroll gesture.
         LazyColumn(
             state = lazyListState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            // Disable user scroll during drag for smoother experience
-            userScrollEnabled = !isEditMode
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            itemsIndexed(
+            items(
                 items = wallets,
-                key = { _, walletItem -> walletItem.id }
-            ) { _, walletItem ->
+                key = { walletItem -> walletItem.id }
+            ) { walletItem ->
                 ReorderableItem(reorderableState, key = walletItem.id) { isDragging ->
                     val baseScale = if (isEditMode) 0.97f else 1f
                     val scale by animateFloatAsState(
@@ -195,6 +220,10 @@ fun WalletsListContent(
                                     expandedWalletId = if (expandedWalletId == walletItem.id) null else walletItem.id
                                 }
                             },
+                            onExpandSettled = {
+                                // Bring the quick actions out from under the floating nav
+                                scope.launch { lazyListState.revealItem(walletItem.id) }
+                            },
                             onShortcutClick = { shortcut ->
                                 // Passphrase shortcut always prompts, then opens Wallet Details. The
                                 // entered passphrase is applied to the stored mnemonic, replacing any
@@ -234,6 +263,22 @@ fun WalletsListContent(
                             }
                         )
                     }
+                }
+            }
+
+            // Wallet count under the last card, once the list is long enough that counting the
+            // cards is a chore. Not a ReorderableItem, so cards can't be dragged past it.
+            if (wallets.size >= WALLET_COUNT_FOOTER_THRESHOLD) {
+                item(key = WALLET_COUNT_FOOTER_KEY) {
+                    Text(
+                        text = "${wallets.size} wallets",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
@@ -394,12 +439,27 @@ fun WalletCard(
     onClick: () -> Unit,
     onLongPress: () -> Unit = {},
     onExpandClick: () -> Unit,
+    /** Called once each time the quick actions finish expanding (not when the card is composed already expanded). */
+    onExpandSettled: () -> Unit = {},
     onShortcutClick: (QuickShortcut) -> Unit
 ) {
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         label = "chevronRotation"
     )
+
+    // Drives the quick actions so the end of the expand animation is observable. A card that
+    // re-enters composition already expanded (scrolled back into view) starts idle, and drop(1)
+    // skips that initial state, so only a real expansion reports back and scrolls the list.
+    val expandState = remember { MutableTransitionState(isExpanded) }
+    expandState.targetState = isExpanded
+    val currentOnExpandSettled by rememberUpdatedState(onExpandSettled)
+    LaunchedEffect(expandState) {
+        snapshotFlow { expandState.isIdle && expandState.currentState }
+            .drop(1)
+            .filter { it }
+            .collect { currentOnExpandSettled() }
+    }
 
     ElevatedCard(
         modifier = Modifier
@@ -523,7 +583,7 @@ fun WalletCard(
 
             // Expandable quick actions - dynamic based on user preferences
             AnimatedVisibility(
-                visible = isExpanded,
+                visibleState = expandState,
                 enter = expandVertically(),
                 exit = shrinkVertically()
             ) {
@@ -556,6 +616,25 @@ fun WalletCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * Scrolls just far enough that the whole item with [key] sits above the bottom content padding,
+ * without pushing its top under the top edge. Does nothing when the item isn't laid out or
+ * already fits.
+ *
+ * Item offsets are measured from the end of the top content padding, and [viewportEndOffset]
+ * is likewise reduced by it, so the visible area runs from 0 to viewportEnd - afterContentPadding.
+ */
+private suspend fun LazyListState.revealItem(key: Any) {
+    val info = layoutInfo
+    val item = info.visibleItemsInfo.firstOrNull { it.key == key } ?: return
+    val visibleEnd = info.viewportEndOffset - info.afterContentPadding
+    val overflow = item.offset + item.size - visibleEnd
+    if (overflow > 0 && item.offset > 0) {
+        // A card taller than the visible area keeps its header in view
+        animateScrollBy(minOf(overflow, item.offset).toFloat())
     }
 }
 

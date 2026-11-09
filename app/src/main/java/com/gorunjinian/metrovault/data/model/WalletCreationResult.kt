@@ -13,7 +13,6 @@ sealed class WalletCreationResult {
  */
 enum class WalletCreationError(val message: String) {
     NOT_AUTHENTICATED("Session not authenticated. Please unlock the app first."),
-    MAX_WALLETS_REACHED("Maximum number of wallets reached. Delete a wallet to create a new one."),
     INVALID_MNEMONIC("Invalid mnemonic phrase. Please check and try again."),
     WALLET_CREATION_FAILED("Failed to create wallet from mnemonic."),
     STORAGE_FAILED("Failed to save wallet to secure storage."),
