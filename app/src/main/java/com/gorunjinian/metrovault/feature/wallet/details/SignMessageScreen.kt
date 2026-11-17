@@ -293,7 +293,8 @@ fun SignMessageScreen(
                     }
 
                     // A staged message-signing request awaiting the user's consent to sign
-                    if (uiState.pendingMessagePsbt != null) {
+                    val pendingSignRequest = uiState.pendingSignRequest
+                    if (uiState.pendingMessagePsbt != null || pendingSignRequest != null) {
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.tertiaryContainer
@@ -301,7 +302,8 @@ fun SignMessageScreen(
                         ) {
                             Text(
                                 text = "Message-signing request from the watching wallet. Review the " +
-                                       "address and message below, then press Sign.",
+                                       "address and message below, then press Sign." +
+                                       (pendingSignRequest?.let { "\nSigning key: ${it.displayPath}" } ?: ""),
                                 modifier = Modifier.padding(16.dp),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer

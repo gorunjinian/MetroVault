@@ -5,7 +5,6 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.vaultovich.Bip322
 import com.gorunjinian.vaultovich.Block
 import com.gorunjinian.vaultovich.BlockHash
-import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.vaultovich.MessageSigning
 import com.gorunjinian.vaultovich.PrivateKey
 import com.gorunjinian.vaultovich.Psbt
@@ -65,12 +64,52 @@ object WalletMessageSigner {
 
         val trimmedAddress = address.trim()
         val addressKey = resolveAddressKey(wallet, trimmedAddress).getOrElse { return Result.failure(it) }
+        return sign(trimmedAddress, message, addressKey, format)
+    }
 
+    /**
+     * The address a scanned text [request] asks a signature for, derived from its path with the
+     * active wallet's master key. Null when the wallet has no single-sig key to derive from.
+     */
+    fun resolveRequestAddress(wallet: Wallet, request: SignMessageRequest): String? =
+        resolveRequest(wallet, request)?.address
+
+    /**
+     * Sign [message] for a scanned text [request] with the key at the request's own derivation
+     * path. Unlike [signWithAddress] this never searches the active account for the address: the
+     * requester named the key, which may sit in another account or script type of the same seed.
+     */
+    fun signRequest(
+        wallet: Wallet,
+        request: SignMessageRequest,
+        message: String,
+        format: MessageSigning.SignatureFormat,
+    ): Result<String> {
+        val resolved = resolveRequest(wallet, request)
+            ?: return Result.failure(Exception("This wallet has no key to sign with at ${request.displayPath}"))
+        return sign(resolved.address, message, resolved.privateKey, format)
+    }
+
+    private fun resolveRequest(wallet: Wallet, request: SignMessageRequest): SignMessageRequest.ResolvedKey? {
+        return try {
+            val masterPrivateKey = wallet.getActiveWalletState()?.getMasterPrivateKey() ?: return null
+            request.resolve(masterPrivateKey, walletChainHash(wallet))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun sign(
+        address: String,
+        message: String,
+        privateKey: PrivateKey,
+        format: MessageSigning.SignatureFormat,
+    ): Result<String> {
         return try {
             val signature = if (format == MessageSigning.SignatureFormat.BIP322) {
-                Bip322.signSimple(trimmedAddress, message, addressKey, chainHashForAddress(trimmedAddress))
+                Bip322.signSimple(address, message, privateKey, chainHashForAddress(address))
             } else {
-                MessageSigning.signMessage(message, addressKey, format, addressTypeOf(trimmedAddress))
+                MessageSigning.signMessage(message, privateKey, format, addressTypeOf(address))
             }
             Result.success(signature)
         } catch (e: Exception) {
@@ -152,40 +191,6 @@ object WalletMessageSigner {
     }
 
     /**
-     * Parse a Sparrow-style signmessage QR code (`signmessage m/84h/0h/0h/0/0 ascii:<message>`),
-     * deriving the address from the path with the active wallet's keys.
-     *
-     * @return Pair of (address, message) or null if parsing fails.
-     */
-    fun parseSignMessageQr(wallet: Wallet, qrContent: String): Pair<String, String>? {
-        return try {
-            val content = qrContent.removePrefix("signmessage ").removePrefix("SIGNMESSAGE ")
-            val parts = content.split(" ", limit = 2)
-            if (parts.size < 2) return null
-
-            val pathString = parts[0]          // e.g., "m/84h/0h/0h/0/0"
-            val messageWithFormat = parts[1]   // e.g., "ascii:test"
-
-            val message = when {
-                messageWithFormat.startsWith("ascii:", ignoreCase = true) ->
-                    messageWithFormat.removePrefix("ascii:").removePrefix("ASCII:")
-                messageWithFormat.startsWith("utf8:", ignoreCase = true) ->
-                    messageWithFormat.removePrefix("utf8:").removePrefix("UTF8:")
-                messageWithFormat.startsWith("hex:", ignoreCase = true) -> {
-                    val hex = messageWithFormat.removePrefix("hex:").removePrefix("HEX:")
-                    String(hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray())
-                }
-                else -> messageWithFormat // Assume plain text
-            }
-
-            val address = deriveAddressFromPath(pathString, wallet) ?: return null
-            Pair(address, message)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    /**
      * Resolve the private key behind one of the active wallet's own addresses by locating it on
      * the BIP-32 tree (receive/change branches up to the gap limit).
      */
@@ -209,41 +214,6 @@ object WalletMessageSigner {
             .derivePrivateKey(if (isChange) 1L else 0L)
             .derivePrivateKey(index.toLong())
         return Result.success(addressPrivateKey.privateKey)
-    }
-
-    /**
-     * Derive a Bitcoin address from a derivation path string ("m/84h/0h/0h/0/0" or "m/84'/0'/0'/0/0"),
-     * choosing the address type from the BIP purpose.
-     */
-    private fun deriveAddressFromPath(pathString: String, wallet: Wallet): String? {
-        return try {
-            val walletState = wallet.getActiveWalletState() ?: return null
-            val masterPrivateKey = walletState.getMasterPrivateKey() ?: return null
-
-            val normalized = pathString
-                .replace("'", "h")
-                .removePrefix("m/")
-
-            val pathComponents = normalized.split("/").mapNotNull { component ->
-                val isHardened = component.endsWith("h")
-                val index = component.removeSuffix("h").toLongOrNull() ?: return@mapNotNull null
-                if (isHardened) DeterministicWallet.hardened(index) else index
-            }
-            if (pathComponents.isEmpty()) return null
-
-            val publicKey = masterPrivateKey.derivePrivateKey(pathComponents).publicKey
-            val chainHash = Block.LivenetGenesisBlock.hash
-
-            when (pathComponents.getOrNull(0)) {
-                DeterministicWallet.hardened(84) -> publicKey.p2wpkhAddress(chainHash)
-                DeterministicWallet.hardened(49) -> publicKey.p2shOfP2wpkhAddress(chainHash)
-                DeterministicWallet.hardened(44) -> publicKey.p2pkhAddress(chainHash)
-                DeterministicWallet.hardened(86) -> publicKey.xOnly().p2trAddress(chainHash)
-                else -> publicKey.p2wpkhAddress(chainHash) // Default to P2WPKH
-            }
-        } catch (_: Exception) {
-            null
-        }
     }
 
     /** The chain of the active wallet, from its derivation path coin type. */

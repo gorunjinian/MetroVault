@@ -11,6 +11,7 @@ import com.gorunjinian.metrovault.core.qr.OutputFormat
 import com.gorunjinian.metrovault.core.qr.QRCodeUtils
 import com.gorunjinian.metrovault.core.qr.QRDensity
 import com.gorunjinian.metrovault.domain.Wallet
+import com.gorunjinian.metrovault.domain.service.bitcoin.SignMessageRequest
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletMessageSigner
 import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
 import com.gorunjinian.vaultovich.MessageSigning
@@ -73,6 +74,11 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
         // Cleared when the user edits the request fields (the PSBT commits to the scanned values).
         val pendingMessagePsbt: String? = null,
 
+        // A scanned text request (signmessage / Coinkite JSON): signing uses the key at its path
+        // rather than searching the active account for the address. Cleared when the address
+        // changes, since the address shown is the one derived from that path.
+        val pendingSignRequest: SignMessageRequest? = null,
+
         // The signed message PSBT, displayed via SignedPSBTDisplay for the watching wallet to scan.
         val signedMessagePsbt: String? = null,
         val signedQRResult: AnimatedQRResult? = null,
@@ -123,7 +129,13 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setAddressInput(value: String) {
         _uiState.update {
-            it.copy(addressInput = value, pendingMessagePsbt = null, errorMessage = "", successMessage = "")
+            it.copy(
+                addressInput = value,
+                pendingMessagePsbt = null,
+                pendingSignRequest = null,
+                errorMessage = "",
+                successMessage = ""
+            )
         }
     }
 
@@ -148,6 +160,7 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
                 messageInput = "",
                 signatureInput = "",
                 pendingMessagePsbt = null,
+                pendingSignRequest = null,
                 errorMessage = "",
                 successMessage = ""
             )
@@ -193,6 +206,7 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
                                 signatureInput = "",
                                 signatureFormat = MessageSigning.SignatureFormat.BIP322,
                                 pendingMessagePsbt = psbtBase64,
+                                pendingSignRequest = null,
                                 successMessage = "Message-signing request."
                             )
                         }
@@ -209,9 +223,17 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /** A plain (non-PSBT) payload: an address, a message, or a Sparrow-style signmessage QR. */
+    /**
+     * A plain (non-PSBT) payload: a text signing request (`signmessage …` or Coinkite JSON), an
+     * address, or a message. A signing request is recognised whichever scan button opened the
+     * camera — it fills both fields itself.
+     */
     fun onPlainScan(result: String) {
         _uiState.update { it.copy(isScanning = false) }
+        if (SignMessageRequest.looksLikeRequest(result)) {
+            stageSignRequest(result)
+            return
+        }
         when (_uiState.value.scanTarget) {
             ScanTarget.ADDRESS -> {
                 // Extract address from bitcoin: URI if present
@@ -220,32 +242,71 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
                 } else {
                     result
                 }
-                _uiState.update { it.copy(addressInput = address, pendingMessagePsbt = null) }
+                _uiState.update {
+                    it.copy(addressInput = address, pendingMessagePsbt = null, pendingSignRequest = null)
+                }
             }
             ScanTarget.MESSAGE -> {
-                // Sparrow-style "signmessage <path> ascii:<message>" QR, or a plain message
-                if (result.startsWith("signmessage ", ignoreCase = true)) {
-                    viewModelScope.launch {
-                        val parsed = withContext(Dispatchers.Default) {
-                            WalletMessageSigner.parseSignMessageQr(wallet, result)
-                        }
-                        if (parsed != null) {
-                            _uiState.update {
-                                it.copy(
-                                    addressInput = parsed.first,
-                                    messageInput = parsed.second,
-                                    pendingMessagePsbt = null
-                                )
-                            }
-                        } else {
-                            _uiState.update {
-                                it.copy(errorMessage = "Could not parse signmessage QR or derive address")
-                            }
-                        }
+                _uiState.update { it.copy(messageInput = result, pendingMessagePsbt = null) }
+            }
+        }
+    }
+
+    /**
+     * Validate a scanned text signing request and fill in the address (derived from its path) and
+     * message. Like the message-PSBT flow, nothing is signed until the user presses Sign.
+     */
+    private fun stageSignRequest(text: String) {
+        if (_uiState.value.isSilentPayment) {
+            _uiState.update {
+                it.copy(
+                    errorMessage = "Silent payment wallets sign messages only from the watching " +
+                        "wallet's message-signing PSBT QR.",
+                    successMessage = ""
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isProcessing = true, errorMessage = "", successMessage = "") }
+            try {
+                val request = SignMessageRequest.parse(text)
+                if (request == null) {
+                    _uiState.update {
+                        it.copy(
+                            errorMessage = "Could not read the message-signing QR. Check the " +
+                                "derivation path and address format."
+                        )
                     }
-                } else {
-                    _uiState.update { it.copy(messageInput = result, pendingMessagePsbt = null) }
+                    return@launch
                 }
+                val address = withContext(Dispatchers.Default) {
+                    WalletMessageSigner.resolveRequestAddress(wallet, request)
+                }
+                if (address == null) {
+                    _uiState.update {
+                        it.copy(errorMessage = "This wallet has no key to sign with at ${request.displayPath}")
+                    }
+                    return@launch
+                }
+                _uiState.update {
+                    it.copy(
+                        addressInput = address,
+                        messageInput = request.message,
+                        signatureInput = "",
+                        pendingMessagePsbt = null,
+                        pendingSignRequest = request,
+                        // These requests expect a classic recoverable signature.
+                        signatureFormat = if (it.signatureFormat == MessageSigning.SignatureFormat.BIP322) {
+                            MessageSigning.SignatureFormat.ELECTRUM
+                        } else {
+                            it.signatureFormat
+                        },
+                        successMessage = "Message-signing request."
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isProcessing = false) }
             }
         }
     }
@@ -289,6 +350,32 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
                                 _uiState.update {
                                     it.copy(errorMessage = error.message ?: "Failed to sign the message PSBT")
                                 }
+                            }
+                        )
+                    } else if (state.pendingSignRequest != null) {
+                        // A scanned text request: sign with the key at its path, then show the
+                        // signature QR straight away for the requesting wallet to scan back.
+                        val result = withContext(Dispatchers.Default) {
+                            WalletMessageSigner.signRequest(
+                                wallet, state.pendingSignRequest, state.messageInput, state.signatureFormat
+                            )
+                        }
+                        result.fold(
+                            onSuccess = { signature ->
+                                val bitmap = withContext(Dispatchers.Default) {
+                                    QRCodeUtils.generateQRCode(signature)
+                                }
+                                _uiState.update {
+                                    it.copy(
+                                        signatureInput = signature,
+                                        successMessage = "Message signed successfully ✓",
+                                        signatureQRBitmap = bitmap,
+                                        showSignatureQR = bitmap != null
+                                    )
+                                }
+                            },
+                            onFailure = { error ->
+                                _uiState.update { it.copy(errorMessage = error.message ?: "Failed to sign message") }
                             }
                         )
                     } else {
