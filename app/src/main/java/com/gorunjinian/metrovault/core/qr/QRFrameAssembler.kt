@@ -61,7 +61,7 @@ sealed interface AssembledQR {
  *
  * The first frame fixes the transport. Frames that belong to something else (another UR type, a
  * different BBQr, a stray plain QR mid-animation) are [FrameResult.Ignored] rather than restarting
- * the scan, so a camera that briefly catches a neighbouring code doesn't lose progress. Call
+ * the scan, so a camera that briefly catches a neighboring code doesn't lose progress. Call
  * [reset] to start over.
  *
  * Not thread-safe: feed frames from one coroutine. Joining (BBQr zlib, fountain decoding) can be
@@ -181,8 +181,13 @@ class QRFrameAssembler {
     private fun receiveUr(text: String): FrameResult {
         if (!text.startsWith("ur:", ignoreCase = true)) return FrameResult.Ignored
         val decoder = urDecoder ?: return FrameResult.Ignored
-        // False for a different UR type, a malformed part or one that added nothing new.
-        if (!decoder.receivePart(text)) return FrameResult.Ignored
+        // False for a different UR type or a part that added nothing new; throws on bad bytewords.
+        val accepted = try {
+            decoder.receivePart(text)
+        } catch (_: Exception) {
+            false
+        }
+        if (!accepted) return FrameResult.Ignored
         urFramesAccepted++
 
         val result = decoder.result ?: return FrameResult.Progress(
