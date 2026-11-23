@@ -2,11 +2,11 @@ package com.gorunjinian.metrovault.core.ui.dialogs
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import com.gorunjinian.metrovault.core.ui.components.SecurePasswordTextField
+import com.gorunjinian.metrovault.core.ui.components.rememberPasswordState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.core.storage.SecureStorage
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -90,9 +91,9 @@ fun ChangePasswordDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String) -> Unit
 ) {
-    var oldPassword by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
+    val oldPassword = rememberPasswordState()
+    val newPassword = rememberPasswordState()
+    val confirmPassword = rememberPasswordState()
     var errorMessage by remember { mutableStateOf("") }
 
     // Focus requesters for keyboard navigation
@@ -107,48 +108,37 @@ fun ChangePasswordDialog(
         loadingDetail = "This may take a moment",
         confirmText = "Change",
         onConfirm = {
-            if (newPassword.length < 8) {
+            val new = newPassword.text.toString()
+            if (new.length < 8) {
                 errorMessage = "New password must be at least 8 characters"
-            } else if (newPassword != confirmPassword) {
+            } else if (new != confirmPassword.text.toString()) {
                 errorMessage = "New passwords do not match"
             } else {
-                onConfirm(oldPassword, newPassword)
+                onConfirm(oldPassword.text.toString(), new)
             }
         },
         onDismiss = onDismiss
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SecurePasswordTextField(
-                value = oldPassword,
-                onValueChange = { oldPassword = it },
+                state = oldPassword,
                 label = { Text("Current Password") },
-                singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(
-                    onNext = { newPasswordFocusRequester.requestFocus() }
-                )
+                onKeyboardAction = { newPasswordFocusRequester.requestFocus() }
             )
             SecurePasswordTextField(
-                value = newPassword,
-                onValueChange = { newPassword = it },
+                state = newPassword,
                 label = { Text("New Password") },
-                singleLine = true,
                 modifier = Modifier.focusRequester(newPasswordFocusRequester),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(
-                    onNext = { confirmPasswordFocusRequester.requestFocus() }
-                )
+                onKeyboardAction = { confirmPasswordFocusRequester.requestFocus() }
             )
             SecurePasswordTextField(
-                value = confirmPassword,
-                onValueChange = { confirmPassword = it },
+                state = confirmPassword,
                 label = { Text("Confirm New Password") },
-                singleLine = true,
                 modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(
-                    onDone = { keyboardController?.hide() }
-                )
+                onKeyboardAction = { keyboardController?.hide() }
             )
             if (errorMessage.isNotEmpty()) {
                 Text(
@@ -185,22 +175,30 @@ fun SetPasswordDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
+    val password = rememberPasswordState()
+    val confirmPassword = rememberPasswordState()
     var validationError by remember { mutableStateOf("") }
 
     // Focus requesters for keyboard navigation
     val confirmPasswordFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    // Editing either field dismisses the validation error
+    LaunchedEffect(password, confirmPassword) {
+        snapshotFlow { password.text.length to confirmPassword.text.length }
+            .drop(1)
+            .collect { validationError = "" }
+    }
+
     fun submit() {
-        if (password.length < 8) {
+        val entered = password.text.toString()
+        if (entered.length < 8) {
             validationError = "Password must be at least 8 characters"
-        } else if (password != confirmPassword) {
+        } else if (entered != confirmPassword.text.toString()) {
             validationError = "Passwords do not match"
         } else {
             validationError = ""
-            onConfirm(password)
+            onConfirm(entered)
         }
     }
 
@@ -224,29 +222,21 @@ fun SetPasswordDialog(
             }
             Spacer(modifier = Modifier.height(16.dp))
             SecurePasswordTextField(
-                value = password,
-                onValueChange = { password = it; validationError = "" },
+                state = password,
                 label = { Text(passwordLabel) },
-                singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(
-                    onNext = { confirmPasswordFocusRequester.requestFocus() }
-                )
+                onKeyboardAction = { confirmPasswordFocusRequester.requestFocus() }
             )
             Spacer(modifier = Modifier.height(8.dp))
             SecurePasswordTextField(
-                value = confirmPassword,
-                onValueChange = { confirmPassword = it; validationError = "" },
+                state = confirmPassword,
                 label = { Text("Confirm Password") },
-                singleLine = true,
                 modifier = Modifier.focusRequester(confirmPasswordFocusRequester),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        keyboardController?.hide()
-                        submit()
-                    }
-                )
+                onKeyboardAction = {
+                    keyboardController?.hide()
+                    submit()
+                }
             )
             val shownError = validationError.ifEmpty { errorMessage }
             if (shownError.isNotEmpty()) {
@@ -475,7 +465,7 @@ fun ConfirmPasswordDialog(
     isLoading: Boolean = false,
     errorMessage: String = ""
 ) {
-    var password by remember { mutableStateOf("") }
+    val password = rememberPasswordState()
     val keyboardController = LocalSoftwareKeyboardController.current
 
     BusyAlertDialog(
@@ -483,26 +473,22 @@ fun ConfirmPasswordDialog(
         isLoading = isLoading,
         loadingText = "Please wait...",
         confirmText = "Confirm",
-        confirmEnabled = password.isNotEmpty(),
-        onConfirm = { onConfirm(password) },
+        confirmEnabled = password.text.isNotEmpty(),
+        onConfirm = { onConfirm(password.text.toString()) },
         onDismiss = onDismiss
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(message)
             SecurePasswordTextField(
-                value = password,
-                onValueChange = { password = it },
+                state = password,
                 label = { Text("Password") },
-                singleLine = true,
                 isError = errorMessage.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        keyboardController?.hide()
-                        if (password.isNotEmpty()) onConfirm(password)
-                    }
-                )
+                onKeyboardAction = {
+                    keyboardController?.hide()
+                    if (password.text.isNotEmpty()) onConfirm(password.text.toString())
+                }
             )
             if (errorMessage.isNotEmpty()) {
                 Text(

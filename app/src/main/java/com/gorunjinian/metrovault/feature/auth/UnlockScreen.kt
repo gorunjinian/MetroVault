@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -234,20 +233,16 @@ fun UnlockScreen(
                 if (!uiState.isAuthenticating) {
                     // Password field with shake animation
                     SecurePasswordTextField(
-                        value = uiState.password,
-                        onValueChange = { viewModel.updatePassword(it) },
+                        state = viewModel.unlockPasswordField,
                         label = { Text("Password") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
-                        singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                keyboardController?.hide()
-                                viewModel.unlockWithPassword()
-                            }
-                        )
+                        onKeyboardAction = {
+                            keyboardController?.hide()
+                            viewModel.unlockWithPassword()
+                        }
                     )
 
                     if (uiState.errorMessage.isNotEmpty()) {

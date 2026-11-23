@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -136,35 +135,27 @@ fun SetupPasswordScreen(
             AuthFormCard {
                 // Password field with shake animation
                 SecurePasswordTextField(
-                    value = uiState.password,
-                    onValueChange = { viewModel.updateSetupPassword(it) },
+                    state = viewModel.setupPasswordField,
                     label = { Text("Password") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
-                    singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(
-                        onNext = { confirmPasswordFocusRequester.requestFocus() }
-                    )
+                    onKeyboardAction = { confirmPasswordFocusRequester.requestFocus() }
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Confirm password field with shake animation
                 SecurePasswordTextField(
-                    value = uiState.confirmPassword,
-                    onValueChange = { viewModel.updateConfirmPassword(it) },
+                    state = viewModel.setupConfirmField,
                     label = { Text("Confirm Password") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(confirmPasswordFocusRequester)
                         .offset { IntOffset(shakeOffset.dp.roundToPx(), 0) },
-                    singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = { keyboardController?.hide() }
-                    )
+                    onKeyboardAction = { keyboardController?.hide() }
                 )
 
                 if (uiState.errorMessage.isNotEmpty()) {

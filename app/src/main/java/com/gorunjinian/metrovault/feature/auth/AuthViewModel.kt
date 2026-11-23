@@ -2,11 +2,14 @@ package com.gorunjinian.metrovault.feature.auth
 
 import android.annotation.SuppressLint
 import android.app.Application
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.core.crypto.BiometricPasswordManager
 import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.storage.SecureStorage
+import com.gorunjinian.metrovault.core.ui.components.wipe
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
@@ -47,7 +50,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     // ========== UI State ==========
 
     data class UnlockUiState(
-        val password: String = "",
         val errorMessage: String = "",
         val isAuthenticating: Boolean = false,
         val biometricsEnabled: Boolean = false,
@@ -56,8 +58,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     data class SetupUiState(
-        val password: String = "",
-        val confirmPassword: String = "",
         val errorMessage: String = "",
         val isProcessing: Boolean = false
     )
@@ -67,6 +67,12 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _setupState = MutableStateFlow(SetupUiState())
     val setupState: StateFlow<SetupUiState> = _setupState.asStateFlow()
+
+    // What is typed in the password fields. The fields edit these directly, so they are kept out
+    // of the UI states: nothing can write an older value back over what the user is typing.
+    val unlockPasswordField = TextFieldState()
+    val setupPasswordField = TextFieldState()
+    val setupConfirmField = TextFieldState()
 
     // ========== Events ==========
 
@@ -82,6 +88,20 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     // ========== Initialization ==========
 
     init {
+        // Typing dismisses the error. A change that leaves a field empty doesn't count: that is
+        // also what clearing the password after a failed attempt looks like, and its error has to
+        // stay. Watching the length avoids copying the password on every keystroke.
+        viewModelScope.launch {
+            snapshotFlow { unlockPasswordField.text.length }
+                .filter { it > 0 }
+                .collect { _unlockState.update { it.copy(errorMessage = "") } }
+        }
+        viewModelScope.launch {
+            snapshotFlow { setupPasswordField.text.length to setupConfirmField.text.length }
+                .filter { (password, confirm) -> password > 0 || confirm > 0 }
+                .collect { _setupState.update { it.copy(errorMessage = "") } }
+        }
+
         // Observe biometric settings
         viewModelScope.launch {
             combine(
@@ -104,19 +124,17 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     // ========== Unlock Screen Actions ==========
 
-    fun updatePassword(password: String) {
-        _unlockState.update {
-            it.copy(password = password, errorMessage = "")
-        }
-    }
-
-    fun unlockWithPassword(fromBiometric: Boolean = false) {
-        val password = _unlockState.value.password
+    /** Unlock with what is typed in the password field. */
+    fun unlockWithPassword() {
+        val password = unlockPasswordField.text.toString()
         if (password.isEmpty()) {
             _unlockState.update { it.copy(errorMessage = "Password cannot be empty") }
             return
         }
+        unlock(password, fromBiometric = false)
+    }
 
+    private fun unlock(password: String, fromBiometric: Boolean) {
         viewModelScope.launch {
             _unlockState.update { it.copy(isAuthenticating = true) }
 
@@ -150,7 +168,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     val autoOpenRequested = shouldAutoOpen && wallets.size == 1
 
                     // Clear password from state
-                    _unlockState.update { it.copy(password = "", errorMessage = "") }
+                    unlockPasswordField.wipe()
+                    _unlockState.update { it.copy(errorMessage = "") }
                     System.gc()
 
                     _events.emit(AuthEvent.UnlockSuccess(autoOpenRequested))
@@ -169,10 +188,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 userPreferencesRepository.setBiometricsEnabled(false)
                 userPreferencesRepository.setBiometricTarget(UserPreferencesRepository.BIOMETRIC_TARGET_NONE)
+                unlockPasswordField.wipe()
                 _unlockState.update {
                     it.copy(
                         isAuthenticating = false,
-                        password = "",
                         errorMessage = "Saved biometric credentials are outdated. Biometric unlock has been disabled — please use your password."
                     )
                 }
@@ -189,13 +208,14 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     // The wipe cleared the settings file; drop the stale
                     // in-memory flags too (same as the duress path)
                     userPreferencesRepository.reload()
-                    _unlockState.update { it.copy(isAuthenticating = false, password = "", errorMessage = "") }
+                    unlockPasswordField.wipe()
+                    _unlockState.update { it.copy(isAuthenticating = false, errorMessage = "") }
                     _events.emit(AuthEvent.DataWiped)
                 } else {
+                    unlockPasswordField.wipe()
                     _unlockState.update {
                         it.copy(
                             isAuthenticating = false,
-                            password = "",
                             errorMessage = result.errorMessage ?: "Incorrect password"
                         )
                     }
@@ -219,9 +239,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 // The duress slot holds a random token, not a password: a
                 // successful biometric decrypt of it is the trigger.
                 openDuressSession()
+            } else if (decryptedPassword.isEmpty()) {
+                _unlockState.update { it.copy(errorMessage = "Password cannot be empty") }
             } else {
-                _unlockState.update { it.copy(password = decryptedPassword) }
-                unlockWithPassword(fromBiometric = true)
+                unlock(decryptedPassword, fromBiometric = true)
             }
         }
     }
@@ -260,7 +281,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             wallet.loadWalletList()
         }
 
-        _unlockState.update { it.copy(password = "", errorMessage = "") }
+        unlockPasswordField.wipe()
+        _unlockState.update { it.copy(errorMessage = "") }
         System.gc()
 
         _events.emit(AuthEvent.UnlockSuccess(autoOpenRequested = false))
@@ -280,22 +302,14 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     // ========== Setup Screen Actions ==========
 
-    fun updateSetupPassword(password: String) {
-        _setupState.update { it.copy(password = password, errorMessage = "") }
-    }
-
-    fun updateConfirmPassword(confirmPassword: String) {
-        _setupState.update { it.copy(confirmPassword = confirmPassword, errorMessage = "") }
-    }
-
     fun setupPassword() {
-        val state = _setupState.value
+        val password = setupPasswordField.text.toString()
 
         when {
-            state.password.length < 8 -> {
+            password.length < 8 -> {
                 _setupState.update { it.copy(errorMessage = "Password must be at least 8 characters") }
             }
-            state.password != state.confirmPassword -> {
+            password != setupConfirmField.text.toString() -> {
                 _setupState.update { it.copy(errorMessage = "Passwords do not match") }
             }
             else -> {
@@ -303,19 +317,19 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     _setupState.update { it.copy(isProcessing = true) }
 
                     val success = withContext(Dispatchers.IO) {
-                        secureStorage.setMainPassword(state.password)
+                        secureStorage.setMainPassword(password)
                     }
 
                     if (success) {
                         withContext(Dispatchers.IO) {
-                            secureStorage.verifyPassword(state.password)
+                            secureStorage.verifyPassword(password)
                         }
                         wallet.setSession(isDecoy = false)
 
                         // Clear passwords from state
-                        _setupState.update {
-                            it.copy(password = "", confirmPassword = "", isProcessing = false)
-                        }
+                        setupPasswordField.wipe()
+                        setupConfirmField.wipe()
+                        _setupState.update { it.copy(isProcessing = false) }
 
                         _events.emit(AuthEvent.SetupComplete)
                     } else {
@@ -326,5 +340,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    override fun onCleared() {
+        unlockPasswordField.wipe()
+        setupPasswordField.wipe()
+        setupConfirmField.wipe()
     }
 }
