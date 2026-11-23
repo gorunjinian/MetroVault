@@ -2,6 +2,7 @@ package com.gorunjinian.metrovault.domain.service.scan
 
 import com.gorunjinian.metrovault.core.qr.OutputFormat
 import com.gorunjinian.metrovault.domain.service.bitcoin.SignMessageRequest
+import com.gorunjinian.metrovault.domain.service.multisig.MultisigSetupFormat
 
 /** The chain an address or key is encoded for. Signet shares testnet's encodings. */
 enum class ScanNetwork { MAINNET, TESTNET, REGTEST }
@@ -139,8 +140,6 @@ enum class SeedFormat {
     UR_BIP39
 }
 
-enum class MultisigSetupFormat { DESCRIPTOR, BSMS, SETUP_FILE }
-
 enum class InvalidKind {
     PSBT,
     ADDRESS,
@@ -151,5 +150,8 @@ enum class InvalidKind {
     TRANSACTION,
 
     /** A recognized transport carrying something MetroVault doesn't handle. */
-    UNSUPPORTED
+    UNSUPPORTED,
+
+    /** Frames that can't be joined into anything. */
+    UNREADABLE
 }

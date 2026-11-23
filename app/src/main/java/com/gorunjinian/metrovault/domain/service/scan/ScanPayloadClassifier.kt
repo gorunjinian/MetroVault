@@ -11,12 +11,13 @@ import com.gorunjinian.bcur.registry.CryptoOutput
 import com.gorunjinian.bcur.registry.URAccountDescriptor
 import com.gorunjinian.bcur.registry.URHDKey
 import com.gorunjinian.bcur.registry.UROutputDescriptor
+import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.core.qr.AssembledQR
 import com.gorunjinian.metrovault.core.qr.OutputFormat
 import com.gorunjinian.metrovault.core.qr.SeedQRUtils
 import com.gorunjinian.metrovault.core.qr.URDescriptors
 import com.gorunjinian.metrovault.domain.service.bitcoin.SignMessageRequest
-import com.gorunjinian.metrovault.domain.service.multisig.ColdCardSetupFile
+import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
 import com.gorunjinian.vaultovich.Base58Check
 import com.gorunjinian.vaultovich.BIP39Wordlist
 import com.gorunjinian.vaultovich.Bip322
@@ -49,7 +50,7 @@ object ScanPayloadClassifier {
     /** Classify a scan from [com.gorunjinian.metrovault.core.qr.QRFrameAssembler]. */
     fun classify(assembled: AssembledQR): ScannedPayload = when (assembled) {
         // A plain PSBT QR gets a modern UR reply, as the Sign PSBT screen has always chosen.
-        is AssembledQR.Text -> classifyText(assembled.text, assembled.rawBytes, OutputFormat.UR_MODERN)
+        is AssembledQR.Text -> classifyText(assembled.text, assembled.byteSegment, OutputFormat.UR_MODERN)
         is AssembledQR.Ur -> classifyUr(assembled.ur)
         is AssembledQR.BBQr -> classifyBBQr(assembled.fileType, assembled.data)
     }
@@ -57,12 +58,12 @@ object ScanPayloadClassifier {
     /**
      * Classify text, in order of how specific each form is.
      *
-     * @param rawBytes ZXing's raw segment bytes of a single QR, needed only for CompactSeedQR
+     * @param byteSegment The single byte-mode segment of a plain QR, needed only for CompactSeedQR
      * @param psbtReplyFormat The reply format for a PSBT found in the text
      */
     fun classifyText(
         text: String,
-        rawBytes: ByteArray? = null,
+        byteSegment: ByteArray? = null,
         psbtReplyFormat: OutputFormat = OutputFormat.UR_MODERN
     ): ScannedPayload {
         val trimmed = text.trim()
@@ -77,8 +78,9 @@ object ScanPayloadClassifier {
             )
         }
 
-        if (SignMessageRequest.looksLikeRequest(trimmed)) {
-            return SignMessageRequest.parse(trimmed)?.let { ScannedPayload.SignRequest(it) }
+        // Not `trimmed`: the message runs to the end of the text, and every character is signed.
+        if (SignMessageRequest.looksLikeRequest(text)) {
+            return SignMessageRequest.parse(text)?.let { ScannedPayload.SignRequest(it) }
                 ?: ScannedPayload.Invalid(
                     InvalidKind.SIGN_REQUEST,
                     "This message-signing request couldn't be read. Check its derivation path and address format."
@@ -91,7 +93,7 @@ object ScanPayloadClassifier {
             classifyAddress(trimmed)?.let { return it }
         }
 
-        classifySeed(trimmed, text, rawBytes)?.let { return it }
+        classifySeed(trimmed, text, byteSegment)?.let { return it }
         classifyMultisig(trimmed, walletName = null)?.let { return it }
         classifyExtendedKeys(trimmed)?.let { return it }
         transactionFromHex(trimmed)?.let { return it }
@@ -174,10 +176,13 @@ object ScanPayloadClassifier {
         }
         val psbt = when (val read = Psbt.read(bytes)) {
             is Either.Right -> read.value
-            is Either.Left -> return ScannedPayload.Invalid(
-                InvalidKind.PSBT,
-                "This PSBT couldn't be read (${read.value::class.simpleName})."
-            )
+            is Either.Left -> {
+                AppLog.w(TAG) { "PSBT rejected: ${read.value::class.simpleName}" }
+                return ScannedPayload.Invalid(
+                    InvalidKind.PSBT,
+                    "This PSBT couldn't be read. It may be damaged or of an unsupported version."
+                )
+            }
         }
 
         val base64 = Base64.getEncoder().encodeToString(bytes)
@@ -287,7 +292,7 @@ object ScanPayloadClassifier {
 
     // ==================== Seeds ====================
 
-    private fun classifySeed(trimmed: String, original: String, rawBytes: ByteArray?): ScannedPayload? {
+    private fun classifySeed(trimmed: String, original: String, byteSegment: ByteArray?): ScannedPayload? {
         val tokens = trimmed.lowercase().split(WHITESPACE)
         if ((tokens.size == 12 || tokens.size == 24) && tokens.all { it in englishWords }) {
             return seedFromWords(tokens, SeedFormat.WORDS)
@@ -299,15 +304,8 @@ object ScanPayloadClassifier {
                 ?: ScannedPayload.Invalid(InvalidKind.SEED, "This looks like a SeedQR, but it doesn't decode to a valid seed.")
         }
 
-        // CompactSeedQR is 16 or 32 bytes of raw entropy. An ordinary text QR of that length is
-        // printable ASCII, which random entropy essentially never is (for 16 bytes, about one in
-        // seven million), so printable text is never offered as a seed.
-        if (original.length <= 64 && !original.all { it in ' '..'~' }) {
-            SeedQRUtils.decodeSeedQR(original, rawBytes)?.let {
-                return ScannedPayload.Seed(it, SeedFormat.COMPACT_SEEDQR)
-            }
-        }
-        return null
+        return SeedQRUtils.decodeCompactSeedQR(original, byteSegment)
+            ?.let { ScannedPayload.Seed(it, SeedFormat.COMPACT_SEEDQR) }
     }
 
     private fun seedFromWords(words: List<String>, format: SeedFormat): ScannedPayload {
@@ -328,22 +326,9 @@ object ScanPayloadClassifier {
             ?: classifyExtendedKeys(descriptor)
             ?: unsupported("This output descriptor isn't supported.")
 
-    private fun classifyMultisig(trimmed: String, walletName: String?): ScannedPayload.MultisigSetup? {
-        if (ColdCardSetupFile.isSetupFile(trimmed)) {
-            return ScannedPayload.MultisigSetup(trimmed, MultisigSetupFormat.SETUP_FILE, walletName)
-        }
-        if (trimmed.lineSequence().first().trim().startsWith("BSMS", ignoreCase = true)) {
-            return ScannedPayload.MultisigSetup(trimmed, MultisigSetupFormat.BSMS, walletName)
-        }
-        val body = descriptorBody(trimmed)
-        val isMultisig = MULTISIG_WRAPPERS.any { body.startsWith(it) } &&
-            (body.contains("multi(") || body.contains("multi_a("))
-        return if (isMultisig) {
-            ScannedPayload.MultisigSetup(trimmed, MultisigSetupFormat.DESCRIPTOR, walletName)
-        } else {
-            null
-        }
-    }
+    private fun classifyMultisig(trimmed: String, walletName: String?): ScannedPayload.MultisigSetup? =
+        MultisigDescriptorParser.detectFormat(trimmed)
+            ?.let { ScannedPayload.MultisigSetup(trimmed, it, walletName) }
 
     private fun classifyExtendedKeys(trimmed: String): ScannedPayload? {
         if (PRIVATE_EXTENDED_KEY.containsMatchIn(trimmed)) {
@@ -513,6 +498,7 @@ object ScanPayloadClassifier {
 
     private val englishWords: Set<String> by lazy { BIP39Wordlist.getEnglishWordlist().toHashSet() }
 
+    private const val TAG = "ScanPayloadClassifier"
     private const val BIP21_SCHEME = "bitcoin:"
     private const val PSBT_BASE64_PREFIX = "cHNidP"
     private const val PSBT_HEX_PREFIX = "70736274ff"
@@ -530,7 +516,6 @@ object ScanPayloadClassifier {
         ScanNetwork.REGTEST to Block.RegtestGenesisBlock.hash
     )
     private val BECH32_PREFIXES = listOf("bc1", "tb1", "bcrt1", "sp1", "tsp1")
-    private val MULTISIG_WRAPPERS = listOf("wsh(", "sh(", "tr(")
     private val SINGLE_SIG_WRAPPERS = listOf("pkh(", "wpkh(", "sh(wpkh(", "tr(")
 
     private val WHITESPACE = Regex("\\s+")
