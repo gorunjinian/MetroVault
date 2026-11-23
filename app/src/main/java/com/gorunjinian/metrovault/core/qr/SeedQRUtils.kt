@@ -3,6 +3,9 @@ package com.gorunjinian.metrovault.core.qr
 import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.vaultovich.BIP39Wordlist
 import com.gorunjinian.vaultovich.MnemonicCode
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 
 /**
@@ -195,129 +198,37 @@ object SeedQRUtils {
     }
 
     /**
-     * Attempts to detect the SeedQR format and decode accordingly.
+     * Decodes a scanned CompactSeedQR.
      *
-     * Detection logic:
-     * - If content is all digits and 48 or 96 chars -> Standard SeedQR
-     * - If rawBytes is provided with size 16 or 32 -> CompactSeedQR
-     * - Otherwise, try to interpret content as binary/CompactSeedQR
+     * CompactSeedQR is bare entropy with no checksum: the checksum words are derived from it, so
+     * *every* 16- or 32-byte payload decodes to a valid mnemonic. Two rules keep ordinary QR codes
+     * from being read as seeds, which would offer the user a wallet anyone could guess:
+     * - Only [byteSegment] is decoded, and only if it is the whole code. ZXing's raw bytes won't
+     *   do: they are the data region with headers and padding, exactly 16 bytes for many small
+     *   codes whatever those hold.
+     * - Readable text is refused. About one 12-word CompactSeedQR in 262,000 is readable by chance
+     *   and is refused with it (for 24 words the odds are negligible).
      *
-     * @param content The text content from QR scan
-     * @param rawBytes Optional raw bytes from QR scan (for binary CompactSeedQR)
-     * @return List of mnemonic words or null if not a valid SeedQR
+     * @param text The QR's text as ZXing decoded it
+     * @param byteSegment The code's single byte-mode segment, or null if it isn't one
+     * @return List of mnemonic words, or null if this isn't a CompactSeedQR
      */
-    fun decodeSeedQR(content: String, rawBytes: ByteArray?): List<String>? {
-        // Try Generic seed format first (space-separated words)
-        val genericResult = parseGenericSeedQR(content)
-        if (genericResult != null) return genericResult
-
-        // Try Standard SeedQR (digit string)
-        if (content.all { it.isDigit() } && (content.length == 48 || content.length == 96)) {
-            val result = standardSeedQRToMnemonic(content)
-            if (result != null) return result
-        }
-
-        // Try CompactSeedQR with raw bytes (preferred for binary data)
-        if (rawBytes != null && rawBytes.isNotEmpty()) {
-            // First try direct extraction if size is exactly right
-            if (rawBytes.size == 16 || rawBytes.size == 32) {
-                val result = compactSeedQRToMnemonic(rawBytes)
-                if (result != null) return result
-            }
-
-            // Try parsing ZXing raw bytes format which includes QR metadata header
-            val extractedBytes = extractBinaryDataFromZXingRawBytes(rawBytes)
-            if (extractedBytes != null && (extractedBytes.size == 16 || extractedBytes.size == 32)) {
-                val result = compactSeedQRToMnemonic(extractedBytes)
-                if (result != null) return result
-            }
-        }
-
-        // Fallback: Try CompactSeedQR from text (may lose bytes due to encoding)
-        val bytes = try {
-            content.toByteArray(Charsets.ISO_8859_1)
-        } catch (_: Exception) {
-            null
-        }
-
-        if (bytes != null && (bytes.size == 16 || bytes.size == 32)) {
-            val result = compactSeedQRToMnemonic(bytes)
-            if (result != null) return result
-        }
-
-        return null
+    fun decodeCompactSeedQR(text: String, byteSegment: ByteArray?): List<String>? {
+        if (byteSegment == null) return null
+        // More characters than bytes: the code has other segments besides this one.
+        if (text.length > byteSegment.size) return null
+        if (isReadableText(byteSegment)) return null
+        return compactSeedQRToMnemonic(byteSegment)
     }
 
-    /**
-     * Parses a generic seed QR containing space-separated BIP39 words.
-     *
-     * Unlike Standard SeedQR (digit pairs) or CompactSeedQR (binary), Generic
-     * format contains the actual seed words separated by spaces.
-     *
-     * @param content Text content from QR (e.g., "abandon ability able about...")
-     * @return List of mnemonic words or null if not a valid seed phrase
-     */
-    fun parseGenericSeedQR(content: String): List<String>? {
-        // Split by whitespace (handles multiple spaces, newlines, etc.)
-        val words = content.trim().lowercase().split("\\s+".toRegex())
-
-        // Must be exactly 12 or 24 words
-        if (words.size != 12 && words.size != 24) return null
-
-        // Validate all words exist in BIP39 English wordlist
-        val wordlist = BIP39Wordlist.getEnglishWordlist()
-        if (wordlist.isEmpty()) return null
-        if (!words.all { it in wordlist }) return null
-
-        // Validate BIP39 checksum
-        return try {
-            MnemonicCode.validate(words)
-            words
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    /**
-     * Extracts binary data from ZXing raw bytes format.
-     *
-     * ZXing raw bytes for QR codes contain the raw QR data segments including:
-     * - Mode indicator (4 bits): 0100 (binary mode) = 0x4
-     * - Character count (8 bits for QR version 1-9)
-     * - Data bytes
-     * - Padding
-     *
-     * For CompactSeedQR (binary mode):
-     * - 16 bytes (12 words): starts with 0x41, 0x0X where X is high nibble of first data byte
-     * - 32 bytes (24 words): starts with 0x42, 0x0X where X is high nibble of first data byte
-     */
-    private fun extractBinaryDataFromZXingRawBytes(rawBytes: ByteArray): ByteArray? {
-        if (rawBytes.size < 3) return null
-
-        val firstByte = rawBytes[0].toInt() and 0xFF
-
-        // Check for binary mode indicator (0x4X where X is high nibble of length)
-        if ((firstByte and 0xF0) != 0x40) return null
-
-        // Length is encoded in: low nibble of byte 0 + high nibble of byte 1
-        val lengthHigh = firstByte and 0x0F
-        val secondByte = rawBytes[1].toInt() and 0xFF
-        val lengthLow = (secondByte and 0xF0) shr 4
-        val dataLength = (lengthHigh shl 4) or lengthLow
-
-        if (dataLength != 16 && dataLength != 32) return null
-
-        // Data starts at nibble offset 12 bits from the start (1.5 bytes)
-        // Each result byte spans two raw bytes (shifted by 4 bits)
-        val result = ByteArray(dataLength)
-        for (i in 0 until dataLength) {
-            val rawIndex = 1 + i
-            if (rawIndex + 1 >= rawBytes.size) return null
-            val highNibble = (rawBytes[rawIndex].toInt() and 0x0F) shl 4
-            val lowNibble = (rawBytes[rawIndex + 1].toInt() and 0xFF) shr 4
-            result[i] = (highNibble or lowNibble).toByte()
-        }
-
-        return result
+    /** Valid UTF-8 without control characters other than tabs and line breaks. */
+    private fun isReadableText(bytes: ByteArray): Boolean = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .none { it.isISOControl() && it !in "\t\r\n" }
+    } catch (_: CharacterCodingException) {
+        false
     }
 }

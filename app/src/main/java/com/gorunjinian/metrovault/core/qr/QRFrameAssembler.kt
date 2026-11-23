@@ -33,13 +33,13 @@ sealed interface AssembledQR {
     val transport: QRTransport
 
     /**
-     * Plain text: one QR, or the joined parts of a `p1/n` animation. [rawBytes] are ZXing's raw
-     * segment bytes for a single QR (CompactSeedQR is binary and does not survive as text); null
-     * for a joined animation.
+     * Plain text: one QR, or the joined parts of a `p1/n` animation. [byteSegment] is the encoded
+     * content of a QR that is one byte-mode segment (CompactSeedQR is binary and does not survive
+     * as text); null for any other QR and for a joined animation.
      */
     class Text(
         val text: String,
-        val rawBytes: ByteArray?,
+        val byteSegment: ByteArray?,
         override val transport: QRTransport
     ) : AssembledQR
 
@@ -122,12 +122,13 @@ class QRFrameAssembler {
      * Feed one decoded frame.
      *
      * @param text The QR's text as ZXing decoded it
-     * @param rawBytes ZXing's raw segment bytes, kept only for a single plain QR (CompactSeedQR)
+     * @param byteSegment The QR's single byte-mode segment ([com.google.zxing.Result.byteSegment]),
+     *   kept only for a plain QR
      */
-    fun receive(text: String, rawBytes: ByteArray? = null): FrameResult {
+    fun receive(text: String, byteSegment: ByteArray? = null): FrameResult {
         if (completed != null || text.isEmpty()) return FrameResult.Ignored
         return when (transport) {
-            null -> receiveFirst(text, rawBytes)
+            null -> receiveFirst(text, byteSegment)
             QRTransport.UR -> receiveUr(text)
             QRTransport.BBQR -> receiveBBQr(text)
             QRTransport.SIMPLE_MULTIPART -> receiveSimple(text)
@@ -149,7 +150,7 @@ class QRFrameAssembler {
         simpleTotal = 0
     }
 
-    private fun receiveFirst(text: String, rawBytes: ByteArray?): FrameResult {
+    private fun receiveFirst(text: String, byteSegment: ByteArray?): FrameResult {
         if (text.startsWith("ur:", ignoreCase = true)) {
             transport = QRTransport.UR
             urDecoder = URDecoder()
@@ -175,7 +176,7 @@ class QRFrameAssembler {
             }
         }
         transport = QRTransport.SINGLE
-        return complete(AssembledQR.Text(text, rawBytes, QRTransport.SINGLE))
+        return complete(AssembledQR.Text(text, byteSegment, QRTransport.SINGLE))
     }
 
     private fun receiveUr(text: String): FrameResult {
@@ -197,7 +198,7 @@ class QRFrameAssembler {
         return if (result.type == ResultType.SUCCESS && ur != null) {
             complete(AssembledQR.Ur(ur, isMultipart = urFramesAccepted > 1 || decoder.expectedPartCount > 1))
         } else {
-            FrameResult.Failed(result.error ?: "The BC-UR frames could not be joined")
+            FrameResult.Failed("The BC-UR frames couldn't be joined.")
         }
     }
 
@@ -223,10 +224,10 @@ class QRFrameAssembler {
                     complete(AssembledQR.BBQr(result.joined.fileType, result.joined.data, bbqrTotal))
                 }
             }
-        } catch (e: JoinError.DuplicatePartWrongContent) {
-            FrameResult.Failed("Two BBQr frames claim the same part with different content")
-        } catch (e: DecodeError) {
-            FrameResult.Failed("The BBQr data could not be decoded: ${e.message}")
+        } catch (_: JoinError.DuplicatePartWrongContent) {
+            FrameResult.Failed("These BBQr frames contradict each other.")
+        } catch (_: DecodeError) {
+            FrameResult.Failed("The BBQr data couldn't be decoded.")
         } catch (_: Exception) {
             // A different BBQr (header mismatch) or a malformed part
             FrameResult.Ignored
@@ -246,7 +247,7 @@ class QRFrameAssembler {
             return if (existing == data) {
                 FrameResult.Ignored
             } else {
-                FrameResult.Failed("Two frames claim part $part/$total with different content")
+                FrameResult.Failed("The frames of this QR code contradict each other.")
             }
         }
         simpleParts[part] = data

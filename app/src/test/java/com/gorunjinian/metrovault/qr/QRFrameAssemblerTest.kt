@@ -59,7 +59,7 @@ class QRFrameAssemblerTest {
 
         val text = (result as FrameResult.Complete).payload.asText()
         assertEquals("bc1qexample", text.text)
-        assertSame(raw, text.rawBytes)
+        assertSame(raw, text.byteSegment)
         assertEquals(QRTransport.SINGLE, text.transport)
     }
 
@@ -224,7 +224,7 @@ class QRFrameAssemblerTest {
 
         assertEquals("AAABBBCCC", text.text)
         assertEquals(QRTransport.SIMPLE_MULTIPART, text.transport)
-        assertNull(text.rawBytes)
+        assertNull(text.byteSegment)
     }
 
     @Test
