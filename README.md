@@ -226,6 +226,10 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 - **Features**: Open a discussion or issue with your proposal
 - **Security**: See [SECURITY.md](./docs/SECURITY.md) for responsible disclosure
 
+## 🧡 Support the Project
+
+Support the project via [metrovault.app/donate](https://metrovault.app/donate/).
+
 ## 📄 License
 
 MetroVault is free software, licensed under the **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`). You are free to use, study, share, and modify it; any distributed derivative must remain free software under the same license. See [LICENSE.txt](./LICENSE.txt) for the full text.
