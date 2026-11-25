@@ -3,6 +3,7 @@ package com.gorunjinian.metrovault.multisig
 import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
+import com.gorunjinian.metrovault.domain.service.multisig.MultisigSetupFormat
 import com.gorunjinian.vaultovich.Descriptor
 import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.vaultovich.KeyPath
@@ -61,7 +62,7 @@ class MultisigDescriptorParserTest {
         """.trimIndent()
 
         val parsed = parseOk(file)
-        assertEquals(MultisigDescriptorParser.SourceFormat.SETUP_FILE, parsed.sourceFormat)
+        assertEquals(MultisigSetupFormat.SETUP_FILE, parsed.sourceFormat)
         assertEquals("My_Wallet", parsed.suggestedName)
         assertNull(parsed.verificationAddress)
         assertEquals(2, parsed.config.m)
@@ -70,7 +71,7 @@ class MultisigDescriptorParserTest {
         assertTrue(parsed.config.cosigners.first { it.fingerprint == "aaaaaaaa" }.isLocal)
         // rawDescriptor is synthesized and parseable by the descriptor branch
         val reparsed = parseOk(parsed.config.rawDescriptor)
-        assertEquals(MultisigDescriptorParser.SourceFormat.DESCRIPTOR, reparsed.sourceFormat)
+        assertEquals(MultisigSetupFormat.DESCRIPTOR, reparsed.sourceFormat)
         assertEquals(parsed.config.cosigners.map { it.xpub }, reparsed.config.cosigners.map { it.xpub })
     }
 
@@ -80,7 +81,7 @@ class MultisigDescriptorParserTest {
             "wsh(sortedmulti(2,[aaaaaaaa/48'/0'/0'/2']$xpub1/<0;1>/*,[bbbbbbbb/48'/0'/0'/2']$xpub2/<0;1>/*))"
 
         val parsed = parseOk(descriptor)
-        assertEquals(MultisigDescriptorParser.SourceFormat.DESCRIPTOR, parsed.sourceFormat)
+        assertEquals(MultisigSetupFormat.DESCRIPTOR, parsed.sourceFormat)
         assertNull(parsed.suggestedName)
         assertEquals(2, parsed.config.m)
     }
@@ -96,7 +97,7 @@ class MultisigDescriptorParserTest {
         """.trimIndent()
 
         val parsed = parseOk(bsms)
-        assertEquals(MultisigDescriptorParser.SourceFormat.BSMS, parsed.sourceFormat)
+        assertEquals(MultisigSetupFormat.BSMS, parsed.sourceFormat)
         assertEquals(address, parsed.verificationAddress)
     }
 
@@ -132,6 +133,30 @@ class MultisigDescriptorParserTest {
         assertEquals(listOf("aaaaaaaa"), parsed.config.localKeyFingerprints)
     }
 
+    // ==================== Format detection ====================
+
+    @Test
+    fun detectedFormatMatchesWhatTheParserReads() {
+        val bare = descriptorBody.removePrefix("wsh(").removeSuffix(")")
+        val inputs = listOf(
+            descriptorBody,
+            bare,
+            "# comment\n$descriptorBody",
+            """{"label":"Vault","descriptor":"$descriptorBody"}""",
+            "BSMS 1.0\n$descriptorBody\n/0/*,/1/*"
+        )
+        for (input in inputs) {
+            assertEquals(input, parseOk(input).sourceFormat, MultisigDescriptorParser.detectFormat(input))
+        }
+    }
+
+    @Test
+    fun textThatIsNotAMultisigSetupHasNoFormat() {
+        for (input in listOf("hello", "wpkh([aaaaaaaa/84'/0'/0']$xpub1/<0;1>/*)", xpub1, "a multi-line\nnote")) {
+            assertNull(input, MultisigDescriptorParser.detectFormat(input))
+        }
+    }
+
     // ==================== Checksum ====================
 
     private val descriptorBody by lazy {
@@ -147,8 +172,8 @@ class MultisigDescriptorParserTest {
     @Test
     fun acceptsCorrectChecksumInDescriptorAndBsms() {
         val withChecksum = "$descriptorBody#${Descriptor.checksum(descriptorBody)}"
-        assertEquals(MultisigDescriptorParser.SourceFormat.DESCRIPTOR, parseOk(withChecksum).sourceFormat)
-        assertEquals(MultisigDescriptorParser.SourceFormat.BSMS, parseOk("BSMS 1.0\n$withChecksum\n/0/*,/1/*").sourceFormat)
+        assertEquals(MultisigSetupFormat.DESCRIPTOR, parseOk(withChecksum).sourceFormat)
+        assertEquals(MultisigSetupFormat.BSMS, parseOk("BSMS 1.0\n$withChecksum\n/0/*,/1/*").sourceFormat)
     }
 
     @Test
