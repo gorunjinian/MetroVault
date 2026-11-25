@@ -11,7 +11,12 @@ val minSdkValue = 26
 
 android {
     namespace = "com.gorunjinian.metrovault"
-    compileSdk = 37
+    // Android 37.1: a minor level can only be given through this block.
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
 
     defaultConfig {
         applicationId = "com.gorunjinian.metrovault"
