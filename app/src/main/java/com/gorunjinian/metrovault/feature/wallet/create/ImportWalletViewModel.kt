@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.data.model.DerivationPaths
 import com.gorunjinian.metrovault.data.model.WalletCreationResult
 import com.gorunjinian.metrovault.domain.Wallet
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
+import com.gorunjinian.metrovault.domain.service.scan.ScannedPayload
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +48,9 @@ class ImportWalletViewModel(application: Application) : AndroidViewModel(applica
         val mnemonicWords: List<String> = emptyList(),
         val currentWord: String = "",
         val isKeyboardVisible: Boolean = true,
+        // The words were scanned before the wizard opened, so step 1 has no length to choose and
+        // going back to it keeps them. False again once they are edited.
+        val isSeedHandedOver: Boolean = false,
 
         // Step 3: Passphrase
         val useBip39Passphrase: Boolean = false,
@@ -87,8 +92,8 @@ class ImportWalletViewModel(application: Application) : AndroidViewModel(applica
         if (currentStep > 1) {
             _uiState.update { state ->
                 // Clear mnemonic when going back from step 2 to step 1
-                // (but keep it when going from step 3 to step 2)
-                if (currentStep == 2) {
+                // (but keep it when going from step 3 to step 2, or when it was handed over)
+                if (currentStep == 2 && !state.isSeedHandedOver) {
                     state.copy(
                         currentStep = currentStep - 1,
                         mnemonicWords = emptyList(),
@@ -152,7 +157,23 @@ class ImportWalletViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun clearMnemonic() {
-        _uiState.update { it.copy(mnemonicWords = emptyList(), currentWord = "") }
+        _uiState.update { it.copy(mnemonicWords = emptyList(), currentWord = "", isSeedHandedOver = false) }
+    }
+
+    /**
+     * A scan another screen opened the wizard with. Only a seed means anything here; after it the
+     * wizard still starts at step 1, for the address type and account.
+     */
+    fun onScanHandedOver(scan: CompletedScan) {
+        val seed = scan.payload as? ScannedPayload.Seed ?: return
+        _uiState.update {
+            it.copy(
+                expectedWordCount = seed.words.size,
+                mnemonicWords = seed.words,
+                currentWord = "",
+                isSeedHandedOver = true
+            )
+        }
     }
 
     /**

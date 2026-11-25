@@ -14,6 +14,7 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.PsbtDetails
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
 import com.gorunjinian.metrovault.domain.service.scan.ScannedPayload
 import com.gorunjinian.metrovault.feature.scan.components.ScannerView
 import com.gorunjinian.metrovault.feature.scan.mismatchMessage
@@ -41,13 +42,16 @@ private const val SIGN_ANYWAY_NOTE =
 /**
  * PSBT scanning and signing: scan a PSBT in any supported QR format, review it, sign it, and show
  * the result as a QR again. [ScannerView] does the scanning; this screen takes the PSBT from there.
+ *
+ * @param takeScan Returns, once, the scan another screen opened this one with; null when there is none
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @SuppressLint("DefaultLocale")
 fun ScanPSBTScreen(
     wallet: Wallet,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    takeScan: (() -> CompletedScan?)? = null
 ) {
     // ==================== State ====================
     var scannedPSBT by remember { mutableStateOf<String?>(null) }
@@ -68,7 +72,8 @@ fun ScanPSBTScreen(
     // the user may waive. Offers "Sign Anyway" on the confirmation screen for exactly that attempt.
     var signAnywayAvailable by remember { mutableStateOf(false) }
 
-    var isParsingPSBT by remember { mutableStateOf(false) }
+    // Starts true when a scan was handed over, so the camera isn't started just to be stopped again
+    var isParsingPSBT by remember { mutableStateOf(takeScan != null) }
 
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
@@ -163,6 +168,11 @@ fun ScanPSBTScreen(
             }
         }
         return true
+    }
+
+    LaunchedEffect(Unit) {
+        val scan = takeScan?.invoke()
+        if (scan == null || !handlePayload(scan.payload)) isParsingPSBT = false
     }
 
     // ==================== Signing ====================

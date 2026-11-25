@@ -326,8 +326,9 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.ImportWallet.route) {
+        composable(Screen.ImportWallet.route) { backStackEntry ->
             ImportWalletScreen(
+                takeScan = backStackEntry.rememberScanTaker(wallet.scanHandoff),
                 onBack = { navController.navigateUp() },
                 onWalletImported = {
                     scope.launch {
@@ -340,8 +341,9 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.ImportMultisig.route) {
+        composable(Screen.ImportMultisig.route) { backStackEntry ->
             ImportMultisigScreen(
+                takeScan = backStackEntry.rememberScanTaker(wallet.scanHandoff),
                 onBack = { navController.navigateUp() },
                 onWalletImported = { walletId ->
                     // Wallet is created unverified — go straight into the verify/register ceremony.
@@ -455,9 +457,10 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.ScanPSBT.route) {
+        composable(Screen.ScanPSBT.route) { backStackEntry ->
             ScanPSBTScreen(
                 wallet = wallet,
+                takeScan = backStackEntry.rememberScanTaker(wallet.scanHandoff),
                 onBack = { navController.navigateBackOr(Screen.Home) }
             )
         }
@@ -611,13 +614,15 @@ fun AppNavigation(
             val address = backStackEntry.decodedStringArg("address")
             SignMessageScreen(
                 onBack = { navController.navigateBackOr(Screen.Home) },
-                prefilledAddress = address
+                prefilledAddress = address,
+                takeScan = backStackEntry.rememberScanTaker(wallet.scanHandoff)
             )
         }
 
-        composable(Screen.CheckAddress.route) {
+        composable(Screen.CheckAddress.route) { backStackEntry ->
             CheckAddressScreen(
                 wallet = wallet,
+                takeScan = backStackEntry.rememberScanTaker(wallet.scanHandoff),
                 onBack = { navController.navigateBackOr(Screen.Home) }
             )
         }
@@ -680,8 +685,9 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.ImportStateless.route) {
+        composable(Screen.ImportStateless.route) { backStackEntry ->
             ImportStatelessScreen(
+                takeScan = backStackEntry.rememberScanTaker(wallet.scanHandoff),
                 onBack = { navController.navigateUp() },
                 onWalletCreated = {
                     // Navigate to unified WalletDetailsScreen for stateless wallets

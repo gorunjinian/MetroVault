@@ -28,15 +28,23 @@ import com.gorunjinian.metrovault.feature.scan.components.ScannerView
  * 2. Parse descriptor and match against local wallets
  * 3. Show confirmation with cosigner details
  * 4. Import as multisig wallet
+ *
+ * @param takeScan Returns, once, the scan another screen opened this one with, which starts the
+ *   flow at step 2; null when there is none
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportMultisigScreen(
     viewModel: ImportMultisigViewModel = viewModel(),
     onBack: () -> Unit,
-    onWalletImported: (walletId: String) -> Unit
+    onWalletImported: (walletId: String) -> Unit,
+    takeScan: (() -> CompletedScan?)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        takeScan?.invoke()?.let { viewModel.onScan(it) }
+    }
 
     // Handle events
     LaunchedEffect(Unit) {

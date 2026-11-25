@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
 import com.gorunjinian.metrovault.domain.service.scan.ScannedPayload
 import com.gorunjinian.metrovault.feature.scan.addressText
 import com.gorunjinian.metrovault.feature.scan.components.InlineScanner
@@ -21,9 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * FIX: Critical Bug #1 - CheckAddressScreen claimed to scan 1000 addresses but only scanned 40.
- *
- * Changes:
  * - Now actually scans 1000 addresses (500 receive + 500 change) as promised
  * - Scans in batches of 100 to avoid memory issues
  * - Runs on IO dispatcher to prevent UI blocking
@@ -34,11 +32,13 @@ import kotlinx.coroutines.withContext
 private const val ADDRESSES_TO_SCAN = 500  // Per type (receive/change) = 1000 total
 private const val BATCH_SIZE = 100
 
+/** @param takeScan Returns, once, the scan another screen opened this one with; null when there is none */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CheckAddressScreen(
     wallet: Wallet,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    takeScan: (() -> CompletedScan?)? = null
 ) {
     var addressInput by remember { mutableStateOf("") }
     var isChecking by remember { mutableStateOf(false) }
@@ -59,6 +59,10 @@ fun CheckAddressScreen(
         errorMessage = ""
         isScanning = false
         return true
+    }
+
+    LaunchedEffect(Unit) {
+        takeScan?.invoke()?.let { handlePayload(it.payload) }
     }
 
     Scaffold(

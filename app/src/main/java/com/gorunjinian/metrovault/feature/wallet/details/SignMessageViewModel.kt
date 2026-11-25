@@ -13,6 +13,7 @@ import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.bitcoin.SignMessageRequest
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletMessageSigner
 import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
+import com.gorunjinian.metrovault.domain.service.scan.SignatureEncoding
 import com.gorunjinian.vaultovich.MessageSigning
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,17 +92,15 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
 
     private var prefillApplied = false
 
-    init {
-        // The active wallet's kind comes from storage — resolve it off the main thread
-        viewModelScope.launch {
-            val isSilentPayment = withContext(Dispatchers.IO) { wallet.isActiveSilentPayment() }
-            if (isSilentPayment) {
-                _uiState.update {
-                    it.copy(
-                        isSilentPayment = true,
-                        signatureFormat = MessageSigning.SignatureFormat.BIP322
-                    )
-                }
+    /** The active wallet's kind comes from storage — resolve it off the main thread. */
+    private val walletKindLookup = viewModelScope.launch {
+        val isSilentPayment = withContext(Dispatchers.IO) { wallet.isActiveSilentPayment() }
+        if (isSilentPayment) {
+            _uiState.update {
+                it.copy(
+                    isSilentPayment = true,
+                    signatureFormat = MessageSigning.SignatureFormat.BIP322
+                )
             }
         }
     }
@@ -151,6 +150,8 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
                 signatureInput = "",
                 pendingMessagePsbt = null,
                 pendingSignRequest = null,
+                // Verifying a scanned ECDSA signature leaves a format this wallet can't sign in
+                signatureFormat = if (it.isSilentPayment) MessageSigning.SignatureFormat.BIP322 else it.signatureFormat,
                 errorMessage = "",
                 successMessage = ""
             )
@@ -171,7 +172,20 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
     /** A finished scan: closes the scanner and fills in the form, or stages a signing request. */
     fun onScan(scan: CompletedScan) {
         _uiState.update { it.copy(isScanning = false) }
-        when (val input = MessageScanInput.from(scan, _uiState.value.scanTarget)) {
+        fillIn(MessageScanInput.from(scan, _uiState.value.scanTarget))
+    }
+
+    /** A scan another screen opened this one with. */
+    fun onScanHandedOver(scan: CompletedScan) {
+        viewModelScope.launch {
+            // Arrives as the screen opens, and what a request may do depends on the wallet's kind
+            walletKindLookup.join()
+            fillIn(MessageScanInput.fromHandoff(scan.payload))
+        }
+    }
+
+    private fun fillIn(input: MessageScanInput) {
+        when (input) {
             is MessageScanInput.MessagePsbt -> stageMessagePsbt(input.base64)
             is MessageScanInput.Request -> stageSignRequest(input.request)
             is MessageScanInput.Address -> _uiState.update {
@@ -185,6 +199,23 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
             }
             is MessageScanInput.Message -> _uiState.update {
                 it.copy(messageInput = input.message, pendingMessagePsbt = null, errorMessage = "", successMessage = "")
+            }
+            is MessageScanInput.Signature -> _uiState.update {
+                it.copy(
+                    addressInput = input.address,
+                    messageInput = input.message,
+                    signatureInput = input.signature,
+                    // Verifying tries only the selected protocol, so it has to be the signature's
+                    signatureFormat = when (input.encoding) {
+                        SignatureEncoding.BIP322_SIMPLE -> MessageSigning.SignatureFormat.BIP322
+                        SignatureEncoding.RECOVERABLE_ECDSA -> MessageSigning.SignatureFormat.ELECTRUM
+                        null -> it.signatureFormat
+                    },
+                    pendingMessagePsbt = null,
+                    pendingSignRequest = null,
+                    errorMessage = "",
+                    successMessage = ""
+                )
             }
             is MessageScanInput.Unusable -> _uiState.update {
                 it.copy(errorMessage = input.reason, successMessage = "")

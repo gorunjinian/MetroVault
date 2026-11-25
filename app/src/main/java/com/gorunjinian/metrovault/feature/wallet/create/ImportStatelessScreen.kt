@@ -12,6 +12,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.core.ui.components.InfoCard
 import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -20,15 +21,22 @@ import kotlin.time.Duration.Companion.milliseconds
  * Flow: Step 1 (Configuration) → Step 2 (Seed Phrase, typed or SeedQR) → Step 3 (Passphrase) → WalletDetailsScreen
  * Mirrors the regular import wizard; the difference is that nothing is persisted —
  * the wallet exists only in memory.
+ *
+ * @param takeScan Returns, once, the scan another screen opened this one with; null when there is none
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportStatelessScreen(
     viewModel: ImportStatelessViewModel = viewModel(),
     onBack: () -> Unit,
-    onWalletCreated: () -> Unit
+    onWalletCreated: () -> Unit,
+    takeScan: (() -> CompletedScan?)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        takeScan?.invoke()?.let { viewModel.onScanHandedOver(it) }
+    }
 
     // Handle events
     LaunchedEffect(Unit) {
@@ -60,7 +68,7 @@ fun ImportStatelessScreen(
         when (uiState.currentStep) {
             1 -> WalletConfigurationStep(
                 modifier = Modifier.padding(padding),
-                title = "Seed Phrase Length",
+                title = if (uiState.isSeedHandedOver) "Address Type" else "Seed Phrase Length",
                 selectedDerivationPath = uiState.selectedDerivationPath,
                 accountNumber = uiState.accountNumber,
                 isTestnet = uiState.isTestnet,
@@ -68,7 +76,7 @@ fun ImportStatelessScreen(
                 onAccountNumberChange = { viewModel.setAccountNumber(it) },
                 onTestnetChange = { viewModel.setTestnetMode(it) },
                 onNext = { viewModel.goToNextStep() },
-                wordCount = uiState.expectedWordCount,
+                wordCount = uiState.expectedWordCount.takeUnless { uiState.isSeedHandedOver },
                 onWordCountChange = { viewModel.setWordCount(it) },
                 topContent = { StatelessWalletInfoCard() }
             )

@@ -21,6 +21,7 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.core.util.SecurityUtils
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
 import com.gorunjinian.metrovault.feature.scan.components.ScannerView
 import com.gorunjinian.metrovault.feature.transaction.components.SignedPSBTDisplay
 import com.gorunjinian.vaultovich.MessageSigning
@@ -36,13 +37,16 @@ import kotlin.time.Duration.Companion.milliseconds
  * and the signed PSBT is then presented with [SignedPSBTDisplay], the same animated multi-format
  * QR display used by the Sign PSBT flow. All flow state and protocol calls live in
  * [SignMessageViewModel]; this file is UI only.
+ *
+ * @param takeScan Returns, once, the scan another screen opened this one with; null when there is none
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignMessageScreen(
     viewModel: SignMessageViewModel = viewModel(),
     onBack: () -> Unit,
-    prefilledAddress: String? = null
+    prefilledAddress: String? = null,
+    takeScan: (() -> CompletedScan?)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -52,6 +56,7 @@ fun SignMessageScreen(
 
     LaunchedEffect(Unit) {
         viewModel.applyPrefilledAddress(prefilledAddress)
+        takeScan?.invoke()?.let { viewModel.onScanHandedOver(it) }
     }
 
     /** Advance the animated signed-PSBT QR while it's visible. */
