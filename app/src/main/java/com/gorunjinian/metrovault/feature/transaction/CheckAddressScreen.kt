@@ -1,26 +1,21 @@
 package com.gorunjinian.metrovault.feature.transaction
 
-import android.Manifest
 import androidx.compose.ui.res.painterResource
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.data.model.BitcoinAddress
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import com.gorunjinian.metrovault.core.logging.AppLog
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
-import com.gorunjinian.metrovault.core.qr.configureForQRScanning
-import com.journeyapps.barcodescanner.CompoundBarcodeView
+import com.gorunjinian.metrovault.domain.service.scan.ScannedPayload
+import com.gorunjinian.metrovault.feature.scan.addressText
+import com.gorunjinian.metrovault.feature.scan.components.InlineScanner
+import com.gorunjinian.metrovault.feature.scan.mismatchMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,83 +46,19 @@ fun CheckAddressScreen(
     var errorMessage by remember { mutableStateOf("") }
     var scanProgress by remember { mutableStateOf("") }
     var isScanning by remember { mutableStateOf(false) }
-    var hasCameraPermission by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // Camera permission launcher
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasCameraPermission = isGranted
-        if (isGranted) {
-            isScanning = true
+    /** Takes the address from a scan; otherwise says why not and the camera keeps scanning. */
+    fun handlePayload(payload: ScannedPayload): Boolean {
+        val address = payload.addressText
+        if (address == null) {
+            errorMessage = payload.mismatchMessage("an address")
+            return false
         }
-    }
-
-    // Barcode scanner reference
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
-
-    // Resume camera when isScanning becomes true and view is ready
-    // This is needed because the lifecycle observer only responds to transitions,
-    // not the current state (we're already ON_RESUME when scanning starts)
-    LaunchedEffect(barcodeView, isScanning) {
-        if (isScanning && barcodeView != null) {
-            try {
-                barcodeView?.resume()
-            } catch (e: Exception) {
-                AppLog.e("CheckAddressScreen", e) { "Failed to resume scanner in LaunchedEffect" }
-            }
-        }
-    }
-
-    // Lifecycle observer for scanner - manages resume/pause based on lifecycle and scanning state
-    DisposableEffect(lifecycleOwner, isScanning) {
-        val observer = LifecycleEventObserver { _, event ->
-            // Only manage scanner lifecycle when scanning is active and view is initialized
-            val scanner = barcodeView
-            if (isScanning && scanner != null) {
-                when (event) {
-                    Lifecycle.Event.ON_RESUME -> {
-                        try {
-                            scanner.resume()
-                        } catch (e: Exception) {
-                            AppLog.e("CheckAddressScreen", e) { "Failed to resume scanner" }
-                        }
-                    }
-                    Lifecycle.Event.ON_PAUSE -> {
-                        try {
-                            scanner.pause()
-                        } catch (e: Exception) {
-                            AppLog.e("CheckAddressScreen", e) { "Failed to pause scanner" }
-                        }
-                    }
-                    else -> {}
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            // Ensure scanner is paused when effect is disposed
-            try {
-                barcodeView?.pause()
-            } catch (e: Exception) {
-                AppLog.e("CheckAddressScreen", e) { "Failed to pause scanner on dispose" }
-            }
-        }
-    }
-
-    // Pause scanner when isScanning becomes false
-    LaunchedEffect(isScanning) {
-        if (!isScanning) {
-            try {
-                barcodeView?.pause()
-            } catch (e: Exception) {
-                AppLog.e("CheckAddressScreen", e) { "Failed to pause scanner" }
-            }
-        }
+        addressInput = address
+        errorMessage = ""
+        isScanning = false
+        return true
     }
 
     Scaffold(
@@ -172,10 +103,7 @@ fun CheckAddressScreen(
             )
 
             OutlinedButton(
-                onClick = {
-                    // Request camera permission and start scanning
-                    permissionLauncher.launch(Manifest.permission.CAMERA)
-                },
+                onClick = { isScanning = true },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isChecking && !isScanning
             ) {
@@ -190,56 +118,10 @@ fun CheckAddressScreen(
 
             // QR Scanner view
             if (isScanning) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(250.dp)
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        AndroidView(
-                            factory = { context ->
-                                CompoundBarcodeView(context).apply {
-                                    barcodeView = this
-                                    configureForQRScanning()
-                                    setStatusText("")
-                                    decodeContinuous { result ->
-                                        result.text?.let { scannedText ->
-                                            // Extract address from scanned text
-                                            // Handle bitcoin: URI format if present
-                                            val address = if (scannedText.startsWith("bitcoin:", ignoreCase = true)) {
-                                                scannedText
-                                                    .removePrefix("bitcoin:")
-                                                    .removePrefix("BITCOIN:")
-                                                    .split("?")[0] // Remove any query parameters
-                                            } else {
-                                                scannedText
-                                            }
-                                            addressInput = address.trim()
-                                            isScanning = false
-                                            pause()
-                                        }
-                                    }
-                                    // Note: Don't call resume() here - the lifecycle observer handles this
-                                    // to avoid double initialization (which causes camera freeze)
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-
-                        // Cancel button overlay
-                        Button(
-                            onClick = {
-                                isScanning = false
-                                barcodeView?.pause()
-                            },
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(16.dp)
-                        ) {
-                            Text("Cancel Scan")
-                        }
-                    }
-                }
+                InlineScanner(
+                    onScan = { handlePayload(it.payload) },
+                    onCancel = { isScanning = false }
+                )
             }
 
             if (checkResult != null) {

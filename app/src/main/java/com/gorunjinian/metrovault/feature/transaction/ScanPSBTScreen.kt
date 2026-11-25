@@ -1,9 +1,6 @@
 package com.gorunjinian.metrovault.feature.transaction
 
-import android.Manifest
 import android.annotation.SuppressLint
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,23 +10,20 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.logging.AppLog
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.data.model.InputSigningRefusal
 import com.gorunjinian.metrovault.data.model.PsbtDetails
+import com.gorunjinian.metrovault.domain.service.scan.ScannedPayload
+import com.gorunjinian.metrovault.feature.scan.components.ScannerView
+import com.gorunjinian.metrovault.feature.scan.mismatchMessage
 import com.gorunjinian.metrovault.feature.transaction.components.OutputWithType
-import com.gorunjinian.metrovault.feature.transaction.components.PSBTScannerView
 import com.gorunjinian.metrovault.feature.transaction.components.SignedPSBTDisplay
 import com.gorunjinian.metrovault.feature.transaction.components.TransactionConfirmation
 import com.gorunjinian.metrovault.core.qr.AnimatedQRResult
-import com.gorunjinian.metrovault.core.qr.AnimatedQRScanner
 import com.gorunjinian.metrovault.core.qr.OutputFormat
-import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
 import com.gorunjinian.metrovault.core.qr.QRCodeUtils
 import com.gorunjinian.metrovault.core.qr.QRDensity
-import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -45,12 +39,8 @@ private const val SIGN_ANYWAY_NOTE =
         "twice enables a fee attack."
 
 /**
- * PSBT Scanning and Signing Screen with animated QR support.
- * 
- * Supports:
- * - Single-frame QR codes (small PSBTs)
- * - Animated QR codes (large PSBTs with multiple frames)
- * - Both "p1/10 data" and "ur:bytes/1-10/data" formats
+ * PSBT scanning and signing: scan a PSBT in any supported QR format, review it, sign it, and show
+ * the result as a QR again. [ScannerView] does the scanning; this screen takes the PSBT from there.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,7 +56,6 @@ fun ScanPSBTScreen(
     var signedPSBT by remember { mutableStateOf<String?>(null) }
     var signedQRResult by remember { mutableStateOf<AnimatedQRResult?>(null) }
     var errorMessage by remember { mutableStateOf("") }
-    var hasCameraPermission by remember { mutableStateOf(false) }
     var isProcessing by remember { mutableStateOf(false) }
     var alternativePathsUsed by remember { mutableStateOf<List<String>>(emptyList()) }  // Track alternative paths (Stage 2)
     // Track when Stage 3 (address-lookup fallback) fired. Surfaces a warning banner
@@ -79,12 +68,8 @@ fun ScanPSBTScreen(
     // the user may waive. Offers "Sign Anyway" on the confirmation screen for exactly that attempt.
     var signAnywayAvailable by remember { mutableStateOf(false) }
 
-    // Animated QR scanning state
-    val animatedScanner = remember { AnimatedQRScanner(PSBTDecoder::decode) }
-    var scanProgress by remember { mutableIntStateOf(0) }
-    var isAnimatedScan by remember { mutableStateOf(false) }
     var isParsingPSBT by remember { mutableStateOf(false) }
-    
+
     // Animated QR display state (for signed output)
     var currentDisplayFrame by remember { mutableIntStateOf(0) }
     var selectedOutputFormat by remember { mutableStateOf(OutputFormat.UR_LEGACY) }
@@ -99,49 +84,6 @@ fun ScanPSBTScreen(
 
     val wallets by wallet.wallets.collectAsState()
     val scope = rememberCoroutineScope()
-
-    // ==================== Permission ====================
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasCameraPermission = isGranted
-    }
-
-    LaunchedEffect(Unit) {
-        permissionLauncher.launch(Manifest.permission.CAMERA)
-    }
-
-    // ==================== Lifecycle ====================
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
-    
-    // Track lifecycle resume state to coordinate with view readiness
-    var isLifecycleResumed by remember { mutableStateOf(false) }
-    
-    // Resume camera when BOTH: view is ready AND lifecycle is resumed AND we're in scanning mode
-    // This avoids double initialization (factory + lifecycle observer) that caused the camera freeze
-    LaunchedEffect(barcodeView, isLifecycleResumed, signedPSBT, psbtDetails) {
-        if (barcodeView != null && isLifecycleResumed && signedPSBT == null && psbtDetails == null) {
-            barcodeView?.resume()
-        }
-    }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> isLifecycleResumed = true
-                Lifecycle.Event.ON_PAUSE -> {
-                    isLifecycleResumed = false
-                    barcodeView?.pause()
-                }
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
 
     // ==================== Animated QR Display Timer ====================
     LaunchedEffect(signedQRResult, isQRPaused) {
@@ -170,14 +112,57 @@ fun ScanPSBTScreen(
         addressLookupInputIndices = emptyList()
         signingRefusals = emptyList()
         signAnywayAvailable = false
-        animatedScanner.reset()
-        scanProgress = 0
-        isAnimatedScan = false
         currentDisplayFrame = 0
         canFinalize = false
         isFinalized = false
         finalizedTxHex = null
-        barcodeView?.resume()
+    }
+
+    // ==================== Scanning ====================
+    /** Parse a scanned PSBT for review; the signed PSBT goes back in [replyFormat]. */
+    fun openPsbt(psbtBase64: String, replyFormat: OutputFormat) {
+        scannedPSBT = psbtBase64
+        selectedOutputFormat = replyFormat
+        errorMessage = ""
+        isParsingPSBT = true
+
+        // Parse PSBT details and compute output types on background thread
+        // to avoid blocking the Main thread during composition
+        scope.launch(Dispatchers.IO) {
+            val details = wallet.getPsbtDetails(psbtBase64)
+
+            // Also pre-compute output types on background thread
+            // (this can involve expensive address scanning)
+            val computedOutputsWithType = details?.outputs?.let { outputs ->
+                val ownership = wallet.classifyPsbtOutputs(psbtBase64, outputs.map { it.address })
+                outputs.zip(ownership) { output, owner -> OutputWithType.of(output, owner) }
+            }
+
+            // Switch back to Main thread for state updates
+            withContext(Dispatchers.Main) {
+                if (details != null && computedOutputsWithType != null) {
+                    psbtDetails = details
+                    outputsWithType = computedOutputsWithType
+                } else {
+                    errorMessage = "Failed to parse PSBT. Invalid format or unsupported transaction type."
+                    scannedPSBT = null
+                }
+                isParsingPSBT = false
+            }
+        }
+    }
+
+    /** Whether [payload] is a PSBT to review; otherwise says why not and the camera keeps scanning. */
+    fun handlePayload(payload: ScannedPayload): Boolean {
+        when (payload) {
+            is ScannedPayload.Psbt -> openPsbt(payload.base64, payload.replyFormat)
+            is ScannedPayload.MessagePsbt -> openPsbt(payload.base64, payload.replyFormat)
+            else -> {
+                errorMessage = payload.mismatchMessage("a transaction to sign")
+                return false
+            }
+        }
+        return true
     }
 
     // ==================== Signing ====================
@@ -529,58 +514,9 @@ fun ScanPSBTScreen(
 
                 // ==================== CAMERA SCANNING VIEW ====================
                 else -> {
-                    PSBTScannerView(
-                        hasCameraPermission = hasCameraPermission,
-                        animatedScanner = animatedScanner,
-                        scanProgress = scanProgress,
-                        isAnimatedScan = isAnimatedScan,
-                        errorMessage = if (psbtDetails == null) errorMessage else "",
-                        onRequestPermission = {
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
-                        },
-                        onScanProgress = { progress, isAnimated ->
-                            scanProgress = progress
-                            isAnimatedScan = isAnimated
-                        },
-                        onScanComplete = { assembledPSBT, sourceFormat ->
-                            // Set state immediately - callback is already on Main thread
-                            // (called from LaunchedEffect in PSBTScannerView)
-                            scannedPSBT = assembledPSBT
-                            selectedOutputFormat = OutputFormat.fromScannedFormat(sourceFormat)
-                            isParsingPSBT = true
-
-                            // Parse PSBT details and compute output types on background thread
-                            // to avoid blocking the Main thread during composition
-                            scope.launch(Dispatchers.IO) {
-                                val details = wallet.getPsbtDetails(assembledPSBT)
-
-                                // Also pre-compute output types on background thread
-                                // (this can involve expensive address scanning)
-                                val computedOutputsWithType = details?.outputs?.let { outputs ->
-                                    val ownership = wallet.classifyPsbtOutputs(assembledPSBT, outputs.map { it.address })
-                                    outputs.zip(ownership) { output, owner -> OutputWithType.of(output, owner) }
-                                }
-
-                                // Switch back to Main thread for state updates
-                                withContext(Dispatchers.Main) {
-                                    if (details != null && computedOutputsWithType != null) {
-                                        psbtDetails = details
-                                        outputsWithType = computedOutputsWithType
-                                    } else {
-                                        errorMessage = "Failed to parse PSBT. Invalid format or unsupported transaction type."
-                                        scannedPSBT = null
-                                        animatedScanner.reset()
-                                        scanProgress = 0
-                                        isAnimatedScan = false
-                                        barcodeView?.resume()
-                                    }
-                                    isParsingPSBT = false
-                                }
-                            }
-                        },
-                        onBarcodeViewCreated = { view ->
-                            barcodeView = view
-                        },
+                    ScannerView(
+                        onScan = { handlePayload(it.payload) },
+                        errorMessage = errorMessage,
                         modifier = Modifier.weight(1f)
                     )
                 }
