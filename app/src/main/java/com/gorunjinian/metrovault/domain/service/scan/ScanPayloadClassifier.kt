@@ -27,6 +27,7 @@ import com.gorunjinian.vaultovich.Descriptor
 import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.vaultovich.MnemonicCode
 import com.gorunjinian.vaultovich.Psbt
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.vaultovich.ScriptWitness
 import com.gorunjinian.vaultovich.Transaction
 import com.gorunjinian.vaultovich.utils.Either
@@ -337,17 +338,26 @@ object ScanPayloadClassifier {
                 "This QR code holds an extended private key, which the scanner doesn't accept."
             )
         }
-        val isDescriptor = SINGLE_SIG_WRAPPERS.any { descriptorBody(trimmed).startsWith(it) }
+        val isDescriptor = SINGLE_SIG_SCRIPTS.keys.any { descriptorBody(trimmed).startsWith(it) }
         val wholeKey = KEY_EXPRESSION.matchEntire(trimmed)
         if (!isDescriptor && wholeKey == null) return null
 
         val matches = wholeKey?.let { listOf(it) } ?: KEY_EXPRESSION.findAll(trimmed).toList()
         if (matches.isEmpty()) return null
+        if (isDescriptor && !descriptorChecksumsMatch(trimmed)) {
+            return ScannedPayload.Invalid(
+                InvalidKind.EXTENDED_KEY,
+                "This descriptor's checksum doesn't match its contents. It may have been altered or " +
+                    "damaged on the way here; export it again."
+            )
+        }
         val keys = matches.map { match ->
             scannedKey(
                 xpub = match.groupValues[3],
                 fingerprint = match.groupValues[1],
-                derivationPath = match.groupValues[2]
+                derivationPath = match.groupValues[2],
+                childPath = match.groupValues[4],
+                descriptorScript = if (isDescriptor) scriptWrapping(trimmed, match.range.first) else null
             ) ?: return ScannedPayload.Invalid(
                 InvalidKind.EXTENDED_KEY,
                 "An extended public key in this QR code is damaged (its checksum doesn't match)."
@@ -364,19 +374,20 @@ object ScanPayloadClassifier {
             )
         }
         val keys = hdKeys.map { hdKey ->
-            val xpub = KEY_EXPRESSION.find(URDescriptors.formatHDKey(hdKey))?.groupValues?.get(3)
+            val expression = KEY_EXPRESSION.find(URDescriptors.formatHDKey(hdKey))
                 ?: return unsupported("This key record has no usable extended public key.")
             val origin = hdKey.origin
             val fingerprint = origin?.sourceFingerprint?.takeIf { it.size == 4 }?.toHex() ?: fallbackFingerprint
             ScannedExtendedKey(
-                xpub = xpub,
+                xpub = expression.groupValues[3],
                 fingerprint = fingerprint,
                 derivationPath = origin?.path,
                 network = if (hdKey.useInfo?.resolvedNetwork == CryptoCoinInfo.Network.TESTNET) {
                     ScanNetwork.TESTNET
                 } else {
                     ScanNetwork.MAINNET
-                }
+                },
+                childPath = expression.groupValues[4].removePrefix("/").ifEmpty { null }
             )
         }
         return ScannedPayload.ExtendedKeys(keys)
@@ -400,7 +411,13 @@ object ScanPayloadClassifier {
      * Validate [xpub] by its Base58 checksum and version bytes only. A full decode is avoided on
      * purpose: it rejects coordinator xpubs whose depth bytes don't match their origin path.
      */
-    private fun scannedKey(xpub: String, fingerprint: String, derivationPath: String): ScannedExtendedKey? {
+    private fun scannedKey(
+        xpub: String,
+        fingerprint: String,
+        derivationPath: String,
+        childPath: String,
+        descriptorScript: ScriptType?
+    ): ScannedExtendedKey? {
         val (prefix, data) = runCatching { Base58Check.decodeWithIntPrefix(xpub) }.getOrNull() ?: return null
         if (data.size != EXTENDED_KEY_PAYLOAD_SIZE) return null
         val network = when (prefix) {
@@ -412,9 +429,35 @@ object ScanPayloadClassifier {
             xpub = xpub,
             fingerprint = fingerprint.lowercase().ifEmpty { null },
             derivationPath = derivationPath.removePrefix("/").ifEmpty { null },
-            network = network
+            network = network,
+            childPath = childPath.removePrefix("/").ifEmpty { null },
+            descriptorScript = descriptorScript
         )
     }
+
+    /**
+     * The address type of the single-sig descriptor that wraps the key starting at [keyStart]: the
+     * text between the start of its line and the key must be exactly one wrapper, so a key nested
+     * deeper (in a script tree, say) gets none.
+     */
+    private fun scriptWrapping(text: String, keyStart: Int): ScriptType? {
+        val lineStart = text.lastIndexOf('\n', keyStart - 1) + 1
+        val prefix = text.substring(lineStart, keyStart).filterNot { it.isWhitespace() }.lowercase()
+        return SINGLE_SIG_SCRIPTS[prefix]
+    }
+
+    /**
+     * BIP-380: every descriptor line's `#checksum`, when present, matches the text before it. The
+     * key check relies on the wrapper and child path, which a key's own Base58 checksum doesn't
+     * cover. Lines are checked one by one, since an export can list several descriptors.
+     */
+    private fun descriptorChecksumsMatch(text: String): Boolean = text.lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && '#' in it }
+        .all { line ->
+            val parts = line.split('#')
+            parts.size == 2 && runCatching { Descriptor.checksum(parts[0].trim()) }.getOrNull() == parts[1].trim()
+        }
 
     /** A descriptor's script without comment lines, checksum or whitespace, lower-cased for matching. */
     private fun descriptorBody(text: String): String = text.lineSequence()
@@ -446,18 +489,22 @@ object ScanPayloadClassifier {
 
     // ==================== Signatures ====================
 
+    private fun classifySignature(token: String): ScannedPayload.Signature? =
+        signatureEncoding(token)?.let { ScannedPayload.Signature(token, it) }
+
     /**
-     * A bare base64 signature: 65-byte recoverable ECDSA with an Electrum/BIP-137 header, or a
-     * BIP-322 simple signature (a witness stack shaped like a key-path or P2WPKH spend).
+     * How [token] encodes a signature, or null if it isn't one: base64 of 65-byte recoverable ECDSA
+     * with an Electrum/BIP-137 header, or of a BIP-322 simple signature (a witness stack shaped
+     * like a key-path or P2WPKH spend).
      */
-    private fun classifySignature(token: String): ScannedPayload.Signature? {
+    fun signatureEncoding(token: String): SignatureEncoding? {
         if (token.length !in 80..400 || token.any { it.isWhitespace() }) return null
         val hasBip322Prefix = token.startsWith(Bip322.SIMPLE_PREFIX)
         val bytes = runCatching { Base64.getDecoder().decode(token.removePrefix(Bip322.SIMPLE_PREFIX)) }.getOrNull()
             ?: return null
 
         if (!hasBip322Prefix && bytes.size == 65 && (bytes[0].toInt() and 0xFF) in 27..42) {
-            return ScannedPayload.Signature(token, SignatureEncoding.RECOVERABLE_ECDSA)
+            return SignatureEncoding.RECOVERABLE_ECDSA
         }
         val witness = runCatching { ScriptWitness.read(bytes) }.getOrNull() ?: return null
         val isSignatureShaped = when (witness.stack.size) {
@@ -466,7 +513,7 @@ object ScanPayloadClassifier {
             else -> false
         }
         return if (isSignatureShaped && ScriptWitness.write(witness).contentEquals(bytes)) {
-            ScannedPayload.Signature(token, SignatureEncoding.BIP322_SIMPLE)
+            SignatureEncoding.BIP322_SIMPLE
         } else {
             null
         }
@@ -516,7 +563,12 @@ object ScanPayloadClassifier {
         ScanNetwork.REGTEST to Block.RegtestGenesisBlock.hash
     )
     private val BECH32_PREFIXES = listOf("bc1", "tb1", "bcrt1", "sp1", "tsp1")
-    private val SINGLE_SIG_WRAPPERS = listOf("pkh(", "wpkh(", "sh(wpkh(", "tr(")
+    private val SINGLE_SIG_SCRIPTS = mapOf(
+        "pkh(" to ScriptType.P2PKH,
+        "wpkh(" to ScriptType.P2WPKH,
+        "sh(wpkh(" to ScriptType.P2SH_P2WPKH,
+        "tr(" to ScriptType.P2TR
+    )
 
     private val WHITESPACE = Regex("\\s+")
     private val HEX = Regex("^[0-9a-fA-F]+$")

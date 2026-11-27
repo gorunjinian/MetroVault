@@ -3,6 +3,7 @@ package com.gorunjinian.metrovault.domain.service.scan
 import com.gorunjinian.metrovault.core.qr.OutputFormat
 import com.gorunjinian.metrovault.domain.service.bitcoin.SignMessageRequest
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigSetupFormat
+import com.gorunjinian.vaultovich.ScriptType
 
 /** The chain an address or key is encoded for. Signet shares testnet's encodings. */
 enum class ScanNetwork { MAINNET, TESTNET, REGTEST }
@@ -107,15 +108,22 @@ sealed interface ScannedPayload {
  * One extended public key.
  *
  * @property xpub As scanned, in any SLIP-132 form (`xpub`, `zpub`, `Vpub`, …)
- * @property fingerprint Master fingerprint from the key origin (lowercase hex), if given
+ * @property fingerprint Master fingerprint from the key origin (lowercase hex), if given. A key
+ *   with a fingerprint and no [derivationPath] claims to be that master key itself.
  * @property derivationPath Origin path without the `m/` prefix (e.g. `84'/0'/0'`), if given
  * @property network From the key's version bytes
+ * @property childPath The steps after the key, without the leading slash: a branch (`0` or a
+ *   `<0;1>` multipath step) and its `*` wildcard, as written; null if there are none
+ * @property descriptorScript The address type the key's single-sig descriptor wraps it in; null
+ *   for a key that didn't come in a descriptor
  */
 data class ScannedExtendedKey(
     val xpub: String,
     val fingerprint: String?,
     val derivationPath: String?,
-    val network: ScanNetwork
+    val network: ScanNetwork,
+    val childPath: String? = null,
+    val descriptorScript: ScriptType? = null
 )
 
 enum class SignatureEncoding {

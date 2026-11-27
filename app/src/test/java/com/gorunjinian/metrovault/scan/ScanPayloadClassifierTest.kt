@@ -35,6 +35,7 @@ import com.gorunjinian.vaultovich.Block
 import com.gorunjinian.vaultovich.ByteVector
 import com.gorunjinian.vaultovich.ByteVector32
 import com.gorunjinian.vaultovich.DataEntry
+import com.gorunjinian.vaultovich.Descriptor
 import com.gorunjinian.vaultovich.DeterministicWallet
 import com.gorunjinian.vaultovich.Global
 import com.gorunjinian.vaultovich.Input
@@ -47,6 +48,7 @@ import com.gorunjinian.vaultovich.Output
 import com.gorunjinian.vaultovich.Psbt
 import com.gorunjinian.vaultovich.Satoshi
 import com.gorunjinian.vaultovich.Script
+import com.gorunjinian.vaultovich.ScriptType
 import com.gorunjinian.vaultovich.SigHash
 import com.gorunjinian.vaultovich.Transaction
 import com.gorunjinian.vaultovich.TxId
@@ -115,6 +117,8 @@ class ScanPayloadClassifierTest {
     }
 
     private fun ByteArray.hex() = joinToString("") { "%02x".format(it) }
+
+    private fun withChecksum(descriptor: String) = "$descriptor#${Descriptor.checksum(descriptor)}"
 
     /** A one-input P2WPKH spend whose input names this seed's key, as a coordinator builds it. */
     private fun spendPsbt(withDerivation: Boolean = true): ByteArray {
@@ -474,11 +478,49 @@ class ScanPayloadClassifierTest {
 
     @Test
     fun singleSigDescriptorIsAKeyCheckKeepingTheDescriptor() {
-        val descriptor = "wpkh([$fingerprintHex/84h/0h/0h]$accountXpub/<0;1>/*)#checksum"
+        val descriptor = withChecksum("wpkh([$fingerprintHex/84h/0h/0h]$accountXpub/<0;1>/*)")
         val keys = text(descriptor).expect<ScannedPayload.ExtendedKeys>()
 
         assertEquals(descriptor, keys.descriptor)
-        assertEquals("84h/0h/0h", keys.keys.single().derivationPath)
+        val key = keys.keys.single()
+        assertEquals("84h/0h/0h", key.derivationPath)
+        assertEquals("<0;1>/*", key.childPath)
+        assertEquals(ScriptType.P2WPKH, key.descriptorScript)
+    }
+
+    @Test
+    fun eachKeyCarriesTheScriptOfItsOwnDescriptor() {
+        val export = listOf(
+            "# Single-sig descriptors",
+            "pkh([$fingerprintHex/44'/0'/0']$accountXpub/0/*)",
+            "sh(wpkh([$fingerprintHex/49'/0'/0']$accountXpub/0/*))",
+            withChecksum("tr([$fingerprintHex/86'/0'/0']$accountXpub/1/*)")
+        ).joinToString("\n")
+        val keys = text(export).expect<ScannedPayload.ExtendedKeys>().keys
+
+        assertEquals(listOf(ScriptType.P2PKH, ScriptType.P2SH_P2WPKH, ScriptType.P2TR), keys.map { it.descriptorScript })
+        assertEquals(listOf("0/*", "0/*", "1/*"), keys.map { it.childPath })
+    }
+
+    @Test
+    fun aKeyOutsideADescriptorHasNoScript() {
+        val key = text("[$fingerprintHex/84'/0'/0']$accountZpub/0/*").expect<ScannedPayload.ExtendedKeys>().keys.single()
+        assertNull(key.descriptorScript)
+        assertEquals("0/*", key.childPath)
+        assertNull(text(accountZpub).expect<ScannedPayload.ExtendedKeys>().keys.single().childPath)
+    }
+
+    @Test
+    fun aDescriptorWithAWrongChecksumIsRejected() {
+        val descriptor = "wpkh([$fingerprintHex/84'/0'/0']$accountXpub/<0;1>/*)"
+        val checksum = Descriptor.checksum(descriptor)
+        val wrong = checksum.dropLast(1) + if (checksum.last() == 'q') 'p' else 'q'
+        text("$descriptor#$wrong").expectInvalid(InvalidKind.EXTENDED_KEY)
+
+        // One bad line in an export spoils it, since its keys can't be trusted
+        text("${withChecksum(descriptor)}\n$descriptor#$wrong").expectInvalid(InvalidKind.EXTENDED_KEY)
+        // A path altered after the checksum was taken
+        text(withChecksum(descriptor).replace("/<0;1>/*", "/2/*")).expectInvalid(InvalidKind.EXTENDED_KEY)
     }
 
     @Test
