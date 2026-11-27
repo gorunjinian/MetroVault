@@ -169,6 +169,13 @@ class BitcoinService {
         scanRange: Int = 2000
     ): AddressCheckResult? = addressService.checkAddressBelongsToWallet(address, accountPublicKey, scriptType, isTestnet, scanRange)
 
+    fun findAddresses(
+        addresses: Set<String>,
+        accountPublicKey: DeterministicWallet.ExtendedPublicKey,
+        scriptType: ScriptType,
+        isTestnet: Boolean = false
+    ): Map<String, AddressCheckResult> = addressService.findAddresses(addresses, accountPublicKey, scriptType, isTestnet)
+
     // ==================== Key Encoding (delegated to KeyEncodingService) ====================
 
     fun getAccountXpub(

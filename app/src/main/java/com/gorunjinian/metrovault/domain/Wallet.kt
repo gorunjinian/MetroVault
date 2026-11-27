@@ -33,7 +33,13 @@ import com.gorunjinian.metrovault.domain.service.multisig.MultisigChangeValidato
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtOutputClassifier
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
+import com.gorunjinian.metrovault.domain.service.scan.ExtendedKeyChecker
+import com.gorunjinian.metrovault.domain.service.scan.KeyCheck
+import com.gorunjinian.metrovault.domain.service.scan.KeyCheckWallet
 import com.gorunjinian.metrovault.domain.service.scan.ScanHandoff
+import com.gorunjinian.metrovault.domain.service.scan.ScannedExtendedKey
+import com.gorunjinian.metrovault.domain.service.bitcoin.TransactionDecoder
+import com.gorunjinian.metrovault.domain.service.bitcoin.TransactionDetails
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
@@ -863,6 +869,58 @@ class   Wallet(context: Context) : WalletPassphrases {
             )
         }.getOrNull() ?: return null
         return { index -> psbt.verifyOutput(index, account) }
+    }
+
+    // ==================== Scanned Keys and Transactions ====================
+
+    /**
+     * Checks scanned extended public keys against the open wallet's seed; see [ExtendedKeyChecker].
+     * Null unless a single-sig wallet is open with its master key, the only kind the scan router
+     * sends keys to.
+     */
+    fun checkExtendedKeys(keys: List<ScannedExtendedKey>): List<KeyCheck>? {
+        if (getActiveWalletProfile()?.kind != WalletKind.SINGLE_SIG) return null
+        val state = statelessWalletManager.get() ?: getActiveWalletState() ?: return null
+        val master = state.getMasterPrivateKey() ?: return null
+        return runCatching {
+            val wallet = KeyCheckWallet(
+                master = master,
+                accountPath = KeyPath(state.derivationPath),
+                scriptType = getScriptType(state.derivationPath),
+                isTestnet = DerivationPaths.isTestnet(state.derivationPath)
+            )
+            ExtendedKeyChecker.check(keys, wallet)
+        }.getOrNull()
+    }
+
+    /**
+     * Decodes a scanned raw transaction on the open wallet's network, marking the outputs that pay
+     * it; see [TransactionDecoder]. Finding them derives up to the gap limit, so call this off the
+     * main thread. For a scan from Home, with no wallet open, call [TransactionDecoder.decode] with
+     * the network the user picks instead.
+     */
+    fun getTransactionDetails(hex: String): TransactionDetails? =
+        TransactionDecoder.decode(hex, BitcoinUtils.getChainHash(isActiveWalletTestnet()), ::findWalletAddresses)
+
+    /**
+     * Which of [addresses] the open wallet owns, resolved in the same order as
+     * [checkAddressBelongsToWallet]. A single-sig wallet scans its branches once for all of them.
+     */
+    private fun findWalletAddresses(addresses: Set<String>): Map<String, AddressCheckResult> {
+        if (isActiveSilentPayment()) return emptyMap()
+        if (isActiveMultisig()) {
+            return addresses.mapNotNull { address ->
+                checkAddressBelongsToWallet(address)?.takeIf { it.belongs }?.let { address to it }
+            }.toMap()
+        }
+        val state = statelessWalletManager.get() ?: getActiveWalletState() ?: return emptyMap()
+        val accountPublicKey = state.getAccountPublicKey() ?: return emptyMap()
+        return bitcoinService.findAddresses(
+            addresses,
+            accountPublicKey,
+            getScriptType(state.derivationPath),
+            DerivationPaths.isTestnet(state.derivationPath)
+        )
     }
 
     // ==================== Wallet Info ====================
