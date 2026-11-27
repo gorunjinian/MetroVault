@@ -45,7 +45,7 @@ private fun hmacSha512(key: ByteArray, data: ByteArray): ByteArray {
     return mac.doFinal(data)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun BIP85DeriveScreen(
     wallet: Wallet,

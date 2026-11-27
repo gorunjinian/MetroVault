@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
  * it runs, the row for the target format shows an inline spinner and every control is disabled.
  * Multisig and stateless wallets never reach this screen.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun AddressTypeScreen(
     wallet: Wallet,

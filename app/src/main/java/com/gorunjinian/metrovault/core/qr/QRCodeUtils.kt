@@ -11,8 +11,6 @@ import android.graphics.Color
  * - [QRCodeGenerator] - Basic QR bitmap generation
  * - [PSBTQREncoder] - PSBT encoding to QR formats
  * - [TransactionQREncoder] - Raw transaction encoding
- * - [AnimatedQRScanner] - Scanning animated PSBT QRs
- * - [DescriptorQRScanner] - Scanning descriptor QRs
  */
 object QRCodeUtils {
 

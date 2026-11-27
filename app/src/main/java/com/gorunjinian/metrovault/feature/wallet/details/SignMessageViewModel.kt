@@ -6,14 +6,14 @@ import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gorunjinian.metrovault.core.qr.AnimatedQRResult
-import com.gorunjinian.metrovault.core.qr.AnimatedQRScanner
 import com.gorunjinian.metrovault.core.qr.OutputFormat
 import com.gorunjinian.metrovault.core.qr.QRCodeUtils
 import com.gorunjinian.metrovault.core.qr.QRDensity
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.bitcoin.SignMessageRequest
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletMessageSigner
-import com.gorunjinian.metrovault.domain.service.psbt.PSBTDecoder
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
+import com.gorunjinian.metrovault.domain.service.scan.SignatureEncoding
 import com.gorunjinian.vaultovich.MessageSigning
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,8 +26,8 @@ import kotlinx.coroutines.withContext
 /**
  * ViewModel for the Sign/Verify Message screen.
  * Owns the sign/verify/staged-PSBT flow and the signed-PSBT QR presentation state;
- * all wallet and protocol logic lives in [WalletMessageSigner]. Camera permission and
- * the barcode view lifecycle stay in the screen.
+ * all wallet and protocol logic lives in [WalletMessageSigner], and what a scan means for the
+ * form in [MessageScanInput].
  */
 class SignMessageViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -36,13 +36,6 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
 
     // Dependencies
     private val wallet: Wallet by lazy { Wallet.getInstance(context) }
-
-    /** What a single-shot scan fills in. PSBT frames are format-detected, independent of this. */
-    enum class ScanTarget { ADDRESS, MESSAGE }
-
-    // Shares the Scan PSBT viewfinder's frame joiner; owning it here keeps a
-    // partially collected animated scan alive across configuration changes.
-    val animatedScanner = AnimatedQRScanner(PSBTDecoder::decode)
 
     // ========== UI State ==========
 
@@ -57,9 +50,7 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
 
         // Scanner
         val isScanning: Boolean = false,
-        val scanTarget: ScanTarget = ScanTarget.ADDRESS,
-        val scanProgress: Int = 0,
-        val isAnimatedScan: Boolean = false,
+        val scanTarget: MessageScanTarget = MessageScanTarget.ADDRESS,
 
         // SP receive addresses are one-off taproot keys: only BIP-322 binds a signature to them,
         // so the ECDSA formats are disabled for silent-payment wallets.
@@ -101,17 +92,15 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
 
     private var prefillApplied = false
 
-    init {
-        // The active wallet's kind comes from storage — resolve it off the main thread
-        viewModelScope.launch {
-            val isSilentPayment = withContext(Dispatchers.IO) { wallet.isActiveSilentPayment() }
-            if (isSilentPayment) {
-                _uiState.update {
-                    it.copy(
-                        isSilentPayment = true,
-                        signatureFormat = MessageSigning.SignatureFormat.BIP322
-                    )
-                }
+    /** The active wallet's kind comes from storage — resolve it off the main thread. */
+    private val walletKindLookup = viewModelScope.launch {
+        val isSilentPayment = withContext(Dispatchers.IO) { wallet.isActiveSilentPayment() }
+        if (isSilentPayment) {
+            _uiState.update {
+                it.copy(
+                    isSilentPayment = true,
+                    signatureFormat = MessageSigning.SignatureFormat.BIP322
+                )
             }
         }
     }
@@ -161,6 +150,8 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
                 signatureInput = "",
                 pendingMessagePsbt = null,
                 pendingSignRequest = null,
+                // Verifying a scanned ECDSA signature leaves a format this wallet can't sign in
+                signatureFormat = if (it.isSilentPayment) MessageSigning.SignatureFormat.BIP322 else it.signatureFormat,
                 errorMessage = "",
                 successMessage = ""
             )
@@ -169,28 +160,71 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
 
     // ========== Scanning ==========
 
-    /** Records what the next single-shot scan should fill in; the screen then asks for camera permission. */
-    fun prepareScan(target: ScanTarget) {
-        _uiState.update { it.copy(scanTarget = target) }
-    }
-
-    /** Called once camera permission is granted: resets the frame joiner and shows the viewfinder. */
-    fun startScanning() {
-        animatedScanner.reset()
-        _uiState.update { it.copy(isScanning = true, scanProgress = 0, isAnimatedScan = false) }
+    /** Shows the scanner; [target] is the field a plain address or message fills in. */
+    fun startScanning(target: MessageScanTarget) {
+        _uiState.update { it.copy(isScanning = true, scanTarget = target) }
     }
 
     fun stopScanning() {
         _uiState.update { it.copy(isScanning = false) }
     }
 
-    fun onScanProgress(progress: Int, animated: Boolean) {
-        _uiState.update { it.copy(scanProgress = progress, isAnimatedScan = animated) }
+    /** A finished scan: closes the scanner and fills in the form, or stages a signing request. */
+    fun onScan(scan: CompletedScan) {
+        _uiState.update { it.copy(isScanning = false) }
+        fillIn(MessageScanInput.from(scan, _uiState.value.scanTarget))
+    }
+
+    /** A scan another screen opened this one with. */
+    fun onScanHandedOver(scan: CompletedScan) {
+        viewModelScope.launch {
+            // Arrives as the screen opens, and what a request may do depends on the wallet's kind
+            walletKindLookup.join()
+            fillIn(MessageScanInput.fromHandoff(scan.payload))
+        }
+    }
+
+    private fun fillIn(input: MessageScanInput) {
+        when (input) {
+            is MessageScanInput.MessagePsbt -> stageMessagePsbt(input.base64)
+            is MessageScanInput.Request -> stageSignRequest(input.request)
+            is MessageScanInput.Address -> _uiState.update {
+                it.copy(
+                    addressInput = input.address,
+                    pendingMessagePsbt = null,
+                    pendingSignRequest = null,
+                    errorMessage = "",
+                    successMessage = ""
+                )
+            }
+            is MessageScanInput.Message -> _uiState.update {
+                it.copy(messageInput = input.message, pendingMessagePsbt = null, errorMessage = "", successMessage = "")
+            }
+            is MessageScanInput.Signature -> _uiState.update {
+                it.copy(
+                    addressInput = input.address,
+                    messageInput = input.message,
+                    signatureInput = input.signature,
+                    // Verifying tries only the selected protocol, so it has to be the signature's
+                    signatureFormat = when (input.encoding) {
+                        SignatureEncoding.BIP322_SIMPLE -> MessageSigning.SignatureFormat.BIP322
+                        SignatureEncoding.RECOVERABLE_ECDSA -> MessageSigning.SignatureFormat.ELECTRUM
+                        null -> it.signatureFormat
+                    },
+                    pendingMessagePsbt = null,
+                    pendingSignRequest = null,
+                    errorMessage = "",
+                    successMessage = ""
+                )
+            }
+            is MessageScanInput.Unusable -> _uiState.update {
+                it.copy(errorMessage = input.reason, successMessage = "")
+            }
+        }
     }
 
     /** A scanned BIP-322 message-signing PSBT: validate and fill the request, don't sign yet. */
-    fun onScanComplete(psbtBase64: String) {
-        _uiState.update { it.copy(isScanning = false) }
+    private fun stageMessagePsbt(psbtBase64: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isProcessing = true, errorMessage = "", successMessage = "") }
             try {
@@ -224,39 +258,10 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * A plain (non-PSBT) payload: a text signing request (`signmessage …` or Coinkite JSON), an
-     * address, or a message. A signing request is recognised whichever scan button opened the
-     * camera — it fills both fields itself.
+     * Fill in a scanned text signing request: the address (derived from its path) and the message.
+     * Like the message-PSBT flow, nothing is signed until the user presses Sign.
      */
-    fun onPlainScan(result: String) {
-        _uiState.update { it.copy(isScanning = false) }
-        if (SignMessageRequest.looksLikeRequest(result)) {
-            stageSignRequest(result)
-            return
-        }
-        when (_uiState.value.scanTarget) {
-            ScanTarget.ADDRESS -> {
-                // Extract address from bitcoin: URI if present
-                val address = if (result.startsWith("bitcoin:", ignoreCase = true)) {
-                    result.substringAfter(":").substringBefore("?")
-                } else {
-                    result
-                }
-                _uiState.update {
-                    it.copy(addressInput = address, pendingMessagePsbt = null, pendingSignRequest = null)
-                }
-            }
-            ScanTarget.MESSAGE -> {
-                _uiState.update { it.copy(messageInput = result, pendingMessagePsbt = null) }
-            }
-        }
-    }
-
-    /**
-     * Validate a scanned text signing request and fill in the address (derived from its path) and
-     * message. Like the message-PSBT flow, nothing is signed until the user presses Sign.
-     */
-    private fun stageSignRequest(text: String) {
+    private fun stageSignRequest(request: SignMessageRequest) {
         if (_uiState.value.isSilentPayment) {
             _uiState.update {
                 it.copy(
@@ -270,16 +275,6 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _uiState.update { it.copy(isProcessing = true, errorMessage = "", successMessage = "") }
             try {
-                val request = SignMessageRequest.parse(text)
-                if (request == null) {
-                    _uiState.update {
-                        it.copy(
-                            errorMessage = "Could not read the message-signing QR. Check the " +
-                                "derivation path and address format."
-                        )
-                    }
-                    return@launch
-                }
                 val address = withContext(Dispatchers.Default) {
                     WalletMessageSigner.resolveRequestAddress(wallet, request)
                 }
@@ -470,12 +465,13 @@ class SignMessageViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /** Leaves the signed-PSBT display and clears the request; the screen then re-opens the scanner. */
-    fun prepareScanAnother() {
+    /** Leaves the signed-PSBT display, clears the request and opens the scanner for the next one. */
+    fun scanAnother() {
         _uiState.update {
             it.copy(showSignedPsbtDisplay = false, signedMessagePsbt = null, signedQRResult = null)
         }
         clearAll()
+        startScanning(_uiState.value.scanTarget)
     }
 
     // ========== Bare signature QR dialog ==========

@@ -56,6 +56,9 @@ object BSMS {
 
     // ==================== Parsing Functions ====================
 
+    /** Whether [input] opens with a BSMS header line. */
+    fun isBsms(input: String): Boolean = input.trimStart().startsWith("BSMS", ignoreCase = true)
+
     /**
      * Extract BSMS data from input string.
      * This is a more lenient version that extracts what it can find.
@@ -69,7 +72,7 @@ object BSMS {
         val lines = trimmed.lines().map { it.trim() }.filter { it.isNotEmpty() }
 
         // Check for BSMS format
-        if (lines.isNotEmpty() && lines[0].uppercase().startsWith("BSMS")) {
+        if (isBsms(trimmed)) {
             AppLog.d(TAG) { "Detected BSMS format" }
 
             var descriptor: String? = null

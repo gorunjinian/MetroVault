@@ -1,8 +1,5 @@
 package com.gorunjinian.metrovault.feature.wallet.create
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,13 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.core.qr.SeedQRUtils
-import com.gorunjinian.metrovault.core.qr.configureForQRScanning
 import com.gorunjinian.metrovault.core.ui.components.InfoCard
 import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
@@ -38,7 +29,9 @@ import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.data.model.DerivationPaths
-import com.journeyapps.barcodescanner.CompoundBarcodeView
+import com.gorunjinian.metrovault.domain.service.scan.ScannedPayload
+import com.gorunjinian.metrovault.feature.scan.components.InlineScanner
+import com.gorunjinian.metrovault.feature.scan.mismatchMessage
 
 /**
  * Steps shared by the Create, Import, and Stateless wallet wizards.
@@ -176,7 +169,7 @@ private fun addressTypeOptions(isTestnet: Boolean): List<Triple<String, String, 
         )
     }
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 private fun AddressTypeCard(
     selectedDerivationPath: String,
@@ -570,66 +563,21 @@ internal fun SeedPhraseEntryStep(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    // The scanner callback is registered once in the AndroidView factory; read the
-    // latest handler through state so a recomposition can't leave it stale.
-    val currentOnSeedQrScanned by rememberUpdatedState(onSeedQrScanned)
 
     var validationError by remember { mutableStateOf("") }
-
-    // SeedQR Scanner state
     var isScanning by remember { mutableStateOf(false) }
-    var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
 
-    // Camera permission launcher
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            isScanning = true
-        } else {
-            validationError = "Camera permission is required to scan SeedQR codes"
+    /** Takes the words from a scanned seed; otherwise says why not and the camera keeps scanning. */
+    fun handlePayload(payload: ScannedPayload): Boolean {
+        if (payload !is ScannedPayload.Seed) {
+            validationError = payload.mismatchMessage("a SeedQR")
+            return false
         }
-    }
-
-    // Lifecycle observer for scanner
-    DisposableEffect(lifecycleOwner, isScanning) {
-        val observer = LifecycleEventObserver { _, event ->
-            val scanner = barcodeView
-            if (isScanning && scanner != null) {
-                when (event) {
-                    Lifecycle.Event.ON_RESUME -> {
-                        try { scanner.resume() } catch (_: Exception) { }
-                    }
-                    Lifecycle.Event.ON_PAUSE -> {
-                        try { scanner.pause() } catch (_: Exception) { }
-                    }
-                    else -> {}
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            try { barcodeView?.pause() } catch (_: Exception) { }
-        }
-    }
-
-    // Resume camera when isScanning becomes true and view is ready
-    // This is needed because the lifecycle observer only responds to transitions,
-    // not the current state (we're already ON_RESUME when scanning starts)
-    LaunchedEffect(barcodeView, isScanning) {
-        if (isScanning && barcodeView != null) {
-            try { barcodeView?.resume() } catch (_: Exception) { }
-        }
-    }
-
-    // Pause scanner when isScanning becomes false
-    LaunchedEffect(isScanning) {
-        if (!isScanning) {
-            try { barcodeView?.pause() } catch (_: Exception) { }
-        }
+        // Either supported length is accepted; the caller adopts it
+        validationError = ""
+        onSeedQrScanned(payload.words)
+        isScanning = false
+        return true
     }
 
     Column(
@@ -685,53 +633,10 @@ internal fun SeedPhraseEntryStep(
 
             // QR Scanner view (when scanning)
             if (isScanning) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(250.dp)
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        AndroidView(
-                            factory = { ctx ->
-                                CompoundBarcodeView(ctx).apply {
-                                    barcodeView = this
-                                    configureForQRScanning()
-                                    setStatusText("")
-                                    decodeContinuous { result ->
-                                        result.text?.let { scannedText ->
-                                            // Raw bytes are needed for CompactSeedQR (binary data gets corrupted in text)
-                                            val decodedWords = SeedQRUtils.decodeSeedQR(scannedText, result.rawBytes)
-
-                                            if (decodedWords != null) {
-                                                // Either supported length is accepted; the caller adopts it
-                                                validationError = ""
-                                                currentOnSeedQrScanned(decodedWords)
-                                                isScanning = false
-                                                pause()
-                                            }
-                                        }
-                                    }
-                                    // Note: Don't call resume() here - the lifecycle observer handles this
-                                    // to avoid double initialization (which causes camera freeze)
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-
-                        // Cancel button overlay
-                        Button(
-                            onClick = {
-                                isScanning = false
-                                barcodeView?.pause()
-                            },
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(16.dp)
-                        ) {
-                            Text("Cancel Scan")
-                        }
-                    }
-                }
+                InlineScanner(
+                    onScan = { handlePayload(it.payload) },
+                    onCancel = { isScanning = false }
+                )
             }
 
         }
@@ -754,7 +659,7 @@ internal fun SeedPhraseEntryStep(
             OutlinedButton(
                 onClick = {
                     validationError = ""
-                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                    isScanning = true
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !isScanning && mnemonicWords.size < expectedWordCount

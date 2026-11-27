@@ -6,17 +6,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** @param takeScan Returns, once, the scan another screen opened this one with; null when there is none */
+
 @Composable
 fun ImportWalletScreen(
     viewModel: ImportWalletViewModel = viewModel(),
     onBack: () -> Unit,
     onWalletImported: () -> Unit,
+    takeScan: (() -> CompletedScan?)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        takeScan?.invoke()?.let { viewModel.onScanHandedOver(it) }
+    }
 
     // Handle events
     LaunchedEffect(Unit) {
@@ -50,7 +57,7 @@ fun ImportWalletScreen(
         ) {
             when (uiState.currentStep) {
                 1 -> WalletConfigurationStep(
-                    title = "Seed Phrase Length",
+                    title = if (uiState.isSeedHandedOver) "Address Type" else "Seed Phrase Length",
                     selectedDerivationPath = uiState.selectedDerivationPath,
                     accountNumber = uiState.accountNumber,
                     isTestnet = uiState.isTestnet,
@@ -58,7 +65,7 @@ fun ImportWalletScreen(
                     onAccountNumberChange = { viewModel.setAccountNumber(it) },
                     onTestnetChange = { viewModel.setTestnetMode(it) },
                     onNext = { viewModel.goToNextStep() },
-                    wordCount = uiState.expectedWordCount,
+                    wordCount = uiState.expectedWordCount.takeUnless { uiState.isSeedHandedOver },
                     onWordCountChange = { viewModel.setWordCount(it) }
                 )
 

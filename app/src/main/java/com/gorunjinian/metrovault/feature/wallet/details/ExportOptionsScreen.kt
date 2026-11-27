@@ -44,7 +44,7 @@ private enum class SensitiveViewTarget(val title: String, val confirmLabel: Stri
  * the recovery material (BIP32 root key, seed phrase) sits behind a security warning plus
  * password confirmation.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun ExportOptionsScreen(
     wallet: Wallet,

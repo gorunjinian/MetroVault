@@ -10,7 +10,10 @@ import com.gorunjinian.metrovault.data.model.Result
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigAddressService
 import com.gorunjinian.metrovault.domain.service.multisig.MultisigDescriptorParser
-import com.gorunjinian.metrovault.core.qr.DescriptorQRScanner
+import com.gorunjinian.metrovault.domain.service.multisig.MultisigSetupFormat
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
+import com.gorunjinian.metrovault.domain.service.scan.ScannedPayload
+import com.gorunjinian.metrovault.feature.scan.mismatchMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,10 +58,6 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
         val walletName: String = "Multisig Wallet",
         val isImporting: Boolean = false,
         val errorMessage: String = "",
-        // Animated QR scan progress
-        val scanProgress: Int = 0,
-        val isAnimatedScan: Boolean = false,
-        val scanProgressString: String = "",
         // BSMS address verification
         val isBsmsFormat: Boolean = false,
         val addressVerified: Boolean? = null, // null = not applicable, true/false = result
@@ -68,16 +67,12 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
-    // Scanner for animated QR codes - exposed for UI access
-    val descriptorScanner = DescriptorQRScanner()
-
     // ========== Events ==========
 
     sealed class ImportEvent {
         /** Wallet created (unverified). [walletId] is used to open the verify/register ceremony. */
         data class WalletImported(val walletId: String) : ImportEvent()
         object NavigateBack : ImportEvent()
-        data class ScanComplete(val descriptor: String) : ImportEvent()
     }
 
     private val _events = MutableSharedFlow<ImportEvent>()
@@ -86,28 +81,18 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
     // ========== Actions ==========
 
     fun startScanning() {
-        descriptorScanner.reset()
         _uiState.update {
-            it.copy(
-                screenState = ScreenState.SCANNING,
-                isScanning = true,
-                errorMessage = "",
-                scanProgress = 0,
-                isAnimatedScan = false,
-                scanProgressString = ""
-            )
+            it.copy(screenState = ScreenState.SCANNING, isScanning = true, errorMessage = "")
         }
     }
 
     fun cancelScanning() {
-        descriptorScanner.reset()
         _uiState.update {
             it.copy(screenState = ScreenState.INITIAL, isScanning = false)
         }
     }
 
     fun resetToInitial() {
-        descriptorScanner.reset()
         _uiState.update {
             UiState() // Reset to default state
         }
@@ -117,53 +102,13 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
         _uiState.update { it.copy(walletName = name) }
     }
 
-    /**
-     * Process a single scanned frame. Used by the camera scanner.
-     * Handles both single-frame and multi-frame animated QR codes.
-     *
-     * @return Progress percentage (0-100), or null if frame is invalid
-     */
-    fun processScannedFrame(content: String): Int? {
-        val progress = descriptorScanner.processFrame(content)
-
-        if (progress != null) {
-            val detectedFormat = descriptorScanner.getDetectedFormat()
-            val isAnimated = detectedFormat != null && detectedFormat != "plain" && detectedFormat != "unknown"
-
-            _uiState.update {
-                it.copy(
-                    scanProgress = progress,
-                    isAnimatedScan = isAnimated,
-                    scanProgressString = descriptorScanner.getProgressString()
-                )
+    /** A finished scan: parse it if it is a multisig setup, otherwise show what it was instead. */
+    fun onScan(scan: CompletedScan) {
+        when (val payload = scan.payload) {
+            is ScannedPayload.MultisigSetup -> viewModelScope.launch {
+                processDescriptor(payload.content, payload.walletName)
             }
-
-            // Check if scan is complete
-            if (descriptorScanner.isComplete()) {
-                viewModelScope.launch {
-                    finishScanning()
-                }
-            }
-        }
-
-        return progress
-    }
-
-    /**
-     * Called when all frames have been received.
-     * Assembles the descriptor and processes it.
-     */
-    private suspend fun finishScanning() {
-        val scanResult = withContext(Dispatchers.Default) {
-            descriptorScanner.getResult()
-        }
-
-        if (scanResult != null) {
-            AppLog.d(TAG) { "Scan complete" }
-            processDescriptor(scanResult.content, scanResult.walletName)
-        } else {
-            AppLog.e(TAG) { "Scanner returned null result" }
-            showError("Failed to decode QR code. Please try again.")
+            else -> showError(payload.mismatchMessage("a multisig setup"))
         }
     }
 
@@ -198,7 +143,7 @@ class ImportMultisigViewModel(application: Application) : AndroidViewModel(appli
                 is Result.Success -> {
                     val parsed = result.value
                     val config = parsed.config
-                    val isBsmsFormat = parsed.sourceFormat == MultisigDescriptorParser.SourceFormat.BSMS
+                    val isBsmsFormat = parsed.sourceFormat == MultisigSetupFormat.BSMS
                     val verificationAddress = parsed.verificationAddress
                     val defaultName = parsed.suggestedName
                         ?: qrWalletName

@@ -16,7 +16,7 @@ import com.gorunjinian.metrovault.domain.Wallet
  * SeedPhraseScreen - Displays the wallet's seed phrase.
  * This screen should only be navigated to after password confirmation.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun SeedPhraseScreen(
     wallet: Wallet,

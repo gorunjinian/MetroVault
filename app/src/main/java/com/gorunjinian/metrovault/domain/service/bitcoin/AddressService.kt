@@ -35,15 +35,7 @@ class AddressService {
                 .derivePublicKey(index.toLong())
 
             val publicKey = addressKey.publicKey
-            val address = when (scriptType) {
-                ScriptType.P2PKH -> Bitcoin.computeP2PkhAddress(publicKey, chainHash)
-                ScriptType.P2SH_P2WPKH -> Bitcoin.computeP2ShOfP2WpkhAddress(publicKey, chainHash)
-                ScriptType.P2WPKH -> Bitcoin.computeP2WpkhAddress(publicKey, chainHash)
-                ScriptType.P2TR -> {
-                    val xOnlyPubKey = XonlyPublicKey(publicKey)
-                    Bitcoin.computeBIP86Address(xOnlyPubKey, chainHash)
-                }
-            }
+            val address = encodeAddress(publicKey, scriptType, chainHash)
 
             val fullPath = "${accountPublicKey.path}/$changeIndex/$index"
 
@@ -138,6 +130,53 @@ class AddressService {
             null
         }
     }
+
+    /**
+     * Finds each of [addresses] among the wallet's first [scanRange] receive and change addresses,
+     * in one pass however many there are, stopping once all are found. Each branch key is derived
+     * once, where [checkAddressBelongsToWallet] would scan both branches again for every address.
+     *
+     * @param addresses Exactly as the wallet writes them (lowercase for bech32)
+     * @return the addresses found, each with where it sits; the others are absent
+     */
+    fun findAddresses(
+        addresses: Set<String>,
+        accountPublicKey: DeterministicWallet.ExtendedPublicKey,
+        scriptType: ScriptType,
+        isTestnet: Boolean = false,
+        scanRange: Int = WalletConstants.SINGLE_SIG_ADDRESS_GAP
+    ): Map<String, AddressCheckResult> {
+        val found = HashMap<String, AddressCheckResult>()
+        if (addresses.isEmpty()) return found
+        val chainHash = BitcoinUtils.getChainHash(isTestnet)
+        for (changeIndex in 0L..1L) {
+            val branch = runCatching { accountPublicKey.derivePublicKey(changeIndex) }.getOrNull() ?: continue
+            for (index in 0 until scanRange) {
+                // Derivation fails for about one index in 2^127; such an index has no address
+                val address = runCatching {
+                    encodeAddress(branch.derivePublicKey(index.toLong()).publicKey, scriptType, chainHash)
+                }.getOrNull() ?: continue
+                if (address in addresses && address !in found) {
+                    found[address] = AddressCheckResult(
+                        belongs = true,
+                        derivationPath = "${accountPublicKey.path}/$changeIndex/$index",
+                        index = index,
+                        isChange = changeIndex == 1L
+                    )
+                    if (found.size == addresses.size) return found
+                }
+            }
+        }
+        return found
+    }
+
+    private fun encodeAddress(publicKey: PublicKey, scriptType: ScriptType, chainHash: BlockHash): String =
+        when (scriptType) {
+            ScriptType.P2PKH -> Bitcoin.computeP2PkhAddress(publicKey, chainHash)
+            ScriptType.P2SH_P2WPKH -> Bitcoin.computeP2ShOfP2WpkhAddress(publicKey, chainHash)
+            ScriptType.P2WPKH -> Bitcoin.computeP2WpkhAddress(publicKey, chainHash)
+            ScriptType.P2TR -> Bitcoin.computeBIP86Address(XonlyPublicKey(publicKey), chainHash)
+        }
 
     /**
      * Creates a scriptPubKey for a given public key and script type.

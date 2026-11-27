@@ -1,9 +1,6 @@
 package com.gorunjinian.metrovault.feature.wallet.details
 
-import android.Manifest
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,9 +14,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.qr.QRDensity
@@ -27,10 +21,10 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.core.ui.components.SecureOutlinedTextField
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 import com.gorunjinian.metrovault.core.util.SecurityUtils
-import com.gorunjinian.metrovault.feature.transaction.components.PSBTScannerView
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
+import com.gorunjinian.metrovault.feature.scan.components.ScannerView
 import com.gorunjinian.metrovault.feature.transaction.components.SignedPSBTDisplay
 import com.gorunjinian.vaultovich.MessageSigning
-import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -42,68 +36,27 @@ import kotlin.time.Duration.Companion.milliseconds
  * scanning it only fills in the request (address + message) — the user reviews and presses Sign —
  * and the signed PSBT is then presented with [SignedPSBTDisplay], the same animated multi-format
  * QR display used by the Sign PSBT flow. All flow state and protocol calls live in
- * [SignMessageViewModel]; this file is UI plus camera plumbing only.
+ * [SignMessageViewModel]; this file is UI only.
+ *
+ * @param takeScan Returns, once, the scan another screen opened this one with; null when there is none
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun SignMessageScreen(
     viewModel: SignMessageViewModel = viewModel(),
     onBack: () -> Unit,
-    prefilledAddress: String? = null
+    prefilledAddress: String? = null,
+    takeScan: (() -> CompletedScan?)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    var hasCameraPermission by remember { mutableStateOf(false) }
-    var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
-    var isLifecycleResumed by remember { mutableStateOf(false) }
     var showDensityMenu by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.applyPrefilledAddress(prefilledAddress)
-    }
-
-    // Camera permission launcher
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasCameraPermission = granted
-        if (granted) {
-            viewModel.startScanning()
-        }
-    }
-
-    // Camera lifecycle (mirrors ScanPSBTScreen): resume only when the view exists, the lifecycle
-    // is resumed, and the scanner is on screen.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> isLifecycleResumed = true
-                Lifecycle.Event.ON_PAUSE -> {
-                    isLifecycleResumed = false
-                    barcodeView?.pause()
-                }
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            barcodeView?.pause()
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-    LaunchedEffect(barcodeView, isLifecycleResumed, uiState.isScanning) {
-        if (barcodeView != null && isLifecycleResumed && uiState.isScanning) {
-            barcodeView?.resume()
-        }
-    }
-    LaunchedEffect(uiState.isScanning) {
-        if (!uiState.isScanning) {
-            barcodeView?.pause()
-            barcodeView = null
-        }
+        takeScan?.invoke()?.let { viewModel.onScanHandedOver(it) }
     }
 
     /** Advance the animated signed-PSBT QR while it's visible. */
@@ -126,7 +79,7 @@ fun SignMessageScreen(
         topBar = {
             MetroTopBar(
                 title = if (uiState.isScanning) {
-                    if (uiState.scanTarget == SignMessageViewModel.ScanTarget.ADDRESS) {
+                    if (uiState.scanTarget == MessageScanTarget.ADDRESS) {
                         "Scan Address QR"
                     } else {
                         "Scan Message QR"
@@ -189,28 +142,15 @@ fun SignMessageScreen(
 
         when {
             uiState.isScanning -> {
-                // The exact Scan PSBT viewfinder (frame flash + animated-QR progress card), with
-                // plain payloads (addresses, messages) delivered as a single-shot scan.
-                PSBTScannerView(
-                    hasCameraPermission = hasCameraPermission,
-                    animatedScanner = viewModel.animatedScanner,
-                    scanProgress = uiState.scanProgress,
-                    isAnimatedScan = uiState.isAnimatedScan,
-                    errorMessage = "",
-                    onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                    onScanProgress = { progress, animated ->
-                        viewModel.onScanProgress(progress, animated)
+                ScannerView(
+                    onScan = { scan ->
+                        // Whatever it was, the form takes over: filled in, or showing why not.
+                        viewModel.onScan(scan)
+                        true
                     },
-                    onScanComplete = { psbt, _ ->
-                        viewModel.onScanComplete(psbt)
-                    },
-                    onBarcodeViewCreated = { barcodeView = it },
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(padding),
-                    onPlainScan = { result ->
-                        viewModel.onPlainScan(result)
-                    }
+                        .padding(padding)
                 )
             }
 
@@ -233,10 +173,7 @@ fun SignMessageScreen(
                         onPreviousFrame = { viewModel.previousDisplayFrame() },
                         onNextFrame = { viewModel.advanceDisplayFrame() },
                         onFormatChange = { viewModel.setOutputFormat(it) },
-                        onScanAnother = {
-                            viewModel.prepareScanAnother()
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
-                        },
+                        onScanAnother = { viewModel.scanAnother() },
                         onDone = { viewModel.setShowSignedPsbtDisplay(false) }
                     )
                 }
@@ -321,10 +258,7 @@ fun SignMessageScreen(
                         enabled = !uiState.isProcessing,
                         trailingIcon = {
                             IconButton(
-                                onClick = {
-                                    viewModel.prepareScan(SignMessageViewModel.ScanTarget.ADDRESS)
-                                    permissionLauncher.launch(Manifest.permission.CAMERA)
-                                },
+                                onClick = { viewModel.startScanning(MessageScanTarget.ADDRESS) },
                                 enabled = !uiState.isProcessing
                             ) {
                                 Icon(
@@ -383,10 +317,7 @@ fun SignMessageScreen(
                         text = "Sign by QR",
                         iconRes = R.drawable.ic_qr_code_scanner,
                         enabled = !uiState.isProcessing,
-                        onClick = {
-                            viewModel.prepareScan(SignMessageViewModel.ScanTarget.MESSAGE)
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
+                        onClick = { viewModel.startScanning(MessageScanTarget.MESSAGE) }
                     )
 
                     if (uiState.signatureInput.isNotBlank()) {

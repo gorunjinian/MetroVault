@@ -50,7 +50,7 @@ enum class BottomNavTab {
 }
 
 @SuppressLint("LocalContextResourcesRead")
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun HomeScreen(
     navController: NavHostController,
@@ -300,7 +300,7 @@ fun HomeScreen(
                     .padding(bottom = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // FAB above the nav bar - centered over lock button (hidden in edit mode)
+                // Add/Scan pill above the nav bar - centered over lock button (hidden in edit mode)
                 val canShowFab = pagerState.currentPage == 0
 
                 // Determine what to show: FAB, Info message, or nothing
@@ -351,25 +351,16 @@ fun HomeScreen(
                             }
                         }
                         "fab" -> {
-                            FloatingActionButton(
-                                onClick = { showCreateDialog = true },
-                                shape = androidx.compose.foundation.shape.CircleShape,
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier
-                                    .padding(bottom = 12.dp)
-                                    .size(56.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_add),
-                                    contentDescription = "Add Wallet",
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
+                            // Scan stays disabled until the scan screen exists
+                            HomeActionPill(
+                                onAdd = { showCreateDialog = true },
+                                onScan = null,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
                         }
                         else -> {
-                            // Empty spacer to maintain consistent layout
-                            Spacer(modifier = Modifier.height(68.dp))
+                            // Empty spacer the pill's height, so page padding doesn't change
+                            Spacer(modifier = Modifier.height(HomeActionPillHeight + 12.dp))
                         }
                     }
                 }

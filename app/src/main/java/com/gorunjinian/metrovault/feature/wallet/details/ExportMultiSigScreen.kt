@@ -26,7 +26,7 @@ import kotlinx.coroutines.withContext
  * 1. Content format: Descriptor (raw) or BSMS (formatted per BSMS 1.0 spec)
  * 2. QR encoding format: BC-UR v1, BBQr, BC-UR v2
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun ExportMultiSigScreen(
     descriptor: String,

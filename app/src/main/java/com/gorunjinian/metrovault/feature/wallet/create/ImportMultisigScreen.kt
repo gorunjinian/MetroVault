@@ -1,8 +1,5 @@
 package com.gorunjinian.metrovault.feature.wallet.create
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,16 +12,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gorunjinian.metrovault.R
-import com.gorunjinian.metrovault.core.qr.configureForQRScanning
 import com.gorunjinian.metrovault.core.ui.components.InfoCard
 import com.gorunjinian.metrovault.core.ui.components.InfoTone
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
-import com.journeyapps.barcodescanner.CompoundBarcodeView
+import com.gorunjinian.metrovault.domain.service.scan.CompletedScan
+import com.gorunjinian.metrovault.feature.scan.components.ScannerView
 
 /**
  * Screen for importing a multisig wallet by scanning its output descriptor.
@@ -34,72 +28,34 @@ import com.journeyapps.barcodescanner.CompoundBarcodeView
  * 2. Parse descriptor and match against local wallets
  * 3. Show confirmation with cosigner details
  * 4. Import as multisig wallet
+ *
+ * @param takeScan Returns, once, the scan another screen opened this one with, which starts the
+ *   flow at step 2; null when there is none
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun ImportMultisigScreen(
     viewModel: ImportMultisigViewModel = viewModel(),
     onBack: () -> Unit,
-    onWalletImported: (walletId: String) -> Unit
+    onWalletImported: (walletId: String) -> Unit,
+    takeScan: (() -> CompletedScan?)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    
-    // Scanner state
-    var barcodeView: CompoundBarcodeView? by remember { mutableStateOf(null) }
-    
-    // Camera permission launcher
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            viewModel.startScanning()
-        }
+
+    LaunchedEffect(Unit) {
+        takeScan?.invoke()?.let { viewModel.onScan(it) }
     }
-    
+
     // Handle events
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is ImportMultisigViewModel.ImportEvent.WalletImported -> onWalletImported(event.walletId)
                 is ImportMultisigViewModel.ImportEvent.NavigateBack -> onBack()
-                is ImportMultisigViewModel.ImportEvent.ScanComplete -> { /* Handled internally */ }
             }
         }
     }
-    
-    // Resume camera when scanning starts and view is ready
-    // This is needed because the lifecycle observer only responds to transitions,
-    // not the current state (we're already ON_RESUME when scanning starts)
-    LaunchedEffect(barcodeView, uiState.isScanning) {
-        if (uiState.isScanning && barcodeView != null) {
-            try { barcodeView?.resume() } catch (_: Exception) { }
-        }
-    }
-    
-    // Lifecycle observer for scanner
-    DisposableEffect(lifecycleOwner, uiState.isScanning) {
-        val observer = LifecycleEventObserver { _, event ->
-            val scanner = barcodeView
-            if (uiState.isScanning && scanner != null) {
-                when (event) {
-                    Lifecycle.Event.ON_RESUME -> {
-                        try { scanner.resume() } catch (_: Exception) { }
-                    }
-                    Lifecycle.Event.ON_PAUSE -> {
-                        try { scanner.pause() } catch (_: Exception) { }
-                    }
-                    else -> {}
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            try { barcodeView?.pause() } catch (_: Exception) { }
-        }
-    }
-    
+
     Scaffold(
         topBar = {
             MetroTopBar(
@@ -118,34 +74,13 @@ fun ImportMultisigScreen(
             when (uiState.screenState) {
                 ImportMultisigViewModel.ScreenState.INITIAL,
                 ImportMultisigViewModel.ScreenState.SCANNING -> {
-                    // Track last scanned frame to avoid duplicates
-                    var lastScannedFrame by remember { mutableStateOf("") }
-
                     InitialScreen(
                         isScanning = uiState.isScanning,
-                        scanProgress = uiState.scanProgress,
-                        isAnimatedScan = uiState.isAnimatedScan,
-                        scanProgressString = uiState.scanProgressString,
-                        onStartScanning = {
-                            permissionLauncher.launch(Manifest.permission.CAMERA)
-                        },
-                        onBarcodeViewCreated = { view ->
-                            barcodeView = view
-                            view.decodeContinuous { result ->
-                                result.text?.let { scannedText ->
-                                    // Skip duplicate frames
-                                    if (scannedText == lastScannedFrame) return@let
-                                    lastScannedFrame = scannedText
-
-                                    // Process frame through ViewModel's scanner
-                                    viewModel.processScannedFrame(scannedText)
-
-                                    // Pause scanner if scan is complete
-                                    if (viewModel.descriptorScanner.isComplete()) {
-                                        view.pause()
-                                    }
-                                }
-                            }
+                        onStartScanning = { viewModel.startScanning() },
+                        onScan = { scan ->
+                            // A payload that isn't a multisig setup ends on the error screen.
+                            viewModel.onScan(scan)
+                            true
                         },
                         onCancelScanning = { viewModel.cancelScanning() }
                     )
@@ -175,15 +110,11 @@ fun ImportMultisigScreen(
     }
 }
 
-@Suppress("COMPOSE_APPLIER_CALL_MISMATCH")
 @Composable
 private fun InitialScreen(
     isScanning: Boolean,
-    scanProgress: Int,
-    isAnimatedScan: Boolean,
-    scanProgressString: String,
     onStartScanning: () -> Unit,
-    onBarcodeViewCreated: (CompoundBarcodeView) -> Unit,
+    onScan: (CompletedScan) -> Boolean,
     onCancelScanning: () -> Unit
 ) {
     Column(
@@ -244,64 +175,17 @@ private fun InitialScreen(
 
         // Inline QR Scanner (shown when scanning)
         if (isScanning) {
-            Box(
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .weight(1f),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Card(
+                ScannerView(
+                    onScan = onScan,
                     modifier = Modifier.fillMaxSize(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            CompoundBarcodeView(ctx).apply {
-                                onBarcodeViewCreated(this)
-                                configureForQRScanning()
-                                setStatusText("")
-                                // Note: Don't call resume() here - the lifecycle observer handles this
-                                // to avoid double initialization (which causes camera freeze)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                // Progress overlay for animated QR scans
-                if (isAnimatedScan && scanProgress > 0 && scanProgress < 100) {
-                    Card(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = "Scanning Animated QR",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LinearProgressIndicator(
-                                progress = { scanProgress / 100f },
-                                modifier = Modifier
-                                    .width(200.dp)
-                                    .height(8.dp),
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = scanProgressString,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
+                    showViewfinder = false
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

@@ -33,6 +33,13 @@ import com.gorunjinian.metrovault.domain.service.multisig.MultisigChangeValidato
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtOutputClassifier
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
+import com.gorunjinian.metrovault.domain.service.scan.ExtendedKeyChecker
+import com.gorunjinian.metrovault.domain.service.scan.KeyCheck
+import com.gorunjinian.metrovault.domain.service.scan.KeyCheckWallet
+import com.gorunjinian.metrovault.domain.service.scan.ScanHandoff
+import com.gorunjinian.metrovault.domain.service.scan.ScannedExtendedKey
+import com.gorunjinian.metrovault.domain.service.bitcoin.TransactionDecoder
+import com.gorunjinian.metrovault.domain.service.bitcoin.TransactionDetails
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
@@ -73,7 +80,7 @@ import java.util.concurrent.ConcurrentHashMap
  * because this instance is passed as a parameter.
  */
 @Stable
-class   Wallet(context: Context) {
+class   Wallet(context: Context) : WalletPassphrases {
 
     private val secureStorage = SecureStorage(context)
     private val bitcoinService = BitcoinService()
@@ -110,6 +117,9 @@ class   Wallet(context: Context) {
         secureStorage, bitcoinService, silentPaymentManager, passphraseManager, sessionKeyManager,
         walletRepository, walletList
     )
+
+    /** A scan on its way to the screen that will use it; dropped on lock and on returning Home. */
+    val scanHandoff = ScanHandoff()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -155,10 +165,11 @@ class   Wallet(context: Context) {
 
     /**
      * Emergency wipe - clears all sensitive data immediately.
-     * Also wipes any active stateless wallet.
+     * Also wipes any active stateless wallet and any scan not yet handed over.
      */
     fun emergencyWipe() {
         wipeStatelessWallet()
+        scanHandoff.clear()
         sessionManager.emergencyWipe { clearSession() }
     }
 
@@ -485,6 +496,7 @@ class   Wallet(context: Context) {
      */
     fun unloadAllWalletKeys() {
         statelessWalletManager.wipe()
+        scanHandoff.clear()
         walletRepository.unloadAllWalletKeys()
         activeWalletId = null
     }
@@ -496,6 +508,7 @@ class   Wallet(context: Context) {
      */
     fun unloadAllWallets() {
         statelessWalletManager.wipe()
+        scanHandoff.clear()
         walletRepository.unloadAllWallets()
         activeWalletId = null
     }
@@ -858,6 +871,58 @@ class   Wallet(context: Context) {
         return { index -> psbt.verifyOutput(index, account) }
     }
 
+    // ==================== Scanned Keys and Transactions ====================
+
+    /**
+     * Checks scanned extended public keys against the open wallet's seed; see [ExtendedKeyChecker].
+     * Null unless a single-sig wallet is open with its master key, the only kind the scan router
+     * sends keys to.
+     */
+    fun checkExtendedKeys(keys: List<ScannedExtendedKey>): List<KeyCheck>? {
+        if (getActiveWalletProfile()?.kind != WalletKind.SINGLE_SIG) return null
+        val state = statelessWalletManager.get() ?: getActiveWalletState() ?: return null
+        val master = state.getMasterPrivateKey() ?: return null
+        return runCatching {
+            val wallet = KeyCheckWallet(
+                master = master,
+                accountPath = KeyPath(state.derivationPath),
+                scriptType = getScriptType(state.derivationPath),
+                isTestnet = DerivationPaths.isTestnet(state.derivationPath)
+            )
+            ExtendedKeyChecker.check(keys, wallet)
+        }.getOrNull()
+    }
+
+    /**
+     * Decodes a scanned raw transaction on the open wallet's network, marking the outputs that pay
+     * it; see [TransactionDecoder]. Finding them derives up to the gap limit, so call this off the
+     * main thread. For a scan from Home, with no wallet open, call [TransactionDecoder.decode] with
+     * the network the user picks instead.
+     */
+    fun getTransactionDetails(hex: String): TransactionDetails? =
+        TransactionDecoder.decode(hex, BitcoinUtils.getChainHash(isActiveWalletTestnet()), ::findWalletAddresses)
+
+    /**
+     * Which of [addresses] the open wallet owns, resolved in the same order as
+     * [checkAddressBelongsToWallet]. A single-sig wallet scans its branches once for all of them.
+     */
+    private fun findWalletAddresses(addresses: Set<String>): Map<String, AddressCheckResult> {
+        if (isActiveSilentPayment()) return emptyMap()
+        if (isActiveMultisig()) {
+            return addresses.mapNotNull { address ->
+                checkAddressBelongsToWallet(address)?.takeIf { it.belongs }?.let { address to it }
+            }.toMap()
+        }
+        val state = statelessWalletManager.get() ?: getActiveWalletState() ?: return emptyMap()
+        val accountPublicKey = state.getAccountPublicKey() ?: return emptyMap()
+        return bitcoinService.findAddresses(
+            addresses,
+            accountPublicKey,
+            getScriptType(state.derivationPath),
+            DerivationPaths.isTestnet(state.derivationPath)
+        )
+    }
+
     // ==================== Wallet Info ====================
 
     fun getActiveWalletName(): String {
@@ -1190,7 +1255,7 @@ class   Wallet(context: Context) {
      * Checks if a single-sig wallet needs passphrase re-entry: there is no session seed, and
      * either hasPassphrase=true or the stored seed lacks the passphrase.
      */
-    fun needsPassphraseInput(walletId: String): Boolean =
+    override fun needsPassphraseInput(walletId: String): Boolean =
         passphraseManager.needsPassphraseInput(walletId, isDecoyMode)
 
     /**
@@ -1199,7 +1264,7 @@ class   Wallet(context: Context) {
      * shortcut. A wallet already in memory still holds keys from its previous seed, so it is
      * unloaded and the next [openWallet] derives from the new one.
      */
-    suspend fun setSessionPassphrase(walletId: String, passphrase: String) {
+    override suspend fun setSessionPassphrase(walletId: String, passphrase: String) {
         passphraseManager.setWalletPassphrase(walletId, passphrase, isDecoyMode)
         unloadWallet(walletId)
     }
@@ -1208,13 +1273,13 @@ class   Wallet(context: Context) {
      * Calculates master fingerprint from mnemonic and passphrase.
      * Used for real-time fingerprint preview in passphrase dialogs.
      */
-    fun calculateFingerprint(mnemonic: List<String>, passphrase: String): String? =
+    override fun calculateFingerprint(mnemonic: List<String>, passphrase: String): String? =
         passphraseManager.calculateFingerprint(mnemonic, passphrase)
 
     /**
      * Gets the mnemonic for a wallet by ID (for passphrase re-entry dialog).
      */
-    suspend fun getMnemonicForWallet(walletId: String): List<String>? =
+    override suspend fun getMnemonicForWallet(walletId: String): List<String>? =
         passphraseManager.getMnemonicForWallet(walletId, isDecoyMode)
 
     // ==================== Multi-sig Passphrase Support (delegated to PassphraseManager) ====================
@@ -1222,13 +1287,13 @@ class   Wallet(context: Context) {
     /**
      * Gets the list of keys needing passphrase input for a multi-sig wallet.
      */
-    suspend fun getKeysNeedingPassphrase(walletId: String): List<PassphraseManager.KeyPassphraseInfo> =
+    override suspend fun getKeysNeedingPassphrase(walletId: String): List<PassphraseManager.KeyPassphraseInfo> =
         passphraseManager.getKeysNeedingPassphrase(walletId, isDecoyMode)
 
     /**
      * Sets the session seed for a WalletKey from entered passphrase.
      */
-    suspend fun setSessionKeyPassphrase(keyId: String, passphrase: String) =
+    override suspend fun setSessionKeyPassphrase(keyId: String, passphrase: String) =
         passphraseManager.setKeyPassphrase(keyId, passphrase, isDecoyMode)
 
     /**

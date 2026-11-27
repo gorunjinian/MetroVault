@@ -21,7 +21,7 @@ import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
  * Easter egg screen showing a brief summary of the Bitcoin Whitepaper.
  * Accessible by long-pressing the MetroVault icon for 5 seconds on HomeScreen.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun WhitePaperScreen(
     onBack: () -> Unit

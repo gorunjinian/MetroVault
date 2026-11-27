@@ -26,7 +26,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.components.rememberAcco
  * Supports public/private toggle with password confirmation for private keys.
  * Includes account selector to export keys for any account.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun AccountKeysScreen(
     wallet: Wallet,

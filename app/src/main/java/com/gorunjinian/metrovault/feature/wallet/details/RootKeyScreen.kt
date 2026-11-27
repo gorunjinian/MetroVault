@@ -18,7 +18,7 @@ import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
  * RootKeyScreen - Displays the wallet's BIP32 root private key (xprv/tprv).
  * This screen should only be navigated to after password confirmation.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun RootKeyScreen(
     wallet: Wallet,

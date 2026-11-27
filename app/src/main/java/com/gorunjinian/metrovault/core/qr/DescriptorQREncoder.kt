@@ -14,7 +14,7 @@ enum class ContentFormat(val displayName: String) {
 
 /**
  * Encodes multisig wallet descriptors (raw or BSMS-formatted) into single-frame
- * or animated QR codes. Counterpart to [DescriptorQRScanner].
+ * or animated QR codes.
  *
  * Supported QR encodings:
  *  - BC-UR v1: `ur:bytes/` for broad compatibility with legacy wallets

@@ -17,7 +17,7 @@ import com.gorunjinian.metrovault.core.ui.components.ThemeOption
 import com.gorunjinian.metrovault.data.model.QuickShortcut
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun AppearanceSettingsScreen(
     userPreferencesRepository: UserPreferencesRepository,

@@ -2,13 +2,21 @@ package com.gorunjinian.metrovault.core.ui.components
 
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.KeyboardActionHandler
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
+import androidx.compose.material3.TextFieldLabelScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,10 +28,8 @@ import androidx.compose.ui.semantics.contentDataType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.VisualTransformation
 import com.gorunjinian.metrovault.R
 
 /**
@@ -41,10 +47,12 @@ import com.gorunjinian.metrovault.R
  * 1. contentDataType = ContentDataType.None on the field's semantics node - opts the field
  *    out of the autofill framework so no fill/save session is ever started for it. This is
  *    the effective control on modern Compose, whose semantic-autofill path ignores the
- *    host View's importantForAutofill flag (see the note on secureModifier below).
+ *    host View's importantForAutofill flag (see [optOutOfAutofill]).
  * 2. autoCorrectEnabled = false - Disables autocorrect
  * 3. PlatformImeOptions with Gboard incognito flags - Prevents keyboard learning
  * 4. KeyboardType.Password (when isPasswordField=true) - Completely hides suggestions bar
+ *
+ * The text is readable; for a password use [SecurePasswordTextField].
  *
  * @param isPasswordField Set to true for password/passphrase inputs to use Password keyboard type
  *        which completely hides the suggestions bar and password manager prompts
@@ -62,7 +70,6 @@ fun SecureOutlinedTextField(
     suffix: @Composable (() -> Unit)? = null,
     supportingText: @Composable (() -> Unit)? = null,
     isError: Boolean = false,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     singleLine: Boolean = false,
@@ -73,48 +80,10 @@ fun SecureOutlinedTextField(
     isPasswordField: Boolean = false,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors()
 ) {
-    // Create secure keyboard options with incognito mode flags
-    val secureKeyboardOptions = keyboardOptions.copy(
-        // Disable autocorrect
-        autoCorrectEnabled = false,
-        // Disable auto-capitalization to prevent keyboard learning
-        capitalization = KeyboardCapitalization.None,
-        // For password fields, use Password keyboard type to completely hide suggestions
-        keyboardType = if (isPasswordField) KeyboardType.Password else keyboardOptions.keyboardType,
-        // Use platform IME options to enable incognito mode (no learning, no suggestions)
-        // These are Gboard-specific flags that put the keyboard in "incognito" mode
-        platformImeOptions = PlatformImeOptions(
-            privateImeOptions = "nm,np," +
-                    "com.google.android.inputmethod.latin.noMicrophoneKey," +
-                    "com.google.android.inputmethod.latin.noLearning," +
-                    "com.google.android.inputmethod.latin.noSuggestions," +
-                    "com.google.android.inputmethod.latin.flagNoPersonalizedLearning"
-        )
-    )
-    
-    // Opt this field out of the autofill framework at the semantics level.
-    //
-    // Compose text fields register themselves for autofill by tagging their semantics node
-    // with contentDataType = Text (plus onFillData, and ContentType.Password for password
-    // fields). The platform AutofillManager is then notified on focus and on every value
-    // change, which is what makes an external password manager (e.g. Proton Pass) pop the
-    // "save password?" dialog for whatever the user typed here. Marking the node
-    // contentDataType = None makes it report as non-autofillable
-    // (AndroidAutofillManager.isAutofillable() short-circuits on None), so no autofill
-    // session is ever started or committed for it — no fill suggestions, no save prompt.
-    //
-    // This override must land on the SAME layout node as the field's own semantics and win
-    // the collapse. CoreTextField applies our incoming modifier as the OUTERMOST semantics
-    // and its own CoreTextFieldSemanticsModifier inner; same-node peer collapse is first-wins
-    // per key, so the outermost value (ours) wins. Note this replaces the old
-    // SecurityUtils.disableAutofill()/AutofillManager.cancel() approach, which no longer works:
-    // the new semantic-autofill notify path ignores the host View's importantForAutofill flag.
-    val secureModifier = modifier.semantics { contentDataType = ContentDataType.None }
-    
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = secureModifier,
+        modifier = modifier.optOutOfAutofill(),
         label = label,
         placeholder = placeholder,
         leadingIcon = leadingIcon,
@@ -123,8 +92,7 @@ fun SecureOutlinedTextField(
         suffix = suffix,
         supportingText = supportingText,
         isError = isError,
-        visualTransformation = visualTransformation,
-        keyboardOptions = secureKeyboardOptions,
+        keyboardOptions = keyboardOptions.incognito(isPasswordField),
         keyboardActions = keyboardActions,
         singleLine = singleLine,
         maxLines = maxLines,
@@ -138,37 +106,42 @@ fun SecureOutlinedTextField(
 /**
  * A secure password field with an explicit, accessible show/hide control.
  *
- * Passwords remain hidden by default and visibility is local to this field. The state is
+ * Same protections as [SecureOutlinedTextField], plus those of OutlinedSecureTextField: the text
+ * can never be copied or cut, shown or not.
+ *
+ * Passwords remain hidden by default and visibility is local to this field. The visibility is
  * deliberately not saveable, so a recreated screen always returns to the hidden state.
  * Clearing the field also drops back to hidden.
+ *
+ * @param state The text. Create it with [rememberPasswordState], or keep it in a ViewModel and
+ *        [wipe] it there. Never use rememberTextFieldState, which writes the text into the saved
+ *        instance state.
  */
 @Composable
 fun SecurePasswordTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
+    state: TextFieldState,
     modifier: Modifier = Modifier,
-    label: @Composable (() -> Unit)? = null,
+    label: @Composable (TextFieldLabelScope.() -> Unit)? = null,
     placeholder: @Composable (() -> Unit)? = null,
     leadingIcon: @Composable (() -> Unit)? = null,
     supportingText: @Composable (() -> Unit)? = null,
     isError: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    keyboardActions: KeyboardActions = KeyboardActions.Default,
-    singleLine: Boolean = true,
+    onKeyboardAction: KeyboardActionHandler? = null,
     enabled: Boolean = true,
-    readOnly: Boolean = false,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors()
 ) {
     var isPasswordVisible by remember { mutableStateOf(false) }
 
-    LaunchedEffect(value.isEmpty()) {
-        if (value.isEmpty()) isPasswordVisible = false
+    val isEmpty by remember(state) { derivedStateOf { state.text.isEmpty() } }
+    LaunchedEffect(isEmpty) {
+        if (isEmpty) isPasswordVisible = false
     }
 
-    SecureOutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier,
+    OutlinedSecureTextField(
+        state = state,
+        modifier = modifier.optOutOfAutofill(),
+        enabled = enabled,
         label = label,
         placeholder = placeholder,
         leadingIcon = leadingIcon,
@@ -191,31 +164,40 @@ fun SecurePasswordTextField(
         },
         supportingText = supportingText,
         isError = isError,
-        visualTransformation = if (isPasswordVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
-        keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions,
-        singleLine = singleLine,
-        enabled = enabled,
-        readOnly = readOnly,
-        isPasswordField = true,
+        // Not the default (System), which may briefly show the last typed character.
+        textObfuscationMode = if (isPasswordVisible) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
+        keyboardOptions = keyboardOptions.incognito(isPasswordField = true),
+        onKeyboardAction = onKeyboardAction,
         colors = colors
     )
+}
+
+/** The text of a [SecurePasswordTextField], wiped when it leaves the composition. */
+@Composable
+fun rememberPasswordState(): TextFieldState {
+    val state = remember { TextFieldState() }
+    DisposableEffect(state) {
+        onDispose { state.wipe() }
+    }
+    return state
+}
+
+/** Clears the text along with its undo history, which would otherwise still hold it. */
+fun TextFieldState.wipe() {
+    clearText()
+    undoState.clearHistory()
 }
 
 /**
  * TextFieldValue overload of SecureOutlinedTextField that supports text selection control.
  * This is useful for dialogs where you want to auto-select all text when the dialog opens.
- * 
+ *
  * Same security protections as the String-based version:
  * - Autocorrect disabled
  * - Predictive text disabled
  * - Autofill disabled
  * - Keyboard learning disabled
- * 
+ *
  * @param value TextFieldValue containing both text and selection state
  * @param onValueChange Callback when the TextFieldValue changes (including selection)
  */
@@ -232,7 +214,6 @@ fun SecureOutlinedTextField(
     suffix: @Composable (() -> Unit)? = null,
     supportingText: @Composable (() -> Unit)? = null,
     isError: Boolean = false,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     singleLine: Boolean = false,
@@ -243,28 +224,10 @@ fun SecureOutlinedTextField(
     isPasswordField: Boolean = false,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors()
 ) {
-    // Create secure keyboard options with incognito mode flags
-    val secureKeyboardOptions = keyboardOptions.copy(
-        autoCorrectEnabled = false,
-        capitalization = KeyboardCapitalization.None,
-        keyboardType = if (isPasswordField) KeyboardType.Password else keyboardOptions.keyboardType,
-        platformImeOptions = PlatformImeOptions(
-            privateImeOptions = "nm,np," +
-                    "com.google.android.inputmethod.latin.noMicrophoneKey," +
-                    "com.google.android.inputmethod.latin.noLearning," +
-                    "com.google.android.inputmethod.latin.noSuggestions," +
-                    "com.google.android.inputmethod.latin.flagNoPersonalizedLearning"
-        )
-    )
-    
-    // Opt this field out of the autofill framework at the semantics level.
-    // See the String overload above for the full rationale.
-    val secureModifier = modifier.semantics { contentDataType = ContentDataType.None }
-    
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = secureModifier,
+        modifier = modifier.optOutOfAutofill(),
         label = label,
         placeholder = placeholder,
         leadingIcon = leadingIcon,
@@ -273,8 +236,7 @@ fun SecureOutlinedTextField(
         suffix = suffix,
         supportingText = supportingText,
         isError = isError,
-        visualTransformation = visualTransformation,
-        keyboardOptions = secureKeyboardOptions,
+        keyboardOptions = keyboardOptions.incognito(isPasswordField),
         keyboardActions = keyboardActions,
         singleLine = singleLine,
         maxLines = maxLines,
@@ -284,3 +246,44 @@ fun SecureOutlinedTextField(
         colors = colors
     )
 }
+
+/**
+ * Opts a text field out of the autofill framework at the semantics level.
+ *
+ * Compose text fields register themselves for autofill by tagging their semantics node
+ * with contentDataType = Text (plus onFillData, and ContentType.Password for password
+ * fields). The platform AutofillManager is then notified on focus and on every value
+ * change, which is what makes an external password manager (e.g. Proton Pass) pop the
+ * "save password?" dialog for whatever the user typed here. Marking the node
+ * contentDataType = None makes it report as non-autofillable
+ * (AndroidAutofillManager.isAutofillable() short-circuits on None), so no autofill
+ * session is ever started or committed for it — no fill suggestions, no save prompt.
+ *
+ * This override must land on the SAME layout node as the field's own semantics and win over
+ * them, so it goes on the modifier handed to the field: value-based and state-based fields both
+ * put that modifier ahead of their own semantics on one node, where the outermost value wins.
+ * Check that again when moving to another text field. Note this replaces the old
+ * SecurityUtils.disableAutofill()/AutofillManager.cancel() approach, which no longer works:
+ * the new semantic-autofill notify path ignores the host View's importantForAutofill flag.
+ */
+private fun Modifier.optOutOfAutofill(): Modifier =
+    semantics { contentDataType = ContentDataType.None }
+
+/** These options with autocorrect, suggestions and keyboard learning turned off. */
+private fun KeyboardOptions.incognito(isPasswordField: Boolean): KeyboardOptions = copy(
+    // Disable autocorrect
+    autoCorrectEnabled = false,
+    // Disable auto-capitalization to prevent keyboard learning
+    capitalization = KeyboardCapitalization.None,
+    // For password fields, use Password keyboard type to completely hide suggestions
+    keyboardType = if (isPasswordField) KeyboardType.Password else keyboardType,
+    // Use platform IME options to enable incognito mode (no learning, no suggestions)
+    // These are Gboard-specific flags that put the keyboard in "incognito" mode
+    platformImeOptions = PlatformImeOptions(
+        privateImeOptions = "nm,np," +
+            "com.google.android.inputmethod.latin.noMicrophoneKey," +
+            "com.google.android.inputmethod.latin.noLearning," +
+            "com.google.android.inputmethod.latin.noSuggestions," +
+            "com.google.android.inputmethod.latin.flagNoPersonalizedLearning"
+    )
+)

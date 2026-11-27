@@ -45,13 +45,24 @@ class MultisigDescriptorParser {
 
         // Regex to extract threshold from sortedmulti(m, ...) or multi(m, ...)
         private val THRESHOLD_PATTERN = Regex("""(?:sorted)?multi\((\d+),""")
-    }
 
-    /** The content format the input was recognized as. */
-    enum class SourceFormat {
-        DESCRIPTOR,
-        BSMS,
-        SETUP_FILE
+        /** Taproot multisig, which [parse] doesn't support but which is still a multisig setup. */
+        private val TAPROOT_MULTI_PATTERN = Regex("""multi_a\(\d+,""")
+
+        /**
+         * The format [input] is written in, or null if it isn't a multisig setup at all. Anything
+         * [parse] can accept is recognized; whether it is valid is for [parse] to say.
+         */
+        fun detectFormat(input: String): MultisigSetupFormat? = when {
+            ColdCardSetupFile.isSetupFile(input) -> MultisigSetupFormat.SETUP_FILE
+            BSMS.isBsms(input) -> MultisigSetupFormat.BSMS
+            else -> {
+                val descriptor = BSMS.extractFromInput(input).descriptor
+                MultisigSetupFormat.DESCRIPTOR.takeIf {
+                    THRESHOLD_PATTERN.containsMatchIn(descriptor) || TAPROOT_MULTI_PATTERN.containsMatchIn(descriptor)
+                }
+            }
+        }
     }
 
     /**
@@ -64,7 +75,7 @@ class MultisigDescriptorParser {
      */
     data class ParsedMultisig(
         val config: MultisigConfig,
-        val sourceFormat: SourceFormat,
+        val sourceFormat: MultisigSetupFormat,
         val suggestedName: String? = null,
         val verificationAddress: String? = null
     )
@@ -121,7 +132,7 @@ class MultisigDescriptorParser {
                 Result.Success(
                     ParsedMultisig(
                         config = config,
-                        sourceFormat = SourceFormat.SETUP_FILE,
+                        sourceFormat = MultisigSetupFormat.SETUP_FILE,
                         suggestedName = parsed.name
                     )
                 )
@@ -194,7 +205,7 @@ class MultisigDescriptorParser {
                 Result.Success(
                     ParsedMultisig(
                         config = config,
-                        sourceFormat = if (extracted.isBsmsFormat) SourceFormat.BSMS else SourceFormat.DESCRIPTOR,
+                        sourceFormat = if (extracted.isBsmsFormat) MultisigSetupFormat.BSMS else MultisigSetupFormat.DESCRIPTOR,
                         verificationAddress = extracted.verificationAddress
                     )
                 )

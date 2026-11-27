@@ -44,7 +44,7 @@ import kotlinx.coroutines.withContext
  * surface the two follow-ups a user typically wants here — handing the scan capability to a watching
  * wallet, or inspecting the underlying SP keypair.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun SPAddressScreen(
     wallet: Wallet,

@@ -29,7 +29,7 @@ import com.gorunjinian.metrovault.core.ui.dialogs.WarningDialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun CreateWalletScreen(
     viewModel: CreateWalletViewModel = viewModel(),

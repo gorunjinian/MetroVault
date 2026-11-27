@@ -1,5 +1,5 @@
 [versions]
-agp = "9.3.3"
+agp = "9.5.3"
 bbqr = "1.0.3"
 bcur-kotlin = "1.0.5"
 kotlin = "2.4.21"

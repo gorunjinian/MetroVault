@@ -19,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.ActionCard
+import com.gorunjinian.metrovault.core.ui.components.CollapsibleFab
+import com.gorunjinian.metrovault.core.ui.components.rememberFabExpanded
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 import com.gorunjinian.metrovault.domain.Wallet
 import com.gorunjinian.metrovault.core.storage.SecureStorage
@@ -33,7 +35,6 @@ import com.gorunjinian.metrovault.data.model.WalletMetadata
 import com.gorunjinian.metrovault.data.model.WalletProfile
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WalletDetailsScreen(
     wallet: Wallet,
@@ -109,7 +110,19 @@ fun WalletDetailsScreen(
         }
     }
 
+    val scrollState = rememberScrollState()
+    val scanExpanded by rememberFabExpanded(scrollState)
+
     Scaffold(
+        floatingActionButton = {
+            // Disabled until the scan screen exists
+            CollapsibleFab(
+                icon = painterResource(R.drawable.ic_qr_code_scanner),
+                text = "Scan a QR",
+                expanded = scanExpanded,
+                onClick = null
+            )
+        },
         topBar = {
             MetroTopBar(
                 title = wallet.getActiveWalletName(),
@@ -210,8 +223,10 @@ fun WalletDetailsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+                .verticalScroll(scrollState)
+                // The bottom clears the scan button: its 56dp, the 16dp Scaffold keeps under it,
+                // and a 16dp gap, so the last card scrolls fully above it
+                .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Multisig "not yet verified" prompt sits above the info card (call to action).
