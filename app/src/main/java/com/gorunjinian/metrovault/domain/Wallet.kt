@@ -33,6 +33,7 @@ import com.gorunjinian.metrovault.domain.service.multisig.MultisigChangeValidato
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtOutputClassifier
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtService
 import com.gorunjinian.metrovault.domain.service.psbt.PsbtUtils
+import com.gorunjinian.metrovault.domain.service.scan.ScanHandoff
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentDisplayContext
 import com.gorunjinian.metrovault.domain.service.silentpayments.SilentPaymentWalletService
 import com.gorunjinian.metrovault.domain.service.bitcoin.WalletSigningService
@@ -73,7 +74,7 @@ import java.util.concurrent.ConcurrentHashMap
  * because this instance is passed as a parameter.
  */
 @Stable
-class   Wallet(context: Context) {
+class   Wallet(context: Context) : WalletPassphrases {
 
     private val secureStorage = SecureStorage(context)
     private val bitcoinService = BitcoinService()
@@ -110,6 +111,9 @@ class   Wallet(context: Context) {
         secureStorage, bitcoinService, silentPaymentManager, passphraseManager, sessionKeyManager,
         walletRepository, walletList
     )
+
+    /** A scan on its way to the screen that will use it; dropped on lock and on returning Home. */
+    val scanHandoff = ScanHandoff()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -155,10 +159,11 @@ class   Wallet(context: Context) {
 
     /**
      * Emergency wipe - clears all sensitive data immediately.
-     * Also wipes any active stateless wallet.
+     * Also wipes any active stateless wallet and any scan not yet handed over.
      */
     fun emergencyWipe() {
         wipeStatelessWallet()
+        scanHandoff.clear()
         sessionManager.emergencyWipe { clearSession() }
     }
 
@@ -485,6 +490,7 @@ class   Wallet(context: Context) {
      */
     fun unloadAllWalletKeys() {
         statelessWalletManager.wipe()
+        scanHandoff.clear()
         walletRepository.unloadAllWalletKeys()
         activeWalletId = null
     }
@@ -496,6 +502,7 @@ class   Wallet(context: Context) {
      */
     fun unloadAllWallets() {
         statelessWalletManager.wipe()
+        scanHandoff.clear()
         walletRepository.unloadAllWallets()
         activeWalletId = null
     }
@@ -1190,7 +1197,7 @@ class   Wallet(context: Context) {
      * Checks if a single-sig wallet needs passphrase re-entry: there is no session seed, and
      * either hasPassphrase=true or the stored seed lacks the passphrase.
      */
-    fun needsPassphraseInput(walletId: String): Boolean =
+    override fun needsPassphraseInput(walletId: String): Boolean =
         passphraseManager.needsPassphraseInput(walletId, isDecoyMode)
 
     /**
@@ -1199,7 +1206,7 @@ class   Wallet(context: Context) {
      * shortcut. A wallet already in memory still holds keys from its previous seed, so it is
      * unloaded and the next [openWallet] derives from the new one.
      */
-    suspend fun setSessionPassphrase(walletId: String, passphrase: String) {
+    override suspend fun setSessionPassphrase(walletId: String, passphrase: String) {
         passphraseManager.setWalletPassphrase(walletId, passphrase, isDecoyMode)
         unloadWallet(walletId)
     }
@@ -1208,13 +1215,13 @@ class   Wallet(context: Context) {
      * Calculates master fingerprint from mnemonic and passphrase.
      * Used for real-time fingerprint preview in passphrase dialogs.
      */
-    fun calculateFingerprint(mnemonic: List<String>, passphrase: String): String? =
+    override fun calculateFingerprint(mnemonic: List<String>, passphrase: String): String? =
         passphraseManager.calculateFingerprint(mnemonic, passphrase)
 
     /**
      * Gets the mnemonic for a wallet by ID (for passphrase re-entry dialog).
      */
-    suspend fun getMnemonicForWallet(walletId: String): List<String>? =
+    override suspend fun getMnemonicForWallet(walletId: String): List<String>? =
         passphraseManager.getMnemonicForWallet(walletId, isDecoyMode)
 
     // ==================== Multi-sig Passphrase Support (delegated to PassphraseManager) ====================
@@ -1222,13 +1229,13 @@ class   Wallet(context: Context) {
     /**
      * Gets the list of keys needing passphrase input for a multi-sig wallet.
      */
-    suspend fun getKeysNeedingPassphrase(walletId: String): List<PassphraseManager.KeyPassphraseInfo> =
+    override suspend fun getKeysNeedingPassphrase(walletId: String): List<PassphraseManager.KeyPassphraseInfo> =
         passphraseManager.getKeysNeedingPassphrase(walletId, isDecoyMode)
 
     /**
      * Sets the session seed for a WalletKey from entered passphrase.
      */
-    suspend fun setSessionKeyPassphrase(keyId: String, passphrase: String) =
+    override suspend fun setSessionKeyPassphrase(keyId: String, passphrase: String) =
         passphraseManager.setKeyPassphrase(keyId, passphrase, isDecoyMode)
 
     /**
