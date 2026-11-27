@@ -24,7 +24,7 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * @param takeScan Returns, once, the scan another screen opened this one with; null when there is none
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun ImportStatelessScreen(
     viewModel: ImportStatelessViewModel = viewModel(),

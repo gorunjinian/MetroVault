@@ -43,7 +43,7 @@ private data class AddressWindow(
     val rangeLabel: String get() = if (isLoaded) "$loadedStart-${loadedEnd - 1}" else "…"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun AddressesScreen(
     wallet: Wallet,

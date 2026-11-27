@@ -77,7 +77,7 @@ fun rememberAccountExportState(wallet: Wallet): AccountExportState {
  * two-line entry per account — display name over [accountDetail], typically the derivation path
  * the current export mode would use for that account.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun AccountSelectorDropdown(
     label: String,

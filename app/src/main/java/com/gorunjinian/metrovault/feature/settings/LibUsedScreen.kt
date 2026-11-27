@@ -25,7 +25,7 @@ private data class Library(
 /**
  * Screen displaying all libraries and dependencies used in the app.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun LibUsedScreen(
     onBack: () -> Unit

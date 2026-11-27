@@ -72,7 +72,7 @@ private enum class CoordinatorFormat {
  * The verification details (fingerprint, path, first address) are computed from the same account
  * selection as the QR, so what the user cross-checks always matches what they scanned.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun CoordinatorExportScreen(
     wallet: Wallet,

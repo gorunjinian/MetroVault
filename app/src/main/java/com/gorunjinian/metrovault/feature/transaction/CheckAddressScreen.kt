@@ -33,7 +33,7 @@ private const val ADDRESSES_TO_SCAN = 500  // Per type (receive/change) = 1000 t
 private const val BATCH_SIZE = 100
 
 /** @param takeScan Returns, once, the scan another screen opened this one with; null when there is none */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun CheckAddressScreen(
     wallet: Wallet,

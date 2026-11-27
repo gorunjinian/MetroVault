@@ -59,7 +59,7 @@ fun SeedQRScreen(
  * security warning, the QR itself (Canvas-based for SeedQR/Compact, bitmap for Generic),
  * a format-specific info card, and a caller-supplied [footer].
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun SeedQRContent(
     mnemonic: List<String>,

@@ -31,7 +31,7 @@ import com.gorunjinian.metrovault.core.ui.dialogs.WarningDialog
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 import com.gorunjinian.metrovault.domain.Wallet
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun SecuritySettingsScreen(
     wallet: Wallet,

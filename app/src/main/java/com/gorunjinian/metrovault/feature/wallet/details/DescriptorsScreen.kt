@@ -26,7 +26,7 @@ import com.gorunjinian.metrovault.feature.wallet.details.components.rememberAcco
  * Supports public/private toggle with password confirmation for private descriptors.
  * Includes account selector to export descriptors for any account.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun DescriptorsScreen(
     wallet: Wallet,

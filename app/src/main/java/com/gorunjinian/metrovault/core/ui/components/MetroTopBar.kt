@@ -27,7 +27,7 @@ import com.gorunjinian.metrovault.R
  * @param backContentDescription accessibility label for the navigation icon; override when
  *   the arrow means something more specific than "go back" (e.g. "Cancel").
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun MetroTopBar(
     title: String,

@@ -31,7 +31,7 @@ import com.gorunjinian.metrovault.domain.service.bitcoin.AddressService
 import com.gorunjinian.metrovault.data.model.WalletFeature
 import com.gorunjinian.metrovault.data.repository.UserPreferencesRepository
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun AddressDetailScreen(
     wallet: Wallet,

@@ -28,7 +28,7 @@ import com.gorunjinian.metrovault.domain.Wallet
  * remain safe. The receive `sp1q…` address lives on [AddressesScreen]; this screen is exclusively
  * about handing the scan capability to a watching wallet.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun SilentPaymentExportScreen(
     wallet: Wallet,

@@ -15,7 +15,7 @@ import com.gorunjinian.metrovault.core.ui.components.MnemonicInputField
 import com.gorunjinian.metrovault.core.ui.components.SecureMnemonicKeyboard
 import com.gorunjinian.metrovault.core.ui.components.SegmentedToggle
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun CompleteMnemonicScreen(
     onBack: () -> Unit

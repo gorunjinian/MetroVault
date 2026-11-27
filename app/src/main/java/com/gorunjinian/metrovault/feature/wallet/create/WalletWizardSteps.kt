@@ -169,7 +169,7 @@ private fun addressTypeOptions(isTestnet: Boolean): List<Triple<String, String, 
         )
     }
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 private fun AddressTypeCard(
     selectedDerivationPath: String,

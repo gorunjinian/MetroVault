@@ -28,7 +28,7 @@ import com.gorunjinian.metrovault.data.model.MultisigScriptType
  * signing. Reachable both right after import and later from Wallet Details (where it doubles as a
  * "view / re-verify registration" screen).
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun VerifyMultisigScreen(
     walletId: String,

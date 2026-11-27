@@ -45,7 +45,7 @@ private const val SIGN_ANYWAY_NOTE =
  *
  * @param takeScan Returns, once, the scan another screen opened this one with; null when there is none
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 @SuppressLint("DefaultLocale")
 fun ScanPSBTScreen(

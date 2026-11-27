@@ -23,7 +23,7 @@ import com.gorunjinian.metrovault.BuildConfig
 import com.gorunjinian.metrovault.R
 import com.gorunjinian.metrovault.core.ui.components.MetroTopBar
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun AboutScreen(
     onBack: () -> Unit,

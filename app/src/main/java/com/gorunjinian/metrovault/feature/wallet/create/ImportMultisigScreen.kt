@@ -32,7 +32,7 @@ import com.gorunjinian.metrovault.feature.scan.components.ScannerView
  * @param takeScan Returns, once, the scan another screen opened this one with, which starts the
  *   flow at step 2; null when there is none
  */
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun ImportMultisigScreen(
     viewModel: ImportMultisigViewModel = viewModel(),
